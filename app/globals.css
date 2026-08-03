@@ -1,26 +1,82 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+/* ---------------------------------------------------------------------
+   Tokens de diseño · herramienta interna, densa y legible.
+   Sin gradientes, sin ilustraciones, sin animaciones de entrada.
+   --------------------------------------------------------------------- */
+@theme {
+  /* Superficies y texto */
+  --color-fondo: #f7f8fa;
+  --color-superficie: #ffffff;
+  --color-borde: #e2e5ea;
+  --color-texto: #1a1d21;
+  --color-suave: #6b7280;
+  --color-acento: #1f5fa8;
+  --color-acento-hover: #1a5091;
+  --color-acento-suave: #eef4fb;
+
+  /* Estados de visita (cat_estado_visita).
+     El color nunca va solo: siempre acompañado del texto del estado. */
+  --color-programada: #6b7280;
+  --color-encurso: #b45309;
+  --color-realizada: #15803d;
+  --color-pendiente: #b91c1c;
+  --color-reagendada: #6b7280;
+  --color-cancelada: #9ca3af;
+
+  /* Error de formulario */
+  --color-error: #b91c1c;
+  --color-error-fondo: #fef2f2;
+
+  /* Radio uniforme de 6px */
+  --radius-base: 6px;
+  --radius-sm: 6px;
+  --radius-md: 6px;
+  --radius-lg: 6px;
+  --radius-xl: 6px;
+
+  /* Una sola sombra, sutil: tarjetas y drawer */
+  --shadow-tarjeta: 0 1px 2px 0 rgb(16 24 40 / 0.04), 0 1px 3px 0 rgb(16 24 40 / 0.06);
+  --shadow-drawer: 0 8px 24px 0 rgb(16 24 40 / 0.12);
+
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+
+  /* Escala tipográfica corta: 12 / 14 / 16 / 20 / 24 */
+  --text-xs: 0.75rem;
+  --text-xs--line-height: 1rem;
+  --text-sm: 0.875rem;
+  --text-sm--line-height: 1.25rem;
+  --text-base: 1rem;
+  --text-base--line-height: 1.5rem;
+  --text-xl: 1.25rem;
+  --text-xl--line-height: 1.75rem;
+  --text-2xl: 1.5rem;
+  --text-2xl--line-height: 2rem;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
   }
-}
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  body {
+    background-color: var(--color-fondo);
+    color: var(--color-texto);
+    font-family: var(--font-sans);
+  }
+
+  /* Foco de teclado siempre visible, nunca removido. */
+  :focus-visible {
+    outline: 2px solid var(--color-acento);
+    outline-offset: 2px;
+    border-radius: var(--radius-base);
+  }
+
+  /* Números alineados: folios, cantidades, RUT. */
+  input[type="number"],
+  input[inputmode="numeric"],
+  td[data-num],
+  .num {
+    font-variant-numeric: tabular-nums;
+  }
 }
