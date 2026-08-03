@@ -20,6 +20,8 @@ const ITEMS: readonly ItemNav[] = [
   { href: "/visitas", etiqueta: "Visitas", roles: ["ADMIN", "COORDINADOR"] },
   { href: "/clientes", etiqueta: "Clientes", roles: ["ADMIN", "COORDINADOR"] },
   { href: "/tecnicos", etiqueta: "Técnicos", roles: ["ADMIN", "COORDINADOR"] },
+  { href: "/usuarios", etiqueta: "Usuarios", roles: ["ADMIN"] },
+  { href: "/exportar", etiqueta: "Exportar", roles: ["ADMIN"] },
 ];
 
 /**
@@ -38,8 +40,18 @@ export const INICIO_TECNICO = "/visitas";
  * y una ruta que rebota hacia sí misma es un bucle de redirecciones. Además en
  * la fase 3 `/visitas` pasa a mostrarle al técnico sus propias visitas, así
  * que es una pantalla compartida, no de coordinación.
+ *
+ * `/usuarios` y `/exportar` son ADMIN-only, más estrictas que el resto —
+ * pero el proxy solo distingue TECNICO de "el resto" (ver `rolDelUsuario` en
+ * proxy.ts), así que a un COORDINADOR el proxy lo deja pasar igual. La barrera
+ * real para esas dos es `requerirAdmin()` en la página.
  */
-export const RUTAS_MAESTROS: readonly string[] = ["/clientes", "/tecnicos"];
+export const RUTAS_MAESTROS: readonly string[] = [
+  "/clientes",
+  "/tecnicos",
+  "/usuarios",
+  "/exportar",
+];
 
 export function esRutaDeMaestros(pathname: string): boolean {
   return RUTAS_MAESTROS.some(

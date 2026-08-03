@@ -25,12 +25,14 @@ export function DialogoDesactivar({
   titulo,
   nombre,
   visitasAbiertas,
+  descripcion,
 }: {
   accion: Accion;
-  id: number;
+  id: number | string;
   titulo: string;
   nombre: string;
   visitasAbiertas: number;
+  descripcion?: string;
 }) {
   const dialogo = useRef<HTMLDialogElement>(null);
   const [estado, enviar] = useActionState(accion, SIN_ERRORES);
@@ -74,9 +76,10 @@ export function DialogoDesactivar({
               {titulo}
             </h2>
             <p className="mt-1 text-sm text-suave">
-              {nombre} deja de aparecer para crear visitas nuevas. No se borra
+              {descripcion ??
+                `${nombre} deja de aparecer para crear visitas nuevas. No se borra
               nada: las visitas que ya existen se mantienen tal cual, y podés
-              reactivarlo cuando quieras.
+              reactivarlo cuando quieras.`}
             </p>
           </div>
 
@@ -126,7 +129,7 @@ export function BotonReactivar({
   id,
 }: {
   accion: Accion;
-  id: number;
+  id: number | string;
 }) {
   const [, enviar] = useActionState(accion, SIN_ERRORES);
 

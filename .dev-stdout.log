@@ -1,0 +1,66 @@
+
+> sysdmc_temp@0.1.0 dev
+> next dev
+
+▲ Next.js 16.2.12 (Turbopack)
+- Local:         http://localhost:3000
+- Network:       http://172.30.112.1:3000
+- Environments: .env.local
+✓ Ready in 477ms
+
+ GET /login 200 in 3.0s (next.js: 2.5s, proxy.ts: 219ms, application-code: 277ms)
+ GET / 200 in 1767ms (next.js: 548ms, proxy.ts: 113ms, application-code: 1106ms)
+ GET /usuarios 200 in 1303ms (next.js: 392ms, proxy.ts: 343ms, application-code: 567ms)
+ GET /usuarios/b41682dd-b11f-4a43-a58e-c682ebb20ffe 200 in 2.3s (next.js: 1302ms, proxy.ts: 646ms, application-code: 403ms)
+ GET /usuarios/nuevo 200 in 1320ms (next.js: 475ms, proxy.ts: 348ms, application-code: 497ms)
+ POST /usuarios/nuevo 200 in 1006ms (next.js: 6ms, proxy.ts: 724ms, application-code: 276ms)
+  └─ ƒ crearUsuarioAccion({"creado":null,"error":null,"errores":{}}, {}) in 246ms lib/acciones/usuarios.ts
+ GET /usuarios/nuevo 200 in 1289ms (next.js: 4ms, proxy.ts: 765ms, application-code: 520ms)
+ POST /usuarios/nuevo 200 in 1344ms (next.js: 12ms, proxy.ts: 1038ms, application-code: 294ms)
+  └─ ƒ crearUsuarioAccion({"creado":null,"error":null,"errores":{}}, {}) in 267ms lib/acciones/usuarios.ts
+ POST /usuarios/nuevo 200 in 1612ms (next.js: 17ms, proxy.ts: 455ms, application-code: 1140ms)
+  └─ ƒ crearUsuarioAccion({"creado":null,"error":null,"errores":{"tecnico_id":"Si el rol es Técnico, elegí a qué técnico corresponde."}}, {}) in 631ms lib/acciones/usuarios.ts
+ GET /usuarios 200 in 1573ms (next.js: 12ms, proxy.ts: 353ms, application-code: 1209ms)
+ GET /usuarios/ae14c411-2b2a-4486-8319-a7f38af2312f 200 in 1045ms (next.js: 60ms, proxy.ts: 342ms, application-code: 643ms)
+ POST /usuarios/ae14c411-2b2a-4486-8319-a7f38af2312f 200 in 1076ms (next.js: 37ms, proxy.ts: 416ms, application-code: 624ms)
+  └─ ƒ restablecerClaveAccion({"claveTemporal":null,"error":null,"errores":{}}, {}) in 603ms lib/acciones/usuarios.ts
+ GET /usuarios?ok=usuario-desactivado 200 in 923ms (next.js: 9ms, proxy.ts: 248ms, application-code: 667ms)
+ POST /usuarios/ae14c411-2b2a-4486-8319-a7f38af2312f 303 in 2.3s (next.js: 39ms, proxy.ts: 756ms, application-code: 1485ms)
+  └─ ƒ cambiarActivoUsuarioAccion({"error":null,"errores":{}}, {}) in 515ms lib/acciones/usuarios.ts
+ GET /usuarios 200 in 338ms (next.js: 10ms, proxy.ts: 309ms, application-code: 19ms)
+ GET /usuarios 200 in 771ms (next.js: 11ms, proxy.ts: 242ms, application-code: 518ms)
+ GET /usuarios/ae14c411-2b2a-4486-8319-a7f38af2312f 200 in 1246ms (next.js: 59ms, proxy.ts: 429ms, application-code: 758ms)
+ GET /exportar 200 in 1883ms (next.js: 881ms, proxy.ts: 318ms, application-code: 684ms)
+ GET /exportar/clientes?desde=&hasta= 200 in 2.2s (next.js: 1361ms, proxy.ts: 309ms, application-code: 520ms)
+ GET /exportar/visitas?desde=2026-01-08&hasta= 200 in 1278ms (next.js: 282ms, proxy.ts: 565ms, application-code: 432ms)
+ GET /exportar 200 in 2.2s (next.js: 9ms, proxy.ts: 537ms, application-code: 1665ms)
+ GET /exportar/visitas?desde=&hasta= 200 in 733ms (next.js: 9ms, proxy.ts: 257ms, application-code: 466ms)
+ GET /visitas 200 in 2.6s (next.js: 1199ms, proxy.ts: 197ms, application-code: 1182ms)
+ GET /usuarios 200 in 1173ms (next.js: 10ms, proxy.ts: 340ms, application-code: 823ms)
+ GET /usuarios/ae14c411-2b2a-4486-8319-a7f38af2312f 200 in 1293ms (next.js: 76ms, proxy.ts: 361ms, application-code: 856ms)
+ GET /usuarios?ok=usuario-activado 200 in 977ms (next.js: 8ms, proxy.ts: 334ms, application-code: 635ms)
+ POST /usuarios/ae14c411-2b2a-4486-8319-a7f38af2312f 303 in 1998ms (next.js: 32ms, proxy.ts: 346ms, application-code: 1620ms)
+  └─ ƒ cambiarActivoUsuarioAccion({"error":null,"errores":{}}, {}) in 532ms lib/acciones/usuarios.ts
+ GET /usuarios 200 in 256ms (next.js: 7ms, proxy.ts: 237ms, application-code: 12ms)
+ GET /usuarios 200 in 694ms (next.js: 7ms, proxy.ts: 228ms, application-code: 459ms)
+ GET /login 200 in 127ms (next.js: 12ms, proxy.ts: 13ms, application-code: 102ms)
+ POST /usuarios 303 in 738ms (next.js: 8ms, proxy.ts: 365ms, application-code: 366ms)
+  └─ ƒ salir() in 204ms lib/acciones/sesion.ts
+ GET / 200 in 518ms (next.js: 8ms, proxy.ts: 123ms, application-code: 387ms)
+ POST /login 303 in 1106ms (next.js: 8ms, proxy.ts: 14ms, application-code: 1084ms)
+  └─ ƒ ingresar({"error":null}, {}) in 536ms lib/acciones/sesion.ts
+ GET /visitas 200 in 812ms (next.js: 7ms, proxy.ts: 106ms, application-code: 698ms)
+ GET /visitas 200 in 732ms (next.js: 8ms, proxy.ts: 108ms, application-code: 617ms)
+ GET /visitas 200 in 828ms (next.js: 11ms, proxy.ts: 116ms, application-code: 701ms)
+ GET /login 200 in 333ms (next.js: 12ms, proxy.ts: 13ms, application-code: 307ms)
+ POST /visitas 303 in 868ms (next.js: 12ms, proxy.ts: 342ms, application-code: 513ms)
+  └─ ƒ salir() in 113ms lib/acciones/sesion.ts
+ GET / 200 in 687ms (next.js: 12ms, proxy.ts: 179ms, application-code: 496ms)
+ POST /login 303 in 1353ms (next.js: 15ms, proxy.ts: 14ms, application-code: 1324ms)
+  └─ ƒ ingresar({"error":null}, {}) in 579ms lib/acciones/sesion.ts
+ GET /usuarios/ae14c411-2b2a-4486-8319-a7f38af2312f 200 in 1426ms (next.js: 45ms, proxy.ts: 395ms, application-code: 987ms)
+ GET /usuarios?ok=usuario-desactivado 200 in 946ms (next.js: 11ms, proxy.ts: 261ms, application-code: 675ms)
+ POST /usuarios/ae14c411-2b2a-4486-8319-a7f38af2312f 303 in 1887ms (next.js: 32ms, proxy.ts: 355ms, application-code: 1500ms)
+  └─ ƒ cambiarActivoUsuarioAccion({"error":null,"errores":{}}, {}) in 519ms lib/acciones/usuarios.ts
+ GET /usuarios 200 in 242ms (next.js: 7ms, proxy.ts: 223ms, application-code: 13ms)
+ GET /usuarios 200 in 920ms (next.js: 23ms, proxy.ts: 242ms, application-code: 654ms)

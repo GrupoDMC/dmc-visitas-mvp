@@ -95,6 +95,17 @@ export async function requerirVerTodas(): Promise<Sesion> {
   return sesion;
 }
 
+/**
+ * Para Usuarios y Exportación: a diferencia de los maestros, acá un
+ * COORDINADOR tampoco pasa. Gestionar cuentas y sacar los datos crudos para
+ * el traspaso a SQL Server es cosa de ADMIN solamente.
+ */
+export async function requerirAdmin(): Promise<Sesion> {
+  const sesion = await requerirSesion();
+  if (sesion.rol !== "ADMIN") redirect("/");
+  return sesion;
+}
+
 /** Etiqueta del rol para mostrar en pantalla. */
 export function nombreRol(rol: Rol): string {
   switch (rol) {

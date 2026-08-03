@@ -22,6 +22,8 @@ export const AVISOS = {
   "visita-creada": "Visita creada.",
   "visita-en-terreno-creada":
     "Visita abierta en terreno. Quedó a tu nombre, sin fecha agendada.",
+  "usuario-desactivado": "Usuario desactivado. Ya no puede ingresar a la app.",
+  "usuario-activado": "Usuario reactivado.",
 } as const;
 
 /**

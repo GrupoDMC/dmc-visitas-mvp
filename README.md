@@ -1,11 +1,18 @@
 # DMC · Formulario de visitas técnicas
 
 App interna y temporal para registrar visitas técnicas en terreno. Corre en
-paralelo con la hoja física durante la marcha blanca. Es un MVP desechable: el
-traspaso a DMC_Core se hace después con las vistas `v_export_*`.
+paralelo con la hoja física durante la marcha blanca de agosto 2026.
+
+> **Esto es descartable.** No es el sistema definitivo: es un puente hasta que
+> DMC_Core absorba este flujo en septiembre. El traspaso se hace desde
+> `/exportar` (CSV crudo) o directo contra las vistas `v_export_*` de
+> `docs/01_esquema.sql`. Cuando el traspaso termine, esta app y su base se dan
+> de baja — no hay que mantenerla ni evolucionarla más allá de la marcha
+> blanca.
 
 - **Técnicos** entran desde el celular y registran lo que hicieron.
 - **Coordinación** entra desde el escritorio y programa y consulta.
+- **Administración** gestiona usuarios y saca los export para el traspaso.
 
 Stack: Next.js 16 (App Router) · TypeScript · Tailwind CSS v4 · Supabase · Vercel.
 
@@ -39,11 +46,13 @@ documentadas una por una en `.env.local.example`.
 
 El esquema de la base es `docs/01_esquema.sql`, ya aplicado en Supabase.
 
-### Crear el primer usuario
+### Crear el primer admin
 
 Auth y perfil son dos cosas distintas: **no alcanza con crear el usuario en
 Supabase Auth**. Sin una fila en `perfil` con `activo = true`, el ingreso lo
-rechaza con "Tu cuenta no está habilitada".
+rechaza con "Tu cuenta no está habilitada". Este paso a mano hace falta solo
+para el primer ADMIN — a partir de ahí, `/usuarios/nuevo` crea el resto sin
+tocar Supabase directo.
 
 1. Supabase → Authentication → Add user (marcá "Auto Confirm User").
 2. Copiá el UUID y corré en el SQL Editor:
@@ -54,7 +63,9 @@ values ('<uuid-de-auth.users>', 'Nombre Apellido', 'ADMIN', null, true);
 ```
 
 Para un `TECNICO` el `tecnico_id` es obligatorio (lo exige el check
-`ck_perfil_tecnico`): primero creá la fila en `tecnico` y usá su id.
+`ck_perfil_tecnico`): primero creá la fila en `tecnico` y usá su id. Con el
+primer ADMIN ya podés entrar y usar `/usuarios/nuevo` para el resto del
+equipo, incluidos los técnicos.
 
 ---
 
@@ -95,16 +106,25 @@ app/
     layout.tsx               Guardia real + shell (sidebar/drawer + header)
     page.tsx                 Inicio: saluda y muestra el rol
     loading.tsx  error.tsx   Estados de carga y de error
+    clientes/  tecnicos/     Maestros (ADMIN + COORDINADOR)
+    visitas/                 Listado de coordinación + tarjetas de técnico,
+                             alta, detalle con formulario de terreno
+    usuarios/                Alta y gestión de cuentas (solo ADMIN)
+    exportar/                CSV para el traspaso (solo ADMIN) + sus
+                             Route Handlers de descarga
 lib/
-  auth.ts                    getSesion, esTecnico, puedeVerTodas
+  auth.ts                    getSesion, puedeVerTodas, requerirAdmin
   navegacion.ts              Ítems de navegación y filtro por rol
   env.ts                     Lectura validada de variables de entorno
-  acciones/sesion.ts         Server Actions de ingreso y salida
+  csv.ts                     CSV con BOM UTF-8 y separador `;`
+  claves.ts                  Contraseña temporal para "Restablecer contraseña"
+  acciones/                  Server Actions, una por feature
   db/                        ÚNICO lugar que habla con la base
   supabase/                  admin (service_role) y auth (cookies)
 components/
   shell/                     Sidebar, drawer, header, botón salir
   ui/                        Campo, Botón, BadgeEstado, ProximaFase
+  maestros/  visitas/  usuarios/   Componentes propios de cada feature
 docs/
   01_esquema.sql             Esquema de la base
   03_decisiones.md           Qué se resolvió distinto y qué quedó abierto
@@ -112,17 +132,20 @@ docs/
 
 ## Roles
 
-| Rol           | Ve                                            |
-| ------------- | --------------------------------------------- |
-| `ADMIN`       | Todas las visitas + mantenedores              |
-| `COORDINADOR` | Todas las visitas + mantenedores              |
-| `TECNICO`     | Solo las visitas con su `tecnico_id`          |
+| Rol           | Ve                                                        |
+| ------------- | ---------------------------------------------------------- |
+| `ADMIN`       | Todo: visitas, mantenedores, Usuarios y Exportar            |
+| `COORDINADOR` | Todas las visitas + mantenedores (sin Usuarios ni Exportar) |
+| `TECNICO`     | Solo las visitas con su `tecnico_id`                        |
 
 El filtro de navegación vive en `lib/navegacion.ts`. El control de acceso real
-está en las páginas (`requerirSesion()` / `requerirVerTodas()`), no en la
-navegación — esconder un enlace no es un permiso.
+está en las páginas (`requerirSesion()` / `requerirVerTodas()` /
+`requerirAdmin()`), no en la navegación — esconder un enlace no es un permiso.
 
 ## Estado actual
+
+Las cinco fases del encargo están hechas y esta es la última: no quedan
+pantallas marcadoras ("próxima fase").
 
 **Fase 1** — ingreso, sesión, roles, shell, estados de error y carga.
 
@@ -143,12 +166,29 @@ navegación — esconder un enlace no es un permiso.
 Las sucursales no tienen listado de primer nivel: se administran desde la ficha
 de su cliente.
 
-Nada se borra nunca. "Eliminar" es siempre desactivar (`activo = false`); los
-inactivos siguen en los listados detrás del filtro, y desaparecen solo de los
-selects para crear cosas nuevas.
+**Fase 3** — visitas: `/visitas` (tabla de coordinación o tarjetas del técnico,
+según el rol), `/visitas/nueva`, `/visitas/en-terreno` (alta sin agendar),
+`/visitas/[id]` (detalle). Asignación de técnico en lote desde el listado.
 
-Pendientes de contenido: `/visitas` y `/mis-visitas`, que siguen siendo
-marcadores con el control de acceso ya puesto.
+**Fase 4** — formulario de terreno dentro de `/visitas/[id]`: datos de la
+visita, trabajo realizado, problemas, materiales, firmas en canvas, y el cierre
+(realizada / pendiente / reabrir).
+
+**Fase 5** — cierre:
+
+| Ruta | Qué es |
+| ---- | ------ |
+| `/usuarios` | Listado de perfiles: nombre, correo, rol, técnico vinculado, activo |
+| `/usuarios/nuevo` | Crea el usuario en Supabase Auth (Admin API) y su perfil en el mismo paso |
+| `/exportar` | CSV de visitas, problemas, materiales, y clientes+sucursales, con filtro de fechas |
+
+En `/usuarios`, "Restablecer contraseña" genera una temporal y la muestra una
+sola vez en pantalla, para dictarla por teléfono — nunca por correo.
+"Desactivar" apaga `perfil.activo`; la cuenta de Supabase Auth nunca se borra.
+
+Nada se borra nunca, en ningún maestro. "Eliminar" es siempre desactivar
+(`activo = false`); los inactivos siguen en los listados detrás del filtro, y
+desaparecen solo de los selects para crear cosas nuevas.
 
 Datos de ejemplo opcionales en `docs/04_seed.sql` — no se cargan solos, hay que
 pegarlos a mano en el SQL Editor de Supabase.

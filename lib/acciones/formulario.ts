@@ -41,6 +41,37 @@ export const SIN_ASIGNACION: EstadoAsignacion = {
   exito: null,
 };
 
+/**
+ * Estado de crear un usuario. Tampoco redirige, por el mismo motivo que la
+ * contraseña de abajo: la temporal se genera en el servidor y hay que
+ * mostrarla una sola vez para dictarla por teléfono. Un redirect la perdería
+ * (no viaja en la URL — eso la dejaría en el historial del navegador) y
+ * mostrarla en el estado de la acción es lo único que la mantiene fuera de
+ * la URL y de cualquier log de acceso.
+ */
+export type EstadoUsuario = EstadoFormulario & {
+  creado: { correo: string; claveTemporal: string } | null;
+};
+
+export const SIN_USUARIO: EstadoUsuario = {
+  error: null,
+  errores: {},
+  creado: null,
+};
+
+/**
+ * Estado de "Restablecer contraseña". Misma razón que EstadoUsuario: la
+ * contraseña temporal nunca puede viajar en la URL, así que la acción no
+ * redirige y la devuelve en el estado para que el diálogo la muestre in situ.
+ */
+export type EstadoClave = EstadoFormulario & { claveTemporal: string | null };
+
+export const SIN_CLAVE: EstadoClave = {
+  error: null,
+  errores: {},
+  claveTemporal: null,
+};
+
 /** Un problema general, sin campo culpable. */
 export function falla(mensaje: string): EstadoFormulario {
   return { error: mensaje, errores: {} };
