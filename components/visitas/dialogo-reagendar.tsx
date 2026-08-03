@@ -84,7 +84,7 @@ export function DialogoReagendar({
       <dialog
         ref={dialogo}
         aria-labelledby={tituloId}
-        className="m-auto w-[calc(100vw-1.5rem)] max-w-md rounded-base border border-borde bg-superficie p-0 shadow-drawer backdrop:bg-texto/30"
+        className="m-auto w-[calc(100vw-1.5rem)] max-w-md rounded-card border border-borde bg-superficie p-0 shadow-drawer backdrop:bg-texto/30"
       >
         <form action={enviar} className="flex flex-col gap-4 p-5">
           <input type="hidden" name="visita_id" value={visitaId} />

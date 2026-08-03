@@ -55,17 +55,17 @@ function Tarjeta({
     <li>
       <Link
         href={`/visitas/${visita.id}`}
-        className="flex min-h-[5.5rem] flex-col gap-2 rounded-base border border-borde bg-superficie p-3.5 shadow-tarjeta transition-colors hover:bg-fondo"
+        className="flex min-h-[5.5rem] flex-col gap-3 rounded-card border border-borde bg-superficie p-4 shadow-tarjeta transition-colors hover:bg-fondo"
       >
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <p className="text-base font-semibold tabular-nums text-texto">
+            <p className="text-lg font-semibold tabular-nums text-texto">
               {hora ?? (dia && mostrarDia ? dia : "Sin hora")}
               {hora && mostrarDia && dia ? (
                 <span className="ml-2 text-sm font-normal text-suave">{dia}</span>
               ) : null}
             </p>
-            <p className="mt-0.5 truncate text-sm font-medium text-texto">
+            <p className="mt-0.5 truncate text-base font-medium text-texto">
               {visita.cliente?.razon_social ?? "Cliente sin nombre"}
             </p>
           </div>
@@ -73,7 +73,7 @@ function Tarjeta({
         </div>
 
         <div className="min-w-0 text-sm text-suave">
-          <p className="truncate text-texto">
+          <p className="truncate">
             {visita.sucursal?.nombre ?? "Sucursal sin nombre"}
           </p>
           {visita.sucursal?.direccion ? (
@@ -110,14 +110,14 @@ function Grupo({
 
   return (
     <section className="mt-5 first:mt-0">
-      <h2 className="text-sm font-medium text-texto">
+      <h2 className="font-heading text-sm font-semibold text-texto">
         {titulo}
-        <span className="ml-1.5 font-normal tabular-nums text-suave">
+        <span className="ml-1.5 font-sans font-normal tabular-nums text-suave">
           ({visitas.length})
         </span>
       </h2>
       {ayuda ? <p className="mt-0.5 text-xs text-suave">{ayuda}</p> : null}
-      <ul className="mt-2 flex flex-col gap-2">
+      <ul className="mt-2 flex flex-col gap-3">
         {visitas.map((visita) => (
           <Tarjeta key={visita.id} visita={visita} mostrarDia={mostrarDia} />
         ))}

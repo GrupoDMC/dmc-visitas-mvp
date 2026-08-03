@@ -21,7 +21,7 @@ export default function ErrorApp({
 
   return (
     <div className="mx-auto max-w-xl">
-      <h1 className="text-xl font-semibold text-texto">
+      <h1 className="font-heading text-xl font-semibold text-texto">
         No pudimos cargar esta pantalla
       </h1>
       <p className="mt-2 text-sm text-suave">

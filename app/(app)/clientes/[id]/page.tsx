@@ -94,7 +94,7 @@ export default async function PaginaCliente({ params }: Props) {
           >
             Datos del cliente
           </h2>
-          <div className="rounded-base border border-borde bg-superficie shadow-tarjeta">
+          <div className="rounded-card border border-borde bg-superficie shadow-tarjeta">
             <dl className="divide-y divide-borde">
               <Dato etiqueta="RUT">
                 <span className="tabular-nums">{formatearRut(cliente.rut)}</span>

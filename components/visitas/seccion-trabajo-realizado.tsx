@@ -6,6 +6,7 @@ import { SIN_ERRORES } from "@/lib/acciones/formulario";
 import { Alerta } from "@/components/ui/alerta";
 import { BotonGuardar } from "@/components/ui/boton";
 import { AreaTexto, Campo, Casilla } from "@/components/ui/campo";
+import { TituloSeccion } from "@/components/ui/titulo-seccion";
 import { FranjaBorrador } from "./franja-borrador";
 import { useCamposConBorrador, useLimpiarBorradorAlGuardar } from "./usar-borrador";
 
@@ -41,11 +42,14 @@ export function SeccionTrabajoRealizado({
   return (
     <section
       aria-labelledby="seccion-trabajo"
-      className="rounded-base border border-borde bg-superficie p-4 shadow-tarjeta sm:p-5"
+      className="rounded-card border border-borde bg-superficie p-4 shadow-tarjeta sm:p-5"
     >
-      <h2 id="seccion-trabajo" className="text-sm font-medium text-texto">
-        Trabajo realizado
-      </h2>
+      <TituloSeccion
+        numero={2}
+        id="seccion-trabajo"
+        titulo="Trabajo realizado"
+        guardado={visita.trabajo_realizado !== null}
+      />
 
       {borrador && !soloLectura ? (
         <div className="mt-3">

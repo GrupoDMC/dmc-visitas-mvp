@@ -5,7 +5,7 @@ export default function NoEncontrada() {
     <main className="flex min-h-dvh items-center justify-center px-4 py-10">
       <div className="w-full max-w-md">
         <p className="text-xs font-medium tabular-nums text-suave">Error 404</p>
-        <h1 className="mt-1 text-xl font-semibold text-texto">
+        <h1 className="mt-1 font-heading text-xl font-semibold text-texto">
           Esta página no existe
         </h1>
         <p className="mt-2 text-sm text-suave">

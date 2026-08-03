@@ -14,8 +14,8 @@ export function ProximaFase({
 }) {
   return (
     <div className="mx-auto max-w-3xl">
-      <h1 className="text-xl font-semibold text-texto">{titulo}</h1>
-      <div className="mt-4 rounded-base border border-borde bg-superficie p-5 shadow-tarjeta">
+      <h1 className="font-heading text-xl font-semibold text-texto">{titulo}</h1>
+      <div className="mt-4 rounded-card border border-borde bg-superficie p-5 shadow-tarjeta">
         <p className="text-sm text-texto">{descripcion}</p>
         <p className="mt-2 text-sm text-suave">
           Mientras tanto, el registro sigue en la hoja física.

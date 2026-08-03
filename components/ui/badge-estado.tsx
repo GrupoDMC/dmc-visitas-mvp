@@ -2,33 +2,30 @@ import { nombreEstado } from "@/lib/catalogos";
 import type { EstadoVisita } from "@/lib/db/tipos";
 
 /**
- * Badge de estado: punto de color + texto. Fondo neutro, nunca saturado.
- * El color acompaña, no informa por sí solo — quien no distingue los tonos
- * lee exactamente lo mismo.
- *
- * Nota: la dirección visual definió color para PROGRAMADA, EN_CURSO,
- * REALIZADA y PENDIENTE. REAGENDADA y CANCELADA existen en
- * cat_estado_visita y llevan un color provisorio (ver `app/globals.css`).
+ * Badge de estado: punto de color + fondo suave + texto. El color nunca va
+ * solo — quien no distingue los tonos lee exactamente lo mismo por el texto.
  *
  * El texto sale de `lib/catalogos.ts`, que es la única lista de estados de la
  * app: acá se decide cómo se pinta, no cómo se llama.
  */
-const PUNTOS: Record<EstadoVisita, string> = {
-  PROGRAMADA: "bg-programada",
-  EN_CURSO: "bg-encurso",
-  REALIZADA: "bg-realizada",
-  PENDIENTE: "bg-pendiente",
-  REAGENDADA: "bg-reagendada",
-  CANCELADA: "bg-cancelada",
+const ESTILOS: Record<EstadoVisita, { punto: string; fondo: string; texto: string }> = {
+  PROGRAMADA: { punto: "bg-programada", fondo: "bg-programada-fondo", texto: "text-programada-texto" },
+  EN_CURSO: { punto: "bg-encurso", fondo: "bg-encurso-fondo", texto: "text-encurso-texto" },
+  REALIZADA: { punto: "bg-realizada", fondo: "bg-realizada-fondo", texto: "text-realizada-texto" },
+  PENDIENTE: { punto: "bg-pendiente", fondo: "bg-pendiente-fondo", texto: "text-pendiente-texto" },
+  REAGENDADA: { punto: "bg-reagendada", fondo: "bg-reagendada-fondo", texto: "text-reagendada-texto" },
+  CANCELADA: { punto: "bg-cancelada", fondo: "bg-cancelada-fondo", texto: "text-cancelada-texto" },
 };
 
 export function BadgeEstado({ estado }: { estado: EstadoVisita }) {
   const texto = nombreEstado(estado);
-  const punto = PUNTOS[estado];
+  const estilo = ESTILOS[estado];
 
   return (
-    <span className="inline-flex items-center gap-1.5 rounded-base border border-borde bg-superficie px-2 py-0.5 text-xs font-medium text-texto">
-      <span className={`size-1.5 shrink-0 rounded-full ${punto}`} aria-hidden />
+    <span
+      className={`inline-flex items-center gap-1.5 rounded-base px-2 py-0.5 text-xs font-medium ${estilo.fondo} ${estilo.texto}`}
+    >
+      <span className={`size-1.5 shrink-0 rounded-full ${estilo.punto}`} aria-hidden />
       {texto}
     </span>
   );

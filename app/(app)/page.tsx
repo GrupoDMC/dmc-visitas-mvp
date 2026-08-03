@@ -8,7 +8,7 @@ export default async function PaginaInicio() {
 
   return (
     <div className="mx-auto max-w-3xl">
-      <h1 className="text-2xl font-semibold text-texto">
+      <h1 className="font-heading text-2xl font-semibold text-texto">
         Hola, {sesion.nombre}
       </h1>
       <p className="mt-1 text-sm text-suave">
@@ -18,7 +18,7 @@ export default async function PaginaInicio() {
           : "Vas a ver todas las visitas del equipo."}
       </p>
 
-      <div className="mt-6 rounded-base border border-borde bg-superficie shadow-tarjeta">
+      <div className="mt-6 rounded-card border border-borde bg-superficie shadow-tarjeta">
         <div className="border-b border-borde px-4 py-3">
           <h2 className="text-sm font-medium text-texto">Tu sesión</h2>
         </div>

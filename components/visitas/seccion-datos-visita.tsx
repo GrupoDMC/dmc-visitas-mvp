@@ -11,6 +11,7 @@ import type { EstadoVisita, TipoTrabajo } from "@/lib/db/tipos";
 import { Alerta } from "@/components/ui/alerta";
 import { BotonGuardar } from "@/components/ui/boton";
 import { Campo, Entrada, Selector } from "@/components/ui/campo";
+import { TituloSeccion } from "@/components/ui/titulo-seccion";
 import { CampoRutControlado } from "./campo-rut-controlado";
 import { FranjaBorrador } from "./franja-borrador";
 import { useCamposConBorrador, useLimpiarBorradorAlGuardar } from "./usar-borrador";
@@ -65,12 +66,15 @@ export function SeccionDatosVisita({
   return (
     <section
       aria-labelledby="seccion-datos"
-      className="rounded-base border border-borde bg-superficie p-4 shadow-tarjeta sm:p-5"
+      className="rounded-card border border-borde bg-superficie p-4 shadow-tarjeta sm:p-5"
     >
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 id="seccion-datos" className="text-sm font-medium text-texto">
-          Datos de la visita
-        </h2>
+        <TituloSeccion
+          numero={1}
+          id="seccion-datos"
+          titulo="Datos de la visita"
+          guardado={visita.tipo_trabajo !== null}
+        />
 
         {puedeIniciar ? (
           <form action={enviarInicio}>

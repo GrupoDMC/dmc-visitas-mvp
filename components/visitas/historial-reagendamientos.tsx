@@ -31,11 +31,11 @@ export function HistorialReagendamientos({
   return (
     <section
       aria-labelledby="historial-reagendamientos"
-      className="rounded-base border border-borde bg-superficie p-4 shadow-tarjeta sm:p-5"
+      className="rounded-card border border-borde bg-superficie p-4 shadow-tarjeta sm:p-5"
     >
-      <h2 id="historial-reagendamientos" className="text-sm font-medium text-texto">
+      <h2 id="historial-reagendamientos" className="font-heading text-sm font-semibold text-texto">
         Reagendamientos
-        <span className="ml-1.5 font-normal tabular-nums text-suave">
+        <span className="ml-1.5 font-sans font-normal tabular-nums text-suave">
           ({reagendamientos.length})
         </span>
       </h2>

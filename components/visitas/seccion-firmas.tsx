@@ -9,6 +9,7 @@ import type { FirmaRow, TipoFirma } from "@/lib/db/tipos";
 import { Alerta } from "@/components/ui/alerta";
 import { Boton } from "@/components/ui/boton";
 import { Campo, Entrada } from "@/components/ui/campo";
+import { TituloSeccion } from "@/components/ui/titulo-seccion";
 import { CampoRutControlado } from "./campo-rut-controlado";
 import { CanvasFirma, type ManejadorCanvasFirma } from "./canvas-firma";
 
@@ -89,7 +90,7 @@ function PanelFirma({
   const errorFirma = estado.errores[`firma_${tipo}`];
 
   return (
-    <div className="rounded-base border border-borde p-3.5">
+    <div className="rounded-base border border-borde p-4">
       <p className="text-sm font-medium text-texto">{etiqueta}</p>
 
       {!mostrarCanvas && firmaExistente ? (
@@ -208,11 +209,14 @@ export function SeccionFirmas({
   return (
     <section
       aria-labelledby="seccion-firmas"
-      className="rounded-base border border-borde bg-superficie p-4 shadow-tarjeta sm:p-5"
+      className="rounded-card border border-borde bg-superficie p-4 shadow-tarjeta sm:p-5"
     >
-      <h2 id="seccion-firmas" className="text-sm font-medium text-texto">
-        Firmas
-      </h2>
+      <TituloSeccion
+        numero={5}
+        id="seccion-firmas"
+        titulo="Firmas"
+        guardado={firmaTecnico !== null && firmaTienda !== null}
+      />
 
       <div className="mt-3 grid gap-4 sm:grid-cols-2">
         <PanelFirma

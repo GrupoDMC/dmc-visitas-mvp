@@ -33,7 +33,7 @@ export default async function PaginaExportar({
         descripcion="CSV crudo, con BOM UTF-8 y separador punto y coma, listo para Excel en Windows. Las fechas salen en ISO 8601, sin formatear."
       />
 
-      <form className="flex flex-col gap-5 rounded-base border border-borde bg-superficie p-4 shadow-tarjeta sm:p-5">
+      <form className="flex flex-col gap-5 rounded-card border border-borde bg-superficie p-4 shadow-tarjeta sm:p-5">
         <div>
           <p className="text-sm font-medium text-texto">Rango de fechas</p>
           <p className="mt-1 text-xs text-suave">

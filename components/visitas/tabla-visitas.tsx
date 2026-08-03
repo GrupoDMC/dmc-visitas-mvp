@@ -246,7 +246,7 @@ function BarraSeleccion({
   alLimpiar: () => void;
 }) {
   return (
-    <div className="sticky bottom-3 z-20 mt-3 flex flex-wrap items-center gap-3 rounded-base border border-borde bg-superficie px-3 py-2.5 shadow-drawer">
+    <div className="sticky bottom-3 z-20 mt-3 flex flex-wrap items-center gap-3 rounded-card border border-borde bg-superficie px-3 py-2.5 shadow-drawer">
       <p className="flex-1 text-sm text-texto">
         <span className="tabular-nums font-medium">{cantidad}</span>{" "}
         {cantidad === 1 ? "visita seleccionada" : "visitas seleccionadas"}
@@ -315,7 +315,7 @@ function DialogoAsignar({
       ref={dialogo}
       onClose={alCerrar}
       aria-labelledby="titulo-asignar"
-      className="m-auto w-[calc(100vw-1.5rem)] max-w-md rounded-base border border-borde bg-superficie p-0 shadow-drawer backdrop:bg-texto/30"
+      className="m-auto w-[calc(100vw-1.5rem)] max-w-md rounded-card border border-borde bg-superficie p-0 shadow-drawer backdrop:bg-texto/30"
     >
       <form action={enviar} className="flex flex-col gap-4 p-5">
         {ids.map((id) => (

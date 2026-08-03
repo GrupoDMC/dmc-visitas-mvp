@@ -183,10 +183,10 @@ export default async function PaginaVisita({ params }: Props) {
       <div className="grid gap-4 lg:grid-cols-[1fr_20rem] lg:items-start">
         <div className="flex flex-col gap-4 lg:col-start-1 lg:row-start-1">
           <section aria-labelledby="ficha-sucursal">
-            <h2 id="ficha-sucursal" className="mb-2 text-sm font-medium text-texto">
+            <h2 id="ficha-sucursal" className="mb-2 font-heading text-sm font-semibold text-texto">
               Dónde
             </h2>
-            <div className="rounded-base border border-borde bg-superficie shadow-tarjeta">
+            <div className="rounded-card border border-borde bg-superficie shadow-tarjeta">
               <dl className="divide-y divide-borde">
                 <Dato etiqueta="Cliente">
                   {visita.cliente ? (
@@ -228,10 +228,10 @@ export default async function PaginaVisita({ params }: Props) {
           </section>
 
           <section aria-labelledby="contacto-visita">
-            <h2 id="contacto-visita" className="mb-2 text-sm font-medium text-texto">
+            <h2 id="contacto-visita" className="mb-2 font-heading text-sm font-semibold text-texto">
               Contacto de esta visita
             </h2>
-            <div className="rounded-base border border-borde bg-superficie shadow-tarjeta">
+            <div className="rounded-card border border-borde bg-superficie shadow-tarjeta">
               <dl className="divide-y divide-borde">
                 <Dato etiqueta="Nombre">
                   {visita.contacto_nombre ?? <SinDato />}
@@ -275,11 +275,11 @@ export default async function PaginaVisita({ params }: Props) {
             <section aria-labelledby="descripcion-trabajo">
               <h2
                 id="descripcion-trabajo"
-                className="mb-2 text-sm font-medium text-texto"
+                className="mb-2 font-heading text-sm font-semibold text-texto"
               >
                 Qué hay que hacer
               </h2>
-              <div className="rounded-base border border-borde bg-superficie p-4 shadow-tarjeta">
+              <div className="rounded-card border border-borde bg-superficie p-4 shadow-tarjeta">
                 <p className="whitespace-pre-line text-sm text-texto">
                   {visita.descripcion_trabajo}
                 </p>

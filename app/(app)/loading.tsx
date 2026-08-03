@@ -9,7 +9,7 @@ export default function Cargando() {
       <div className="h-7 w-56 rounded-base bg-borde" />
       <div className="mt-2 h-4 w-72 rounded-base bg-borde/70" />
 
-      <div className="mt-6 rounded-base border border-borde bg-superficie shadow-tarjeta">
+      <div className="mt-6 rounded-card border border-borde bg-superficie shadow-tarjeta">
         <div className="border-b border-borde px-4 py-3">
           <div className="h-4 w-32 rounded-base bg-borde" />
         </div>

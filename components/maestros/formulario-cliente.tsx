@@ -53,7 +53,7 @@ export function FormularioCliente({
 
       {estado.error ? <Alerta>{estado.error}</Alerta> : null}
 
-      <div className="rounded-base border border-borde bg-superficie p-4 shadow-tarjeta sm:p-5">
+      <div className="rounded-card border border-borde bg-superficie p-4 shadow-tarjeta sm:p-5">
         <div className="flex flex-col gap-4">
           <CampoRut
             valorInicial={cliente?.rut ?? ""}

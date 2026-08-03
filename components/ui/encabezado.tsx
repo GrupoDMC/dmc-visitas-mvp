@@ -42,7 +42,7 @@ export function Encabezado({
 
       <div className="mt-1 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
-          <h1 className="text-xl font-semibold text-texto">{titulo}</h1>
+          <h1 className="font-heading text-xl font-semibold text-texto">{titulo}</h1>
           {descripcion ? (
             <p className="mt-1 text-sm text-suave">{descripcion}</p>
           ) : null}

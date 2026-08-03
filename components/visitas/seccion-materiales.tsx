@@ -12,6 +12,7 @@ import type { MaterialRow } from "@/lib/db/tipos";
 import { Alerta } from "@/components/ui/alerta";
 import { Boton, BotonGuardar } from "@/components/ui/boton";
 import { Campo, Entrada, Selector } from "@/components/ui/campo";
+import { TituloSeccion } from "@/components/ui/titulo-seccion";
 import { FranjaBorrador } from "./franja-borrador";
 import { useCamposConBorrador, useLimpiarBorradorAlGuardar } from "./usar-borrador";
 
@@ -56,7 +57,7 @@ function FilaMaterial({
   useLimpiarBorradorAlGuardar(enviando, estado.error, limpiarBorrador);
 
   return (
-    <li className="rounded-base border border-borde bg-superficie p-3.5 shadow-tarjeta">
+    <li className="rounded-card border border-borde bg-superficie p-4 shadow-tarjeta">
       {borrador && !soloLectura ? (
         <div className="mb-3">
           <FranjaBorrador
@@ -190,7 +191,7 @@ function NuevoMaterial({ visitaId }: { visitaId: number }) {
   useLimpiarBorradorAlGuardar(enviando, estado.error, reiniciar);
 
   return (
-    <div className="rounded-base border border-dashed border-borde bg-superficie p-3.5">
+    <div className="rounded-card border border-dashed border-borde bg-superficie p-4">
       {borrador ? (
         <div className="mb-3">
           <FranjaBorrador
@@ -295,16 +296,21 @@ export function SeccionMateriales({
   return (
     <section
       aria-labelledby="seccion-materiales"
-      className="rounded-base border border-borde bg-superficie p-4 shadow-tarjeta sm:p-5"
+      className="rounded-card border border-borde bg-superficie p-4 shadow-tarjeta sm:p-5"
     >
-      <h2 id="seccion-materiales" className="text-sm font-medium text-texto">
-        Materiales
+      <div className="flex flex-wrap items-center gap-2">
+        <TituloSeccion
+          numero={4}
+          id="seccion-materiales"
+          titulo="Materiales"
+          guardado={materiales.length > 0}
+        />
         {materiales.length > 0 ? (
-          <span className="ml-1.5 font-normal tabular-nums text-suave">
+          <span className="font-normal tabular-nums text-xs text-suave">
             ({materiales.length})
           </span>
         ) : null}
-      </h2>
+      </div>
 
       {materiales.length === 0 ? (
         <p className="mt-2 text-sm text-suave">

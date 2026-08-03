@@ -61,7 +61,7 @@ export function DialogoRestablecerClave({
       <dialog
         ref={dialogo}
         aria-labelledby="titulo-restablecer"
-        className="m-auto w-[calc(100vw-1.5rem)] max-w-md rounded-base border border-borde bg-superficie p-0 shadow-drawer backdrop:bg-texto/30"
+        className="m-auto w-[calc(100vw-1.5rem)] max-w-md rounded-card border border-borde bg-superficie p-0 shadow-drawer backdrop:bg-texto/30"
       >
         {fase === "mostrando" && estado.claveTemporal ? (
           <div className="flex flex-col gap-4 p-5">

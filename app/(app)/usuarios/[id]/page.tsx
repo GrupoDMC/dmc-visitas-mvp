@@ -62,7 +62,7 @@ export default async function PaginaUsuario({ params }: Props) {
         }
       />
 
-      <div className="rounded-base border border-borde bg-superficie shadow-tarjeta">
+      <div className="rounded-card border border-borde bg-superficie shadow-tarjeta">
         <dl className="divide-y divide-borde">
           <Dato etiqueta="Correo">{usuario.correo}</Dato>
           <Dato etiqueta="Rol">{nombreRol(usuario.rol)}</Dato>

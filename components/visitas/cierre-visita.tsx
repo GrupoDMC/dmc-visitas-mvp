@@ -11,6 +11,7 @@ import type { EstadoVisita } from "@/lib/db/tipos";
 import { Alerta } from "@/components/ui/alerta";
 import { Boton, BotonGuardar } from "@/components/ui/boton";
 import { AreaTexto, Campo } from "@/components/ui/campo";
+import { TituloSeccion } from "@/components/ui/titulo-seccion";
 import { DialogoReagendar } from "./dialogo-reagendar";
 
 /**
@@ -39,7 +40,7 @@ function DialogoPendiente({ visitaId }: { visitaId: number }) {
       <dialog
         ref={dialogo}
         aria-labelledby="titulo-pendiente"
-        className="m-auto w-[calc(100vw-1.5rem)] max-w-md rounded-base border border-borde bg-superficie p-0 shadow-drawer backdrop:bg-texto/30"
+        className="m-auto w-[calc(100vw-1.5rem)] max-w-md rounded-card border border-borde bg-superficie p-0 shadow-drawer backdrop:bg-texto/30"
       >
         <form action={enviar} className="flex flex-col gap-4 p-5">
           <input type="hidden" name="visita_id" value={visitaId} />
@@ -109,7 +110,7 @@ function DialogoReabrir({ visitaId }: { visitaId: number }) {
       <dialog
         ref={dialogo}
         aria-labelledby="titulo-reabrir"
-        className="m-auto w-[calc(100vw-1.5rem)] max-w-md rounded-base border border-borde bg-superficie p-0 shadow-drawer backdrop:bg-texto/30"
+        className="m-auto w-[calc(100vw-1.5rem)] max-w-md rounded-card border border-borde bg-superficie p-0 shadow-drawer backdrop:bg-texto/30"
       >
         <form action={enviar} className="flex flex-col gap-4 p-5">
           <input type="hidden" name="visita_id" value={visitaId} />
@@ -174,11 +175,14 @@ export function CierreVisita({
   return (
     <section
       aria-labelledby="cierre-visita"
-      className="rounded-base border border-borde bg-superficie p-4 shadow-tarjeta sm:p-5"
+      className="rounded-card border border-borde bg-superficie p-4 shadow-tarjeta sm:p-5"
     >
-      <h2 id="cierre-visita" className="text-sm font-medium text-texto">
-        Cierre de la visita
-      </h2>
+      <TituloSeccion
+        numero={6}
+        id="cierre-visita"
+        titulo="Cierre de la visita"
+        guardado={estado !== "PROGRAMADA" && estado !== "EN_CURSO"}
+      />
 
       {puedeCerrar ? (
         <>

@@ -60,7 +60,7 @@ export function Toast() {
       className="pointer-events-none fixed inset-x-0 bottom-0 z-50 flex justify-center p-3 sm:justify-end sm:p-4"
     >
       {mensaje ? (
-        <div className="pointer-events-auto flex w-full max-w-sm items-start gap-3 rounded-base border border-borde bg-superficie px-3 py-2.5 shadow-drawer">
+        <div className="pointer-events-auto flex w-full max-w-sm items-start gap-3 rounded-card border border-borde bg-superficie px-3 py-2.5 shadow-drawer">
           <svg
             width="18"
             height="18"

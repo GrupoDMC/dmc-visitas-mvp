@@ -124,7 +124,7 @@ export function FormularioVisita({
     <form action={enviar} noValidate className="flex flex-col gap-5">
       {estado.error ? <Alerta>{estado.error}</Alerta> : null}
 
-      <section className="rounded-base border border-borde bg-superficie p-4 shadow-tarjeta sm:p-5">
+      <section className="rounded-card border border-borde bg-superficie p-4 shadow-tarjeta sm:p-5">
         <h2 className="text-sm font-medium text-texto">Dónde y qué</h2>
 
         <div className="mt-4 flex flex-col gap-4">
@@ -262,7 +262,7 @@ export function FormularioVisita({
       </section>
 
       {esAgenda ? (
-        <section className="rounded-base border border-borde bg-superficie p-4 shadow-tarjeta sm:p-5">
+        <section className="rounded-card border border-borde bg-superficie p-4 shadow-tarjeta sm:p-5">
           <h2 className="text-sm font-medium text-texto">Cuándo y quién</h2>
 
           <div className="mt-4 grid gap-4 sm:grid-cols-2">
@@ -338,7 +338,7 @@ export function FormularioVisita({
         </section>
       ) : null}
 
-      <section className="rounded-base border border-borde bg-superficie p-4 shadow-tarjeta sm:p-5">
+      <section className="rounded-card border border-borde bg-superficie p-4 shadow-tarjeta sm:p-5">
         <h2 className="text-sm font-medium text-texto">Contacto en la sucursal</h2>
         <p className="mt-1 text-xs text-suave">
           Quién recibe al técnico en esta visita. Queda guardado en la visita y

@@ -6,44 +6,59 @@
    --------------------------------------------------------------------- */
 @theme {
   /* Superficies y texto */
-  --color-fondo: #f7f8fa;
+  --color-fondo: #f8f7fc;
   --color-superficie: #ffffff;
-  --color-borde: #e2e5ea;
-  --color-texto: #1a1d21;
-  --color-suave: #6b7280;
-  --color-acento: #1f5fa8;
-  --color-acento-hover: #1a5091;
-  --color-acento-suave: #eef4fb;
+  --color-borde: #e4dff3;
+  --color-texto: #2c2a3d;
+  --color-suave: #756f8c;
+  --color-acento: #8b5cf6;
+  --color-acento-hover: #7c3aed;
+  --color-acento-suave: #ede9fe;
 
   /* Estados de visita (cat_estado_visita).
-     El color nunca va solo: siempre acompañado del texto del estado. */
-  --color-programada: #6b7280;
-  --color-encurso: #b45309;
-  --color-realizada: #15803d;
-  --color-pendiente: #b91c1c;
-  /* REAGENDADA y CANCELADA no tenían color en la dirección visual original.
-     Provisorios, pero distinguibles: en el listado de coordinación se ven los
-     seis estados en la misma pantalla, y con REAGENDADA en el mismo gris que
-     PROGRAMADA las dos filas se leían idénticas de reojo. */
-  --color-reagendada: #6d28d9;
-  --color-cancelada: #9ca3af;
+     El color nunca va solo: punto + fondo suave + texto, siempre los tres. */
+  --color-programada: #94a3b8;
+  --color-programada-fondo: #f1f5f9;
+  --color-programada-texto: #475569;
+
+  --color-encurso: #f59e0b;
+  --color-encurso-fondo: #fef3e2;
+  --color-encurso-texto: #92400e;
+
+  --color-realizada: #10b981;
+  --color-realizada-fondo: #ecfdf5;
+  --color-realizada-texto: #065f46;
+
+  --color-pendiente: #f43f5e;
+  --color-pendiente-fondo: #fff1f2;
+  --color-pendiente-texto: #9f1239;
+
+  --color-reagendada: #8b5cf6;
+  --color-reagendada-fondo: #f5f3ff;
+  --color-reagendada-texto: #5b21b6;
+
+  --color-cancelada: #cbd5e1;
+  --color-cancelada-fondo: #f8fafc;
+  --color-cancelada-texto: #64748b;
 
   /* Error de formulario */
   --color-error: #b91c1c;
   --color-error-fondo: #fef2f2;
 
-  /* Radio uniforme de 6px */
-  --radius-base: 6px;
-  --radius-sm: 6px;
-  --radius-md: 6px;
-  --radius-lg: 6px;
-  --radius-xl: 6px;
+  /* Dos radios: controles (input/botón/chip/nav) vs. tarjetas/modales */
+  --radius-base: 8px;
+  --radius-sm: 8px;
+  --radius-md: 8px;
+  --radius-card: 12px;
+  --radius-lg: 12px;
+  --radius-xl: 12px;
 
-  /* Una sola sombra, sutil: tarjetas y drawer */
-  --shadow-tarjeta: 0 1px 2px 0 rgb(16 24 40 / 0.04), 0 1px 3px 0 rgb(16 24 40 / 0.06);
-  --shadow-drawer: 0 8px 24px 0 rgb(16 24 40 / 0.12);
+  /* Una sola sombra, sutil, con tinte violeta: tarjetas y drawer */
+  --shadow-tarjeta: 0 1px 3px rgba(139, 92, 246, 0.08), 0 1px 2px rgba(139, 92, 246, 0.06);
+  --shadow-drawer: 0 12px 32px rgba(139, 92, 246, 0.16);
 
   --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-heading: var(--font-sora), var(--font-sans);
 
   /* Escala tipográfica corta: 12 / 14 / 16 / 20 / 24 */
   --text-xs: 0.75rem;

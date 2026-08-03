@@ -28,9 +28,9 @@ export function PanelHistorial({
   return (
     <details
       open
-      className="group rounded-base border border-borde bg-superficie shadow-tarjeta"
+      className="group rounded-card border border-borde bg-superficie shadow-tarjeta"
     >
-      <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-2 px-4 py-3 text-sm font-medium text-texto">
+      <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-2 px-4 py-3 font-heading text-sm font-semibold text-texto">
         Historial de la sucursal
         <svg
           width="16"

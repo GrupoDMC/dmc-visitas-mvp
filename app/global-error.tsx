@@ -18,7 +18,7 @@ export default function ErrorGlobal({
       <body className="min-h-dvh bg-fondo font-sans text-texto antialiased">
         <main className="flex min-h-dvh items-center justify-center px-4 py-10">
           <div className="w-full max-w-md">
-            <h1 className="text-xl font-semibold">
+            <h1 className="font-heading text-xl font-semibold">
               La aplicación no pudo iniciarse
             </h1>
             <p className="mt-2 text-sm text-suave">

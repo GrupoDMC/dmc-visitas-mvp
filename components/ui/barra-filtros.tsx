@@ -37,7 +37,7 @@ export function BarraFiltros({
       // inactivos, y el select sigue diciendo "Solo activos".
       // Cambiar el key lo remonta y los valores vuelven a tomarse de la URL.
       key={`${busqueda}|${estado}`}
-      className="mb-4 flex flex-col gap-2 rounded-base border border-borde bg-superficie p-3 shadow-tarjeta sm:flex-row sm:items-end"
+      className="mb-4 flex flex-col gap-2 rounded-card border border-borde bg-superficie p-3 shadow-tarjeta sm:flex-row sm:items-end"
     >
       <div className="flex-1">
         <label

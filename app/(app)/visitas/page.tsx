@@ -15,6 +15,7 @@ import { Encabezado, EnlaceBoton } from "@/components/ui/encabezado";
 import { EstadoVacio } from "@/components/ui/estado-vacio";
 import { Paginacion } from "@/components/ui/paginacion";
 import { BarraFiltrosVisitas } from "@/components/visitas/barra-filtros-visitas";
+import { ChipsFiltrosActivos } from "@/components/visitas/chips-filtros-activos";
 import { TablaVisitas } from "@/components/visitas/tabla-visitas";
 import { TarjetasTecnico } from "@/components/visitas/tarjetas-tecnico";
 
@@ -82,6 +83,15 @@ async function VistaCoordinacion({ searchParams }: { searchParams: Params }) {
         descripcion="Todo lo agendado. Las filas marcadas al costado todavía no tienen técnico."
         acciones={<EnlaceBoton href="/visitas/nueva">Nueva visita</EnlaceBoton>}
       />
+
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+        <p className="text-sm text-suave">
+          <span className="tabular-nums font-medium text-texto">{total}</span>{" "}
+          {total === 1 ? "visita" : "visitas"}
+          {filtrando ? " con estos filtros" : " en total"}
+        </p>
+        <ChipsFiltrosActivos filtros={filtros} clientes={clientes} tecnicos={tecnicos} />
+      </div>
 
       <BarraFiltrosVisitas
         filtros={filtros}

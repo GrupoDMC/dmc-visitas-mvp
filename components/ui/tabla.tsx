@@ -15,7 +15,7 @@ export function Tabla({
   children: ReactNode;
 }) {
   return (
-    <div className="overflow-hidden rounded-base border border-borde bg-superficie shadow-tarjeta">
+    <div className="overflow-hidden rounded-card border border-borde bg-superficie shadow-tarjeta">
       <table className="w-full border-collapse text-sm">
         <thead className="border-b border-borde bg-fondo">
           <tr>{cabecera}</tr>

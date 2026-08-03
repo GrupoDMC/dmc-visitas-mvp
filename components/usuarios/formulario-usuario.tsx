@@ -30,7 +30,7 @@ export function FormularioUsuario({ tecnicos }: { tecnicos: Tecnico[] }) {
 
   if (estado.creado) {
     return (
-      <div className="flex flex-col gap-4 rounded-base border border-borde bg-superficie p-4 shadow-tarjeta sm:p-5">
+      <div className="flex flex-col gap-4 rounded-card border border-borde bg-superficie p-4 shadow-tarjeta sm:p-5">
         <Alerta tono="aviso" titulo="Usuario creado. Contraseña temporal:">
           <p className="mt-2 select-all rounded-base border border-borde bg-superficie px-3 py-2.5 text-center font-mono text-lg tracking-wider text-texto">
             {estado.creado.claveTemporal}
@@ -56,7 +56,7 @@ export function FormularioUsuario({ tecnicos }: { tecnicos: Tecnico[] }) {
     <form action={enviar} noValidate className="flex flex-col gap-5">
       {estado.error ? <Alerta>{estado.error}</Alerta> : null}
 
-      <div className="rounded-base border border-borde bg-superficie p-4 shadow-tarjeta sm:p-5">
+      <div className="rounded-card border border-borde bg-superficie p-4 shadow-tarjeta sm:p-5">
         <div className="flex flex-col gap-4">
           <Campo htmlFor="nombre" etiqueta="Nombre" error={estado.errores.nombre}>
             <Entrada

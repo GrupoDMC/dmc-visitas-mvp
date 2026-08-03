@@ -17,7 +17,7 @@ export function EstadoVacio({
   children?: ReactNode;
 }) {
   return (
-    <div className="rounded-base border border-borde bg-superficie px-5 py-10 text-center shadow-tarjeta">
+    <div className="rounded-card border border-borde bg-superficie px-5 py-10 text-center shadow-tarjeta">
       <p className="text-sm font-medium text-texto">{titulo}</p>
       <p className="mx-auto mt-1 max-w-sm text-sm text-suave">{descripcion}</p>
       {accion ? (

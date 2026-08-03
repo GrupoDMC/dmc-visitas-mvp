@@ -11,6 +11,7 @@ import type { ProblemaRow } from "@/lib/db/tipos";
 import { Alerta } from "@/components/ui/alerta";
 import { BotonGuardar } from "@/components/ui/boton";
 import { AreaTexto, Campo, Selector } from "@/components/ui/campo";
+import { TituloSeccion } from "@/components/ui/titulo-seccion";
 import { FranjaBorrador } from "./franja-borrador";
 import { useCamposConBorrador, useLimpiarBorradorAlGuardar } from "./usar-borrador";
 
@@ -37,7 +38,7 @@ function FilaProblema({
   useLimpiarBorradorAlGuardar(enviando, estado.error, limpiarBorrador);
 
   return (
-    <li className="rounded-base border border-borde bg-superficie p-3.5 shadow-tarjeta">
+    <li className="rounded-card border border-borde bg-superficie p-4 shadow-tarjeta">
       {borrador && !soloLectura ? (
         <div className="mb-3">
           <FranjaBorrador
@@ -127,7 +128,7 @@ function NuevoProblema({ visitaId }: { visitaId: number }) {
   useLimpiarBorradorAlGuardar(enviando, estado.error, reiniciar);
 
   return (
-    <div className="rounded-base border border-dashed border-borde bg-superficie p-3.5">
+    <div className="rounded-card border border-dashed border-borde bg-superficie p-4">
       {borrador ? (
         <div className="mb-3">
           <FranjaBorrador
@@ -196,16 +197,21 @@ export function SeccionProblemas({
   return (
     <section
       aria-labelledby="seccion-problemas"
-      className="rounded-base border border-borde bg-superficie p-4 shadow-tarjeta sm:p-5"
+      className="rounded-card border border-borde bg-superficie p-4 shadow-tarjeta sm:p-5"
     >
-      <h2 id="seccion-problemas" className="text-sm font-medium text-texto">
-        Problemas detectados
+      <div className="flex flex-wrap items-center gap-2">
+        <TituloSeccion
+          numero={3}
+          id="seccion-problemas"
+          titulo="Problemas detectados"
+          guardado={problemas.length > 0}
+        />
         {problemas.length > 0 ? (
-          <span className="ml-1.5 font-normal tabular-nums text-suave">
+          <span className="font-normal tabular-nums text-xs text-suave">
             ({problemas.length})
           </span>
         ) : null}
-      </h2>
+      </div>
 
       {problemas.length === 0 ? (
         <p className="mt-2 text-sm text-suave">

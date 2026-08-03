@@ -40,7 +40,7 @@ export function BarraFiltrosVisitas({
     <Form
       action="/visitas"
       key={Object.values(filtros).join("|")}
-      className="mb-4 rounded-base border border-borde bg-superficie p-3 shadow-tarjeta"
+      className="mb-4 rounded-card border border-borde bg-superficie p-3 shadow-tarjeta"
     >
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <div className="sm:col-span-2">
