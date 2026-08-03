@@ -297,6 +297,7 @@ export type VisitaDetalle = VisitaRow & {
   } | null;
   tecnico: {
     id: number;
+    rut: string;
     nombres: string;
     apellidos: string;
     telefono: string | null;
@@ -305,11 +306,14 @@ export type VisitaDetalle = VisitaRow & {
 
 const CAMPOS_DETALLE =
   "id, folio, cliente_id, sucursal_id, tecnico_id, estado, tipo_trabajo, " +
-  "fecha_programada, hora_programada, contacto_nombre, contacto_email, " +
-  "contacto_telefono, descripcion_trabajo, creado_en, " +
+  "fecha_programada, hora_programada, fecha_inicio, fecha_termino, " +
+  "contacto_nombre, contacto_email, contacto_telefono, " +
+  "responsable_tienda_nombre, responsable_tienda_rut, " +
+  "descripcion_trabajo, trabajo_realizado, observaciones, motivo_pendiente, " +
+  "requiere_seguimiento, creado_en, " +
   "cliente ( id, rut, razon_social ), " +
   "sucursal ( id, nombre, codigo_interno, direccion, comuna, region, telefono ), " +
-  "tecnico ( id, nombres, apellidos, telefono )";
+  "tecnico ( id, rut, nombres, apellidos, telefono )";
 
 export async function obtenerVisita(id: number): Promise<VisitaDetalle | null> {
   const { data, error } = await supabaseAdmin()
@@ -392,4 +396,119 @@ export async function asignarTecnico(
   }
 
   return (data ?? []).length;
+}
+
+// ---------------------------------------------------------------------------
+// FORMULARIO DE TERRENO (fase 4)
+// ---------------------------------------------------------------------------
+
+/** Sección 1 · Datos de la visita. */
+export type DatosVisitaTerreno = {
+  tipo_trabajo: TipoTrabajo;
+  contacto_nombre: string | null;
+  contacto_email: string | null;
+  contacto_telefono: string | null;
+  responsable_tienda_nombre: string | null;
+  responsable_tienda_rut: string | null;
+};
+
+export async function actualizarDatosVisita(
+  id: number,
+  datos: DatosVisitaTerreno,
+): Promise<void> {
+  const { error } = await supabaseAdmin().from("visita").update(datos).eq("id", id);
+
+  if (error) {
+    throw new Error(`No se pudieron guardar los datos de la visita: ${error.message}`);
+  }
+}
+
+/**
+ * "Iniciar visita": el botón de la sección 1. Pone la visita EN_CURSO y deja
+ * la marca de cuándo arrancó. No pisa `fecha_inicio` si ya estaba puesta —
+ * iniciar dos veces no reescribe la hora real de llegada.
+ */
+export async function iniciarVisita(id: number): Promise<void> {
+  const { data: actual, error: errorLectura } = await supabaseAdmin()
+    .from("visita")
+    .select("fecha_inicio")
+    .eq("id", id)
+    .maybeSingle<{ fecha_inicio: string | null }>();
+
+  if (errorLectura) {
+    throw new Error(`No se pudo leer la visita: ${errorLectura.message}`);
+  }
+
+  const { error } = await supabaseAdmin()
+    .from("visita")
+    .update({
+      estado: "EN_CURSO",
+      fecha_inicio: actual?.fecha_inicio ?? new Date().toISOString(),
+    })
+    .eq("id", id);
+
+  if (error) {
+    throw new Error(`No se pudo iniciar la visita: ${error.message}`);
+  }
+}
+
+/** Sección 2 · Trabajo realizado. */
+export type DatosTrabajoRealizado = {
+  trabajo_realizado: string | null;
+  observaciones: string | null;
+  requiere_seguimiento: boolean;
+};
+
+export async function actualizarTrabajoRealizado(
+  id: number,
+  datos: DatosTrabajoRealizado,
+): Promise<void> {
+  const { error } = await supabaseAdmin().from("visita").update(datos).eq("id", id);
+
+  if (error) {
+    throw new Error(`No se pudo guardar el trabajo realizado: ${error.message}`);
+  }
+}
+
+/** Cierre: REALIZADA + fecha_termino = now(). Las validaciones van en la acción. */
+export async function cerrarVisita(id: number): Promise<void> {
+  const { error } = await supabaseAdmin()
+    .from("visita")
+    .update({ estado: "REALIZADA", fecha_termino: new Date().toISOString() })
+    .eq("id", id);
+
+  if (error) {
+    throw new Error(`No se pudo cerrar la visita: ${error.message}`);
+  }
+}
+
+/** Pendiente: sin exigir firma, con motivo obligatorio. */
+export async function marcarVisitaPendiente(
+  id: number,
+  motivo: string,
+): Promise<void> {
+  const { error } = await supabaseAdmin()
+    .from("visita")
+    .update({ estado: "PENDIENTE", motivo_pendiente: motivo })
+    .eq("id", id);
+
+  if (error) {
+    throw new Error(`No se pudo marcar la visita como pendiente: ${error.message}`);
+  }
+}
+
+/**
+ * Reabrir una visita REALIZADA. Solo COORDINADOR/ADMIN, con confirmación en
+ * la pantalla. Vuelve a EN_CURSO y borra `fecha_termino`: si se vuelve a
+ * cerrar, la fecha de término tiene que ser la de ese cierre, no la anterior.
+ */
+export async function reabrirVisita(id: number): Promise<void> {
+  const { error } = await supabaseAdmin()
+    .from("visita")
+    .update({ estado: "EN_CURSO", fecha_termino: null })
+    .eq("id", id);
+
+  if (error) {
+    throw new Error(`No se pudo reabrir la visita: ${error.message}`);
+  }
 }

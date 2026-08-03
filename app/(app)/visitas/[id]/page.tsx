@@ -2,7 +2,7 @@ import Link from "next/link";
 import { cache } from "react";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
-import { esTecnico, requerirSesion } from "@/lib/auth";
+import { puedeEditarVisita, puedeVerTodas, requerirSesion, type Sesion } from "@/lib/auth";
 import { nombreTipoTrabajo } from "@/lib/catalogos";
 import { fechaLarga, horaCorta } from "@/lib/fechas";
 import { formatearRut } from "@/lib/rut";
@@ -11,9 +11,19 @@ import {
   ultimasVisitasDeSucursal,
   type VisitaDetalle,
 } from "@/lib/db/visitas";
+import { listarProblemasDeVisita } from "@/lib/db/problemas";
+import { listarMaterialesDeVisita } from "@/lib/db/materiales";
+import { listarFirmasDeVisita } from "@/lib/db/firmas";
+import { nombreTecnico } from "@/lib/db/tecnicos";
 import { BadgeEstado } from "@/components/ui/badge-estado";
 import { SinDato } from "@/components/ui/tabla";
 import { PanelHistorial } from "@/components/visitas/panel-historial";
+import { SeccionDatosVisita } from "@/components/visitas/seccion-datos-visita";
+import { SeccionTrabajoRealizado } from "@/components/visitas/seccion-trabajo-realizado";
+import { SeccionProblemas } from "@/components/visitas/seccion-problemas";
+import { SeccionMateriales } from "@/components/visitas/seccion-materiales";
+import { SeccionFirmas } from "@/components/visitas/seccion-firmas";
+import { CierreVisita } from "@/components/visitas/cierre-visita";
 
 type Props = { params: Promise<{ id: string }> };
 
@@ -34,13 +44,15 @@ const leerVisita = cache(async (id: number) => obtenerVisita(id));
  * El chequeo corre en el servidor, después de leer la visita. No hay forma de
  * saltearlo desde el navegador.
  */
-async function leerConPermiso(id: string): Promise<VisitaDetalle> {
-  const visita = await leerSiPuede(id);
-  if (!visita) notFound();
-  return visita;
+async function leerConPermiso(id: string): Promise<{ sesion: Sesion; visita: VisitaDetalle }> {
+  const resultado = await leerSiPuede(id);
+  if (!resultado) notFound();
+  return resultado;
 }
 
-async function leerSiPuede(id: string): Promise<VisitaDetalle | null> {
+async function leerSiPuede(
+  id: string,
+): Promise<{ sesion: Sesion; visita: VisitaDetalle } | null> {
   const numero = Number(id);
   if (!Number.isInteger(numero) || numero < 1) return null;
 
@@ -50,16 +62,9 @@ async function leerSiPuede(id: string): Promise<VisitaDetalle | null> {
   ]);
 
   if (!visita) return null;
+  if (!puedeEditarVisita(sesion, visita.tecnico_id)) return null;
 
-  if (esTecnico(sesion)) {
-    // Un perfil TECNICO sin técnico vinculado no puede "ser dueño" de nada: sin
-    // este resguardo, `null !== null` daría falso y le abriría todas las
-    // visitas todavía sin asignar.
-    if (sesion.tecnicoId === null) return null;
-    if (visita.tecnico_id !== sesion.tecnicoId) return null;
-  }
-
-  return visita;
+  return { sesion, visita };
 }
 
 /**
@@ -69,8 +74,8 @@ async function leerSiPuede(id: string): Promise<VisitaDetalle | null> {
  */
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { id } = await params;
-  const visita = await leerSiPuede(id);
-  return { title: visita ? visita.folio : "Visita" };
+  const resultado = await leerSiPuede(id);
+  return { title: resultado ? resultado.visita.folio : "Visita" };
 }
 
 function Dato({
@@ -102,9 +107,21 @@ function Telefono({ numero }: { numero: string | null }) {
 
 export default async function PaginaVisita({ params }: Props) {
   const { id } = await params;
-  const visita = await leerConPermiso(id);
+  const { sesion, visita } = await leerConPermiso(id);
 
-  const historial = await ultimasVisitasDeSucursal(visita.sucursal_id, visita.id);
+  const [historial, problemas, materiales, firmas] = await Promise.all([
+    ultimasVisitasDeSucursal(visita.sucursal_id, visita.id),
+    listarProblemasDeVisita(visita.id),
+    listarMaterialesDeVisita(visita.id),
+    listarFirmasDeVisita(visita.id),
+  ]);
+
+  // Solo lectura para TODOS mientras está REALIZADA, no solo para el
+  // técnico: reabrirla (COORDINADOR/ADMIN, con confirmación) es el único
+  // camino de vuelta a poder editar, así el servidor y la pantalla coinciden
+  // sin excepciones por rol.
+  const soloLectura = visita.estado === "REALIZADA";
+  const puedeGestionar = puedeVerTodas(sesion);
 
   const fecha = fechaLarga(visita.fecha_programada);
   const hora = horaCorta(visita.hora_programada);
@@ -267,21 +284,29 @@ export default async function PaginaVisita({ params }: Props) {
             </section>
           ) : null}
 
-          {/* El formulario de terreno —trabajo realizado, problemas, materiales,
-              firmas y cierre— es la fase 4 y va acá abajo. */}
-          <section
-            aria-labelledby="formulario-terreno"
-            className="rounded-base border border-dashed border-borde bg-superficie p-4 text-sm"
-          >
-            <h2 id="formulario-terreno" className="font-medium text-texto">
-              Registro de terreno
-            </h2>
-            <p className="mt-1 text-suave">
-              Acá se van a registrar el trabajo realizado, los problemas
-              detectados, los materiales y las firmas. Se habilita en la próxima
-              entrega; mientras tanto sigue en la hoja física.
-            </p>
-          </section>
+          <SeccionDatosVisita visita={visita} soloLectura={soloLectura} />
+          <SeccionTrabajoRealizado visita={visita} soloLectura={soloLectura} />
+          <SeccionProblemas
+            visitaId={visita.id}
+            problemas={problemas}
+            soloLectura={soloLectura}
+          />
+          <SeccionMateriales
+            visitaId={visita.id}
+            materiales={materiales}
+            soloLectura={soloLectura}
+          />
+          <SeccionFirmas
+            visitaId={visita.id}
+            firmas={firmas}
+            soloLectura={soloLectura}
+            nombreTecnicoAsignado={visita.tecnico ? nombreTecnico(visita.tecnico) : null}
+          />
+          <CierreVisita
+            visitaId={visita.id}
+            estado={visita.estado}
+            puedeGestionar={puedeGestionar}
+          />
         </div>
       </div>
     </div>

@@ -29,6 +29,9 @@ export type EstadoProblema = "ABIERTO" | "EN_GESTION" | "RESUELTO";
 /** cat_direccion_material */
 export type DireccionMaterial = "INSTALADO" | "RETIRADO";
 
+/** tipo de firma (firma.tipo) */
+export type TipoFirma = "TECNICO" | "TIENDA";
+
 /** perfil — el id ES el id de auth.users */
 export type PerfilRow = {
   id: string;
@@ -78,14 +81,13 @@ export type TecnicoRow = {
 };
 
 /**
- * visita — solo las columnas que la fase 3 lee o escribe.
- *
- * Las de terreno (trabajo_realizado, observaciones, motivo_pendiente,
- * responsable_tienda_*, fecha_inicio, fecha_termino) existen en el esquema y
- * las llena la fase 4.
+ * visita — todas las columnas propias (sin contar las FK ya resueltas como
+ * embebidos en los listados y el detalle).
  *
  * `fecha_programada` es `date` y `hora_programada` es `time`: llegan como
  * `"2026-08-12"` y `"09:30:00"`, sin zona horaria. Ver `lib/fechas.ts`.
+ * `fecha_inicio` y `fecha_termino` sí son `timestamptz` — las pone el
+ * servidor con `now()`, nunca el navegador.
  */
 export type VisitaRow = {
   id: number;
@@ -97,10 +99,18 @@ export type VisitaRow = {
   tipo_trabajo: TipoTrabajo | null;
   fecha_programada: string | null;
   hora_programada: string | null;
+  fecha_inicio: string | null;
+  fecha_termino: string | null;
   contacto_nombre: string | null;
   contacto_email: string | null;
   contacto_telefono: string | null;
+  responsable_tienda_nombre: string | null;
+  responsable_tienda_rut: string | null;
   descripcion_trabajo: string | null;
+  trabajo_realizado: string | null;
+  observaciones: string | null;
+  motivo_pendiente: string | null;
+  requiere_seguimiento: boolean;
   creado_en: string;
 };
 
@@ -113,3 +123,36 @@ export type SucursalDeVisita = {
   telefono: string | null;
 };
 export type TecnicoDeVisita = { nombres: string; apellidos: string };
+
+/** problema */
+export type ProblemaRow = {
+  id: number;
+  visita_id: number;
+  sucursal_id: number;
+  descripcion: string;
+  solucion_sugerida: string | null;
+  estado: EstadoProblema;
+  detectado_en: string;
+};
+
+/** material_terreno */
+export type MaterialRow = {
+  id: number;
+  visita_id: number;
+  descripcion: string;
+  codigo_producto: string | null;
+  cantidad: number;
+  direccion: DireccionMaterial;
+  observacion: string | null;
+};
+
+/** firma */
+export type FirmaRow = {
+  id: number;
+  visita_id: number;
+  tipo: TipoFirma;
+  firmante_nombre: string | null;
+  firmante_rut: string | null;
+  imagen: string;
+  firmado_en: string;
+};

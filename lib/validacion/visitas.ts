@@ -1,7 +1,18 @@
 import { z } from "zod";
 import { esFechaValida, esHoraValida } from "@/lib/fechas";
-import { esTipoTrabajo } from "@/lib/catalogos";
-import { emailOpcional, telefonoOpcional, textoOpcional } from "./campos";
+import {
+  esDireccionMaterial,
+  esEstadoProblema,
+  esTipoTrabajo,
+} from "@/lib/catalogos";
+import {
+  emailOpcional,
+  rut,
+  rutOpcional,
+  telefonoOpcional,
+  textoOpcional,
+  textoRequerido,
+} from "./campos";
 
 /**
  * Igual que en los maestros: el esquema vive acá y no dentro de la Server
@@ -111,3 +122,132 @@ export type DatosVisitaValidados = z.output<typeof esquemaVisitaNueva>;
 export type DatosVisitaEnTerrenoValidados = z.output<
   typeof esquemaVisitaEnTerreno
 >;
+
+// ---------------------------------------------------------------------------
+// FORMULARIO DE TERRENO (fase 4)
+// ---------------------------------------------------------------------------
+
+/**
+ * Sección 1 · Datos de la visita. El RUT del responsable de tienda se valida
+ * igual que cualquier otro RUT, pero es opcional: no siempre hay alguien de
+ * la tienda disponible para dar el dato apenas empieza la visita.
+ */
+export const esquemaDatosVisita = z.object({
+  tipo_trabajo: tipoTrabajo,
+  responsable_tienda_nombre: textoOpcional(
+    150,
+    "El nombre no puede pasar de 150 caracteres.",
+  ),
+  responsable_tienda_rut: rutOpcional,
+  ...contacto,
+});
+
+/**
+ * Sección 2 · Trabajo realizado. `requiere_seguimiento` es un checkbox y se
+ * lee con `marcada()` directamente de FormData, no acá — este esquema solo
+ * cubre los dos textos.
+ */
+export const esquemaTrabajoRealizado = z.object({
+  trabajo_realizado: textoOpcional(
+    5000,
+    "El trabajo realizado no puede pasar de 5000 caracteres.",
+  ),
+  observaciones: textoOpcional(
+    5000,
+    "Las observaciones no pueden pasar de 5000 caracteres.",
+  ),
+});
+
+/**
+ * Sección 3 · Problemas detectados. `sucursal_id` no está acá: se copia de la
+ * visita en la acción, nunca se pregunta ni se confía en lo que mande el
+ * formulario.
+ */
+export const esquemaProblema = z.object({
+  descripcion: textoRequerido(
+    2000,
+    "Describí el problema.",
+    "La descripción no puede pasar de 2000 caracteres.",
+  ),
+  solucion_sugerida: textoOpcional(
+    2000,
+    "La solución sugerida no puede pasar de 2000 caracteres.",
+  ),
+  estado: z
+    .string()
+    .trim()
+    .min(1, "Elegí un estado.")
+    .refine(esEstadoProblema, "Elegí un estado de la lista."),
+});
+
+/** Sección 4 · Materiales. `cantidad` llega como texto desde un input numérico. */
+export const esquemaMaterial = z.object({
+  descripcion: textoRequerido(
+    200,
+    "Describí el material.",
+    "La descripción no puede pasar de 200 caracteres.",
+  ),
+  codigo_producto: textoOpcional(
+    60,
+    "El código no puede pasar de 60 caracteres.",
+  ),
+  cantidad: z
+    .string()
+    .trim()
+    .refine((valor) => {
+      const numero = Number(valor);
+      return valor !== "" && Number.isFinite(numero) && numero > 0;
+    }, "La cantidad tiene que ser un número mayor que 0.")
+    .transform(Number),
+  direccion: z
+    .string()
+    .trim()
+    .min(1, "Elegí si se instaló o se retiró.")
+    .refine(esDireccionMaterial, "Elegí una opción de la lista."),
+  observacion: textoOpcional(
+    500,
+    "La observación no puede pasar de 500 caracteres.",
+  ),
+});
+
+/**
+ * Sección 5 · Firma de TIENDA. Solo esta lleva formulario de identidad: la de
+ * TECNICO no pregunta nada, sale del perfil de quien está firmando.
+ */
+export const esquemaFirmaTienda = z.object({
+  firmante_nombre: textoRequerido(
+    150,
+    "Escribí el nombre de quien firma.",
+    "El nombre no puede pasar de 150 caracteres.",
+  ),
+  firmante_rut: rut,
+});
+
+/**
+ * La imagen viaja como PNG data URL. El límite de caracteres es una red de
+ * seguridad, no el control de peso real —eso lo hace el redimensionado a
+ * 600px del lado del cliente antes de mandarla.
+ */
+export const imagenFirma = z
+  .string()
+  .trim()
+  .min(1, "Dibujá la firma antes de guardar.")
+  .max(800_000, "La firma quedó muy pesada. Recargá la página e intentá de nuevo.")
+  .refine((valor) => valor.startsWith("data:image/"), "La firma no llegó en un formato válido.");
+
+/** Cierre de la visita: no pide datos nuevos, valida lo que ya está guardado. */
+export const esquemaPendiente = z.object({
+  motivo_pendiente: textoRequerido(
+    1000,
+    "Contá por qué queda pendiente.",
+    "El motivo no puede pasar de 1000 caracteres.",
+  ),
+});
+
+export type DatosDatosVisitaValidados = z.output<typeof esquemaDatosVisita>;
+export type DatosTrabajoRealizadoValidados = z.output<
+  typeof esquemaTrabajoRealizado
+>;
+export type DatosProblemaValidados = z.output<typeof esquemaProblema>;
+export type DatosMaterialValidados = z.output<typeof esquemaMaterial>;
+export type DatosFirmaTiendaValidados = z.output<typeof esquemaFirmaTienda>;

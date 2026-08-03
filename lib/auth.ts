@@ -65,6 +65,27 @@ export function puedeVerTodas(sesion: Sesion): boolean {
 }
 
 /**
+ * ¿Esta sesión puede ver o editar una visita con este `tecnico_id`?
+ *
+ * Compartida entre la página de detalle (para decidir 404) y cada Server
+ * Action del formulario de terreno (para decidir si la escritura procede):
+ * una acción es un POST propio, así que no alcanza con que la pantalla que la
+ * llama ya haya filtrado.
+ *
+ * Un perfil TECNICO sin técnico vinculado no es dueño de nada: el chequeo
+ * ingenuo `tecnicoIdDeVisita === sesion.tecnicoId` da verdadero cuando los dos
+ * son `null`, y le abriría todas las visitas sin asignar.
+ */
+export function puedeEditarVisita(
+  sesion: Sesion,
+  tecnicoIdDeVisita: number | null,
+): boolean {
+  if (puedeVerTodas(sesion)) return true;
+  if (sesion.tecnicoId === null) return false;
+  return tecnicoIdDeVisita === sesion.tecnicoId;
+}
+
+/**
  * Para las pantallas de coordinación. Un TECNICO que llegue por URL directa
  * vuelve al inicio en vez de ver algo que no le corresponde.
  */

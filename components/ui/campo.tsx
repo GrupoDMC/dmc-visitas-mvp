@@ -147,6 +147,7 @@ export function Casilla({
   defaultChecked,
   checked,
   onChange,
+  disabled,
 }: {
   id: string;
   name: string;
@@ -155,6 +156,7 @@ export function Casilla({
   defaultChecked?: boolean;
   checked?: boolean;
   onChange?: (marcada: boolean) => void;
+  disabled?: boolean;
 }) {
   return (
     <div className="flex min-h-11 items-start gap-3 py-1.5">
@@ -168,9 +170,13 @@ export function Casilla({
         defaultChecked={defaultChecked}
         checked={checked}
         onChange={onChange ? (e) => onChange(e.target.checked) : undefined}
-        className="mt-2.5 size-4 shrink-0 accent-acento"
+        disabled={disabled}
+        className="mt-2.5 size-4 shrink-0 accent-acento disabled:cursor-not-allowed disabled:opacity-60"
       />
-      <label htmlFor={id} className="cursor-pointer py-1.5">
+      <label
+        htmlFor={id}
+        className={disabled ? "py-1.5" : "cursor-pointer py-1.5"}
+      >
         <span className="block text-sm font-medium text-texto">{etiqueta}</span>
         {descripcion ? (
           <span className="mt-0.5 block text-xs text-suave">{descripcion}</span>

@@ -56,6 +56,21 @@ export const telefonoOpcional = textoOpcional(
 );
 
 /**
+ * RUT opcional. Vacío es válido —quien recibe al técnico puede no darlo—,
+ * pero si viene escrito tiene que ser un RUT de verdad: se normaliza igual
+ * que el RUT obligatorio de los maestros.
+ */
+export const rutOpcional = z
+  .string()
+  .trim()
+  .transform((valor) => (valor === "" ? null : valor))
+  .refine(
+    (valor) => valor === null || esRutValido(valor),
+    "Ese RUT no es válido. Revisá el dígito verificador.",
+  )
+  .transform((valor) => (valor === null ? null : (normalizarRut(valor) as string)));
+
+/**
  * Región: obligatoriamente una de las 16, o NULL.
  *
  * Es texto libre en la base pero no en el formulario: el traspaso a DMC_Core

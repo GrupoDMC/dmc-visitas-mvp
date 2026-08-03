@@ -1,4 +1,9 @@
-import type { EstadoVisita, TipoTrabajo } from "@/lib/db/tipos";
+import type {
+  DireccionMaterial,
+  EstadoProblema,
+  EstadoVisita,
+  TipoTrabajo,
+} from "@/lib/db/tipos";
 
 /**
  * Los catálogos de la base, replicados acá para poder armar selects y mostrar
@@ -51,4 +56,37 @@ export function esEstadoVisita(valor: string): valor is EstadoVisita {
 
 export function esTipoTrabajo(valor: string): valor is TipoTrabajo {
   return TIPOS_TRABAJO.some((t) => t.codigo === valor);
+}
+
+/** cat_estado_problema */
+export const ESTADOS_PROBLEMA: readonly { codigo: EstadoProblema; nombre: string }[] =
+  [
+    { codigo: "ABIERTO", nombre: "Abierto" },
+    { codigo: "EN_GESTION", nombre: "En gestión" },
+    { codigo: "RESUELTO", nombre: "Resuelto" },
+  ];
+
+export function nombreEstadoProblema(codigo: EstadoProblema): string {
+  return ESTADOS_PROBLEMA.find((e) => e.codigo === codigo)?.nombre ?? codigo;
+}
+
+export function esEstadoProblema(valor: string): valor is EstadoProblema {
+  return ESTADOS_PROBLEMA.some((e) => e.codigo === valor);
+}
+
+/** cat_direccion_material */
+export const DIRECCIONES_MATERIAL: readonly {
+  codigo: DireccionMaterial;
+  nombre: string;
+}[] = [
+  { codigo: "INSTALADO", nombre: "Instalado" },
+  { codigo: "RETIRADO", nombre: "Retirado" },
+];
+
+export function nombreDireccionMaterial(codigo: DireccionMaterial): string {
+  return DIRECCIONES_MATERIAL.find((d) => d.codigo === codigo)?.nombre ?? codigo;
+}
+
+export function esDireccionMaterial(valor: string): valor is DireccionMaterial {
+  return DIRECCIONES_MATERIAL.some((d) => d.codigo === valor);
 }
