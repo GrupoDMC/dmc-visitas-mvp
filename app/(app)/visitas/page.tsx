@@ -82,6 +82,7 @@ async function VistaCoordinacion({ searchParams }: { searchParams: Params }) {
           <div className="@container/main flex flex-1 flex-col gap-2">
             <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
               <SectionCards />
+              <BarraFiltrosVisitas filtros={filtros} clientes={clientes} tecnicos={tecnicos}/>
               <DataTable data={data} />
               <TablaVisitas visitas={filas} tecnicos={tecnicos} />
           </div>
@@ -101,11 +102,7 @@ async function VistaCoordinacion({ searchParams }: { searchParams: Params }) {
         <ChipsFiltrosActivos filtros={filtros} clientes={clientes} tecnicos={tecnicos} />
       </div>
 
-      <BarraFiltrosVisitas
-        filtros={filtros}
-        clientes={clientes}
-        tecnicos={tecnicos}
-      />
+
 
       {filas.length === 0 ? (
         vacioPorFiltro ? (
