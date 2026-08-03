@@ -42,6 +42,21 @@ export const SIN_ASIGNACION: EstadoAsignacion = {
 };
 
 /**
+ * Estado del reagendamiento. Igual que `EstadoAsignacion` y por el mismo
+ * motivo: es un modal que no redirige (el coordinador se queda en el listado,
+ * el técnico en la visita), así que el "listo" no puede viajar en la URL y
+ * vuelve en el estado para que el diálogo se cierre solo y, en el listado,
+ * se muestre arriba de la tabla.
+ */
+export type EstadoReagendamiento = EstadoFormulario & { exito: string | null };
+
+export const SIN_REAGENDAMIENTO: EstadoReagendamiento = {
+  error: null,
+  errores: {},
+  exito: null,
+};
+
+/**
  * Estado de crear un usuario. Tampoco redirige, por el mismo motivo que la
  * contraseña de abajo: la temporal se genera en el servidor y hay que
  * mostrarla una sola vez para dictarla por teléfono. Un redirect la perdería

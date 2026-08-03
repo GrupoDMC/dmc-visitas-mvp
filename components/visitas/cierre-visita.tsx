@@ -11,6 +11,7 @@ import type { EstadoVisita } from "@/lib/db/tipos";
 import { Alerta } from "@/components/ui/alerta";
 import { Boton, BotonGuardar } from "@/components/ui/boton";
 import { AreaTexto, Campo } from "@/components/ui/campo";
+import { DialogoReagendar } from "./dialogo-reagendar";
 
 /**
  * "Marcar como pendiente" pide un motivo obligatorio y no exige firma: es la
@@ -163,8 +164,12 @@ export function CierreVisita({
 
   const puedeCerrar = estado !== "REALIZADA" && estado !== "CANCELADA";
   const puedeReabrir = estado === "REALIZADA" && puedeGestionar;
+  // Única regla: una visita REALIZADA no se reagenda. Ni técnico ni
+  // coordinación/administración, y sin excepción por estado CANCELADA (que
+  // hoy ningún flujo llega a poner).
+  const puedeReagendar = estado !== "REALIZADA";
 
-  if (!puedeCerrar && !puedeReabrir) return null;
+  if (!puedeCerrar && !puedeReabrir && !puedeReagendar) return null;
 
   return (
     <section
@@ -190,8 +195,13 @@ export function CierreVisita({
             </form>
 
             <DialogoPendiente visitaId={visitaId} />
+            {puedeReagendar ? <DialogoReagendar visitaId={visitaId} /> : null}
           </div>
         </>
+      ) : puedeReagendar ? (
+        <div className="mt-4">
+          <DialogoReagendar visitaId={visitaId} />
+        </div>
       ) : null}
 
       {puedeReabrir ? (

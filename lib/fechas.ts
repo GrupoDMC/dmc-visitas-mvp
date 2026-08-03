@@ -143,6 +143,31 @@ export function esFechaValida(iso: string): boolean {
   );
 }
 
+/**
+ * `03-08-2026 14:22`. Para timestamps con hora real (`timestamptz`), como
+ * `reagendado_en` — a diferencia del resto de este archivo, que trabaja con
+ * `date`/`time` sin zona. Acá SÍ hay que convertir a hora de Chile, así que
+ * pasa por `Intl` en vez de partir el string.
+ */
+export function fechaHoraCorta(iso: string): string {
+  const partes = new Intl.DateTimeFormat("en-CA", {
+    timeZone: ZONA,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(new Date(iso));
+
+  const valor = (tipo: string) => partes.find((p) => p.type === tipo)?.value ?? "";
+
+  return (
+    `${valor("day")}-${valor("month")}-${valor("year")} ` +
+    `${valor("hour")}:${valor("minute")}`
+  );
+}
+
 /** ¿Es una hora `HH:MM` (o `HH:MM:SS`) del reloj? */
 export function esHoraValida(valor: string): boolean {
   const coincide = /^(\d{2}):(\d{2})(:\d{2})?$/.exec(valor);

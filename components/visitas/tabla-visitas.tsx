@@ -14,6 +14,7 @@ import { Alerta } from "@/components/ui/alerta";
 import { BadgeEstado } from "@/components/ui/badge-estado";
 import { Boton, BotonGuardar } from "@/components/ui/boton";
 import { Fila, SinDato, Tabla, Td, Th } from "@/components/ui/tabla";
+import { DialogoReagendar } from "./dialogo-reagendar";
 
 type Tecnico = { id: number; nombres: string; apellidos: string };
 
@@ -33,10 +34,13 @@ export function TablaVisitas({
 }) {
   const [marcadas, setMarcadas] = useState<number[]>([]);
   const [aAsignar, setAAsignar] = useState<number[] | null>(null);
-  // La asignación no redirige, así que su confirmación no puede viajar en la
-  // URL como el resto de los avisos de la app. Vive acá, arriba de la tabla,
-  // donde se ve el resultado del cambio.
-  const [confirmacion, setConfirmacion] = useState<string | null>(null);
+  // Ni la asignación ni el reagendamiento redirigen, así que su confirmación
+  // no puede viajar en la URL como el resto de los avisos de la app. Vive
+  // acá, arriba de la tabla, donde se ve el resultado del cambio. Una sola
+  // región para las dos acciones, distinguidas por la etiqueta.
+  const [confirmacion, setConfirmacion] = useState<
+    { etiqueta: string; mensaje: string } | null
+  >(null);
 
   // Si cambia la página o el filtro, lo marcado ya no corresponde a lo que se
   // ve. Se ajusta durante el render y no en un efecto para que no exista un
@@ -79,7 +83,7 @@ export function TablaVisitas({
       <div role="status" aria-live="polite">
         {confirmacion ? (
           <p className="mb-3 rounded-base border border-realizada/30 bg-realizada/5 px-3 py-2 text-sm text-realizada">
-            Asignado: {confirmacion}
+            {confirmacion.etiqueta}: {confirmacion.mensaje}
           </p>
         ) : null}
       </div>
@@ -149,6 +153,18 @@ export function TablaVisitas({
                 ) : (
                   <span className="text-xs text-suave">En terreno</span>
                 )}
+                {visita.estado !== "REALIZADA" ? (
+                  <div className="mt-0.5">
+                    <DialogoReagendar
+                      visitaId={visita.id}
+                      variante="enlace"
+                      etiqueta="Reagendar"
+                      alExito={(mensaje) =>
+                        setConfirmacion({ etiqueta: "Reagendada", mensaje })
+                      }
+                    />
+                  </div>
+                ) : null}
               </Td>
               <Td className="max-w-[14rem] truncate">
                 {visita.cliente?.razon_social ?? <SinDato />}
@@ -206,7 +222,7 @@ export function TablaVisitas({
           tecnicos={tecnicos}
           alCerrar={() => setAAsignar(null)}
           alTerminar={(mensaje) => {
-            setConfirmacion(mensaje);
+            setConfirmacion({ etiqueta: "Asignado", mensaje });
             setMarcadas([]);
           }}
         />

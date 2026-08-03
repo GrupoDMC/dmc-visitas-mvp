@@ -244,6 +244,24 @@ export const esquemaPendiente = z.object({
   ),
 });
 
+/**
+ * Reagendamiento (fase 6). La fecha reusa `fechaRequerida` y la hora
+ * `horaOpcional` de más arriba — son las mismas reglas que al agendar por
+ * primera vez. El motivo pide un mínimo de 10 caracteres para que no se
+ * complete con un "no se pudo" que no le sirve a quien retoma la visita.
+ */
+export const esquemaReagendamiento = z.object({
+  fecha_nueva: fechaRequerida,
+  hora_nueva: horaOpcional,
+  motivo: z
+    .string()
+    .trim()
+    .min(10, "Contá el motivo del reagendamiento (mínimo 10 caracteres).")
+    .max(1000, "El motivo no puede pasar de 1000 caracteres."),
+});
+
+export type DatosReagendamientoValidados = z.output<typeof esquemaReagendamiento>;
+
 export type DatosDatosVisitaValidados = z.output<typeof esquemaDatosVisita>;
 export type DatosTrabajoRealizadoValidados = z.output<
   typeof esquemaTrabajoRealizado

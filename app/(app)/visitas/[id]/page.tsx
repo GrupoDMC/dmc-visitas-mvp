@@ -14,10 +14,12 @@ import {
 import { listarProblemasDeVisita } from "@/lib/db/problemas";
 import { listarMaterialesDeVisita } from "@/lib/db/materiales";
 import { listarFirmasDeVisita } from "@/lib/db/firmas";
+import { listarReagendamientosDeVisita } from "@/lib/db/reagendamientos";
 import { nombreTecnico } from "@/lib/db/tecnicos";
 import { BadgeEstado } from "@/components/ui/badge-estado";
 import { SinDato } from "@/components/ui/tabla";
 import { PanelHistorial } from "@/components/visitas/panel-historial";
+import { HistorialReagendamientos } from "@/components/visitas/historial-reagendamientos";
 import { SeccionDatosVisita } from "@/components/visitas/seccion-datos-visita";
 import { SeccionTrabajoRealizado } from "@/components/visitas/seccion-trabajo-realizado";
 import { SeccionProblemas } from "@/components/visitas/seccion-problemas";
@@ -109,11 +111,12 @@ export default async function PaginaVisita({ params }: Props) {
   const { id } = await params;
   const { sesion, visita } = await leerConPermiso(id);
 
-  const [historial, problemas, materiales, firmas] = await Promise.all([
+  const [historial, problemas, materiales, firmas, reagendamientos] = await Promise.all([
     ultimasVisitasDeSucursal(visita.sucursal_id, visita.id),
     listarProblemasDeVisita(visita.id),
     listarMaterialesDeVisita(visita.id),
     listarFirmasDeVisita(visita.id),
+    listarReagendamientosDeVisita(visita.id),
   ]);
 
   // Solo lectura para TODOS mientras está REALIZADA, no solo para el
@@ -283,6 +286,8 @@ export default async function PaginaVisita({ params }: Props) {
               </div>
             </section>
           ) : null}
+
+          <HistorialReagendamientos reagendamientos={reagendamientos} />
 
           <SeccionDatosVisita visita={visita} soloLectura={soloLectura} />
           <SeccionTrabajoRealizado visita={visita} soloLectura={soloLectura} />

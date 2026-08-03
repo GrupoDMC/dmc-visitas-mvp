@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { puedeEditarVisita, puedeVerTodas, requerirSesion, requerirVerTodas } from "@/lib/auth";
 import { conAviso } from "@/lib/avisos";
+import { fechaLarga, horaCorta } from "@/lib/fechas";
 import {
   esquemaAsignacion,
   esquemaDatosVisita,
@@ -11,6 +12,7 @@ import {
   esquemaMaterial,
   esquemaPendiente,
   esquemaProblema,
+  esquemaReagendamiento,
   esquemaTrabajoRealizado,
   esquemaVisitaEnTerreno,
   esquemaVisitaNueva,
@@ -20,6 +22,7 @@ import { obtenerCliente } from "@/lib/db/clientes";
 import { obtenerSucursal } from "@/lib/db/sucursales";
 import { nombreTecnico, obtenerTecnico } from "@/lib/db/tecnicos";
 import { guardarFirma, listarFirmasDeVisita } from "@/lib/db/firmas";
+import { reagendarVisita } from "@/lib/db/reagendamientos";
 import {
   actualizarMaterial,
   crearMaterial,
@@ -52,6 +55,7 @@ import {
   texto,
   type EstadoAsignacion,
   type EstadoFormulario,
+  type EstadoReagendamiento,
 } from "./formulario";
 
 /**
@@ -719,5 +723,54 @@ export async function reabrirVisitaAccion(
   revalidatePath(`/visitas/${visita.id}`);
 
   return SIN_ERRORES;
+}
+
+// ---------------------------------------------------------------------------
+// REAGENDAMIENTO (fase 6)
+// ---------------------------------------------------------------------------
+
+/**
+ * Quién puede reagendar y cuándo es exactamente la misma regla que el resto
+ * del formulario de terreno: `cargarVisitaEditable` ya deja pasar solo al
+ * técnico dueño de la visita o a coordinación/administración, y ya rechaza
+ * una visita REALIZADA. Reagendar es otra forma de seguir editando la visita,
+ * así que no hace falta duplicar ese chequeo acá.
+ *
+ * La escritura en sí (el insert en visita_reagendamiento + el update de
+ * visita) va en `fn_reagendar_visita` (docs/05_reagendar_fn.sql), como una
+ * sola función de Postgres — el equivalente de una transacción para dos
+ * escrituras que tienen que caerse juntas.
+ */
+export async function reagendarVisitaAccion(
+  _previo: EstadoReagendamiento,
+  datos: FormData,
+): Promise<EstadoReagendamiento> {
+  const contexto = await cargarVisitaEditable(idDesdeFormulario(datos, "visita_id"));
+  if (esFallo(contexto)) return { ...contexto, exito: null };
+  const { visita } = contexto;
+
+  const resultado = esquemaReagendamiento.safeParse({
+    fecha_nueva: texto(datos, "fecha_nueva"),
+    hora_nueva: texto(datos, "hora_nueva"),
+    motivo: texto(datos, "motivo"),
+  });
+  if (!resultado.success) return { ...erroresDeZod(resultado.error), exito: null };
+
+  // Memoizada por request (ver lib/auth.ts): no es una segunda consulta.
+  const sesion = await requerirSesion();
+
+  await reagendarVisita(visita.id, resultado.data, sesion.userId);
+
+  revalidatePath("/visitas");
+  revalidatePath(`/visitas/${visita.id}`);
+
+  const fecha = fechaLarga(resultado.data.fecha_nueva);
+  const hora = horaCorta(resultado.data.hora_nueva);
+
+  return {
+    error: null,
+    errores: {},
+    exito: `Reagendada para ${fecha}${hora ? ` a las ${hora}` : ""}.`,
+  };
 }
 

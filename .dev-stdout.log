@@ -64,3 +64,130 @@
   └─ ƒ cambiarActivoUsuarioAccion({"error":null,"errores":{}}, {}) in 519ms lib/acciones/usuarios.ts
  GET /usuarios 200 in 242ms (next.js: 7ms, proxy.ts: 223ms, application-code: 13ms)
  GET /usuarios 200 in 920ms (next.js: 23ms, proxy.ts: 242ms, application-code: 654ms)
+✓ Compiled in 373ms
+ GET /usuarios 200 in 2.3s (next.js: 165ms, proxy.ts: 1963ms, application-code: 130ms)
+ GET /usuarios 200 in 378ms (next.js: 4ms, proxy.ts: 316ms, application-code: 58ms)
+ GET /usuarios 200 in 264ms (next.js: 6ms, proxy.ts: 214ms, application-code: 44ms)
+✓ Compiled in 70ms
+ GET /usuarios 200 in 617ms (next.js: 115ms, proxy.ts: 346ms, application-code: 156ms)
+ GET /usuarios 200 in 276ms (next.js: 8ms, proxy.ts: 229ms, application-code: 40ms)
+✓ Compiled in 94ms
+ GET /usuarios 200 in 645ms (next.js: 115ms, proxy.ts: 416ms, application-code: 114ms)
+ GET /usuarios 200 in 266ms (next.js: 3ms, proxy.ts: 216ms, application-code: 46ms)
+ GET /usuarios 200 in 273ms (next.js: 4ms, proxy.ts: 212ms, application-code: 57ms)
+ GET /usuarios 200 in 253ms (next.js: 4ms, proxy.ts: 202ms, application-code: 47ms)
+ GET /usuarios 200 in 305ms (next.js: 5ms, proxy.ts: 234ms, application-code: 65ms)
+ GET /usuarios 200 in 267ms (next.js: 4ms, proxy.ts: 213ms, application-code: 50ms)
+ GET /usuarios 200 in 252ms (next.js: 3ms, proxy.ts: 206ms, application-code: 42ms)
+ GET /usuarios 200 in 261ms (next.js: 3ms, proxy.ts: 212ms, application-code: 45ms)
+ GET /usuarios 200 in 253ms (next.js: 3ms, proxy.ts: 202ms, application-code: 48ms)
+ GET /usuarios 200 in 670ms (next.js: 94ms, proxy.ts: 388ms, application-code: 188ms)
+ GET /usuarios 200 in 367ms (next.js: 4ms, proxy.ts: 316ms, application-code: 47ms)
+ GET /usuarios 200 in 539ms (next.js: 100ms, proxy.ts: 308ms, application-code: 131ms)
+ GET /usuarios 200 in 257ms (next.js: 4ms, proxy.ts: 214ms, application-code: 40ms)
+✓ Compiled in 145ms
+ GET /usuarios 200 in 580ms (next.js: 117ms, proxy.ts: 373ms, application-code: 91ms)
+ GET /usuarios 200 in 246ms (next.js: 3ms, proxy.ts: 198ms, application-code: 45ms)
+ GET /usuarios 200 in 270ms (next.js: 5ms, proxy.ts: 198ms, application-code: 67ms)
+ GET /usuarios 200 in 248ms (next.js: 3ms, proxy.ts: 200ms, application-code: 45ms)
+ GET /usuarios 200 in 261ms (next.js: 4ms, proxy.ts: 204ms, application-code: 53ms)
+ GET /usuarios 200 in 663ms (next.js: 108ms, proxy.ts: 433ms, application-code: 122ms)
+ GET /usuarios 200 in 635ms (next.js: 107ms, proxy.ts: 446ms, application-code: 82ms)
+ GET /usuarios 200 in 642ms (next.js: 96ms, proxy.ts: 449ms, application-code: 97ms)
+✓ Compiled in 142ms
+ GET /usuarios 200 in 814ms (next.js: 97ms, proxy.ts: 627ms, application-code: 90ms)
+ GET /usuarios 200 in 296ms (next.js: 3ms, proxy.ts: 246ms, application-code: 47ms)
+ GET /usuarios 200 in 286ms (next.js: 3ms, proxy.ts: 234ms, application-code: 48ms)
+ GET /usuarios 200 in 258ms (next.js: 4ms, proxy.ts: 205ms, application-code: 49ms)
+ GET /usuarios 200 in 638ms (next.js: 124ms, proxy.ts: 422ms, application-code: 93ms)
+✓ Compiled in 152ms
+ GET /usuarios 200 in 3.5s (next.js: 23ms, proxy.ts: 1285ms, application-code: 2.2s)
+ GET /login 200 in 256ms (next.js: 73ms, proxy.ts: 10ms, application-code: 172ms)
+ GET / 200 in 537ms (next.js: 33ms, proxy.ts: 222ms, application-code: 282ms)
+ POST /login 303 in 1675ms (next.js: 7ms, proxy.ts: 13ms, application-code: 1656ms)
+  └─ ƒ ingresar({"error":null}, {}) in 1082ms lib/acciones/sesion.ts
+ GET /visitas 200 in 1490ms (next.js: 415ms, proxy.ts: 286ms, application-code: 788ms)
+ GET /visitas/nueva 200 in 2.9s (next.js: 2.0s, proxy.ts: 248ms, application-code: 666ms)
+ GET /visitas/2?ok=visita-creada 200 in 2.4s (next.js: 1518ms, proxy.ts: 106ms, application-code: 755ms)
+ POST /visitas/nueva 303 in 3.5s (next.js: 44ms, proxy.ts: 228ms, application-code: 3.3s)
+  └─ ƒ crearVisitaAccion({"error":null,"errores":{}}, {}) in 773ms lib/acciones/visitas.ts
+ GET /visitas/2 200 in 140ms (next.js: 17ms, proxy.ts: 111ms, application-code: 12ms)
+ GET /visitas/2 200 in 594ms (next.js: 6ms, proxy.ts: 98ms, application-code: 489ms)
+ POST /visitas/2 200 in 1655ms (next.js: 13ms, proxy.ts: 199ms, application-code: 1443ms)
+  └─ ƒ iniciarVisitaAccion({"error":null,"errores":{}}, {}) in 833ms lib/acciones/visitas.ts
+ POST /visitas/2 200 in 1240ms (next.js: 19ms, proxy.ts: 209ms, application-code: 1012ms)
+  └─ ƒ guardarDatosVisitaAccion({"error":null,"errores":{}}, {}) in 451ms lib/acciones/visitas.ts
+ POST /visitas/2 200 in 1311ms (next.js: 12ms, proxy.ts: 198ms, application-code: 1100ms)
+  └─ ƒ guardarTrabajoRealizadoAccion({"error":null,"errores":{}}, {}) in 485ms lib/acciones/visitas.ts
+ POST /visitas/2 200 in 1486ms (next.js: 18ms, proxy.ts: 267ms, application-code: 1201ms)
+  └─ ƒ guardarFirmaAccion({"error":null,"errores":{}}, {}) in 506ms lib/acciones/visitas.ts
+ POST /visitas/2 200 in 1306ms (next.js: 17ms, proxy.ts: 191ms, application-code: 1097ms)
+  └─ ƒ guardarFirmaAccion({"error":null,"errores":{}}, {}) in 486ms lib/acciones/visitas.ts
+ POST /visitas/2 200 in 555ms (next.js: 11ms, proxy.ts: 206ms, application-code: 338ms)
+  └─ ƒ reagendarVisitaAccion({"error":null,"errores":{},"exito":null}, {}) in 328ms lib/acciones/visitas.ts
+ POST /visitas/2 500 in 1399ms (next.js: 17ms, proxy.ts: 199ms, application-code: 1183ms)
+  └─ ƒ reagendarVisitaAccion({"error":null,"errores":{"motivo":"Contá el motivo del reagendamiento (mínimo 10 caracteres)."},"exito":null}, {}) in 658ms lib/acciones/visitas.ts
+ GET / 200 in 421ms (next.js: 4ms, proxy.ts: 114ms, application-code: 303ms)
+ GET /visitas 200 in 671ms (next.js: 9ms, proxy.ts: 102ms, application-code: 560ms)
+ POST /visitas 500 in 1360ms (next.js: 7ms, proxy.ts: 232ms, application-code: 1121ms)
+  └─ ƒ reagendarVisitaAccion({"error":null,"errores":{},"exito":null}, {}) in 669ms lib/acciones/visitas.ts
+ POST /visitas 200 in 1629ms (next.js: 11ms, proxy.ts: 778ms, application-code: 840ms)
+  └─ ƒ reagendarVisitaAccion({"error":null,"errores":{},"exito":null}, {}) in 824ms lib/acciones/visitas.ts
+ POST /visitas 200 in 1954ms (next.js: 4ms, proxy.ts: 415ms, application-code: 1535ms)
+  └─ ƒ reagendarVisitaAccion({"error":null,"errores":{"motivo":"Contá el motivo del reagendamiento (mínimo 10 caracteres)."},"exito":null}, {}) in 896ms lib/acciones/visitas.ts
+ GET /clientes 200 in 1595ms (next.js: 744ms, proxy.ts: 434ms, application-code: 417ms)
+ GET /usuarios 200 in 711ms (next.js: 9ms, proxy.ts: 292ms, application-code: 409ms)
+ GET /exportar 200 in 597ms (next.js: 57ms, proxy.ts: 295ms, application-code: 245ms)
+ GET /visitas 200 in 797ms (next.js: 7ms, proxy.ts: 276ms, application-code: 515ms)
+ GET /visitas/nueva 200 in 620ms (next.js: 6ms, proxy.ts: 103ms, application-code: 511ms)
+ POST /visitas/nueva 200 in 379ms (next.js: 3ms, proxy.ts: 169ms, application-code: 206ms)
+  └─ ƒ crearVisitaAccion({"error":null,"errores":{}}, {}) in 199ms lib/acciones/visitas.ts
+ GET /visitas/3?ok=visita-creada 200 in 791ms (next.js: 39ms, proxy.ts: 98ms, application-code: 653ms)
+ POST /visitas/nueva 303 in 1696ms (next.js: 4ms, proxy.ts: 182ms, application-code: 1511ms)
+  └─ ƒ crearVisitaAccion({"error":null,"errores":{"fecha_programada":"Elegí la fecha de la visita."}}, {}) in 702ms lib/acciones/visitas.ts
+ GET /visitas/3 200 in 156ms (next.js: 15ms, proxy.ts: 128ms, application-code: 14ms)
+ GET /visitas/3 200 in 807ms (next.js: 12ms, proxy.ts: 106ms, application-code: 689ms)
+ POST /visitas/3 200 in 2.2s (next.js: 12ms, proxy.ts: 184ms, application-code: 1958ms)
+  └─ ƒ guardarDatosVisitaAccion({"error":null,"errores":{}}, {}) in 623ms lib/acciones/visitas.ts
+ POST /visitas/3 200 in 1511ms (next.js: 15ms, proxy.ts: 203ms, application-code: 1294ms)
+  └─ ƒ guardarTrabajoRealizadoAccion({"error":null,"errores":{}}, {}) in 474ms lib/acciones/visitas.ts
+ POST /visitas/3 200 in 1482ms (next.js: 19ms, proxy.ts: 171ms, application-code: 1292ms)
+  └─ ƒ guardarFirmaAccion({"error":null,"errores":{}}, {}) in 688ms lib/acciones/visitas.ts
+ POST /visitas/3 200 in 1384ms (next.js: 17ms, proxy.ts: 115ms, application-code: 1253ms)
+  └─ ƒ guardarFirmaAccion({"error":null,"errores":{}}, {}) in 558ms lib/acciones/visitas.ts
+ POST /visitas/3 200 in 1548ms (next.js: 11ms, proxy.ts: 176ms, application-code: 1361ms)
+  └─ ƒ cerrarVisitaAccion({"error":null,"errores":{}}, {}) in 744ms lib/acciones/visitas.ts
+ GET /visitas/2 200 in 1108ms (next.js: 11ms, proxy.ts: 331ms, application-code: 766ms)
+ GET /visitas/3 200 in 832ms (next.js: 11ms, proxy.ts: 99ms, application-code: 721ms)
+ GET /visitas 200 in 526ms (next.js: 3ms, proxy.ts: 117ms, application-code: 406ms)
+ GET /visitas/3 200 in 822ms (next.js: 12ms, proxy.ts: 104ms, application-code: 706ms)
+ GET /clientes 200 in 693ms (next.js: 7ms, proxy.ts: 224ms, application-code: 462ms)
+ GET /tecnicos 200 in 1071ms (next.js: 478ms, proxy.ts: 199ms, application-code: 394ms)
+ GET /tecnicos/nuevo 200 in 1426ms (next.js: 946ms, proxy.ts: 220ms, application-code: 259ms)
+ GET /tecnicos/3?ok=tecnico-creado 200 in 2.5s (next.js: 1942ms, proxy.ts: 203ms, application-code: 399ms)
+ POST /tecnicos/nuevo 303 in 3.4s (next.js: 11ms, proxy.ts: 304ms, application-code: 3.0s)
+  └─ ƒ crearTecnicoAccion({"error":null,"errores":{}}, {}) in 481ms lib/acciones/tecnicos.ts
+ GET /tecnicos/3 200 in 325ms (next.js: 15ms, proxy.ts: 301ms, application-code: 9ms)
+ GET /tecnicos/3 200 in 722ms (next.js: 8ms, proxy.ts: 211ms, application-code: 502ms)
+ GET /usuarios 200 in 721ms (next.js: 14ms, proxy.ts: 243ms, application-code: 465ms)
+ GET /usuarios/nuevo 200 in 1065ms (next.js: 305ms, proxy.ts: 226ms, application-code: 534ms)
+ POST /usuarios/nuevo 200 in 1491ms (next.js: 3ms, proxy.ts: 307ms, application-code: 1180ms)
+  └─ ƒ crearUsuarioAccion({"creado":null,"error":null,"errores":{}}, {}) in 753ms lib/acciones/usuarios.ts
+ GET /usuarios 200 in 869ms (next.js: 4ms, proxy.ts: 311ms, application-code: 555ms)
+ GET /login 200 in 96ms (next.js: 8ms, proxy.ts: 6ms, application-code: 82ms)
+ POST /usuarios 303 in 452ms (next.js: 4ms, proxy.ts: 219ms, application-code: 228ms)
+  └─ ƒ salir() in 104ms lib/acciones/sesion.ts
+ GET / 200 in 401ms (next.js: 10ms, proxy.ts: 96ms, application-code: 295ms)
+ POST /login 303 in 738ms (next.js: 3ms, proxy.ts: 6ms, application-code: 729ms)
+  └─ ƒ ingresar({"error":null}, {}) in 311ms lib/acciones/sesion.ts
+ GET /login 200 in 58ms (next.js: 4ms, proxy.ts: 6ms, application-code: 48ms)
+ POST / 303 in 286ms (next.js: 4ms, proxy.ts: 100ms, application-code: 181ms)
+  └─ ƒ salir() in 107ms lib/acciones/sesion.ts
+ POST /login 200 in 215ms (next.js: 4ms, proxy.ts: 7ms, application-code: 204ms)
+  └─ ƒ ingresar({"error":null}, {}) in 194ms lib/acciones/sesion.ts
+ GET / 200 in 410ms (next.js: 6ms, proxy.ts: 100ms, application-code: 304ms)
+ POST /login 303 in 753ms (next.js: 3ms, proxy.ts: 5ms, application-code: 745ms)
+  └─ ƒ ingresar({"error":"Correo o contraseña incorrectos."}, {}) in 315ms lib/acciones/sesion.ts
+ GET /usuarios 200 in 769ms (next.js: 7ms, proxy.ts: 218ms, application-code: 544ms)
+ GET /usuarios/b41682dd-b11f-4a43-a58e-c682ebb20ffe 200 in 1030ms (next.js: 260ms, proxy.ts: 248ms, application-code: 523ms)
+ GET /visitas 200 in 606ms (next.js: 5ms, proxy.ts: 107ms, application-code: 494ms)

@@ -156,3 +156,20 @@ export type FirmaRow = {
   imagen: string;
   firmado_en: string;
 };
+
+/**
+ * visita_reagendamiento (docs/03_reagendamiento.sql). `fecha_anterior` y
+ * `hora_anterior` pueden ser NULL: es el caso de una visita que nació en
+ * terreno y todavía no tenía fecha cuando se reagendó.
+ */
+export type ReagendamientoRow = {
+  id: number;
+  visita_id: number;
+  fecha_anterior: string | null;
+  hora_anterior: string | null;
+  fecha_nueva: string;
+  hora_nueva: string | null;
+  motivo: string;
+  reagendado_por: string | null;
+  reagendado_en: string;
+};

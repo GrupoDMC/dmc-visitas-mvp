@@ -567,3 +567,83 @@ al punto, así que ningún color es el único portador de la información.
 - **Los `contacto_*` de una visita creada en terreno quedan vacíos si el
   técnico no los llena.** Son opcionales a propósito: pedirlos con el encargado
   de tienda esperando es la forma más rápida de que nadie use la pantalla.
+
+---
+
+# Fase 6 — Reagendamiento
+
+---
+
+## 29. La "sola transacción" es una función de Postgres, no dos llamadas seguidas
+
+El encargo pide que el insert en `visita_reagendamiento` y el update de
+`visita` pasen "en una sola transacción". `supabase-js` no da eso gratis: cada
+`.insert()` o `.update()` es un viaje HTTP a PostgREST por separado, así que
+dos llamadas sueltas desde `lib/db/` dejan una ventana real donde una podría
+escribirse y la otra fallar (o quedar pisada por un reagendamiento
+concurrente de la misma visita).
+
+La solución es `fn_reagendar_visita` (`docs/05_reagendar_fn.sql`, **hay que
+correrla en Supabase**, es un archivo nuevo, no estaba en `03_reagendamiento.sql`):
+una función de Postgres que hace las dos escrituras adentro, con un
+`select ... for update` que bloquea la fila de la visita mientras dura. Una
+función completa corre en una única transacción implícita — es el equivalente
+real de lo que pedía el encargo, no una aproximación. La Server Action la
+llama con `.rpc()` en vez de encadenar dos consultas.
+
+La función repite el chequeo de `estado <> 'REALIZADA'` que ya hizo la Server
+Action. Es la misma razón que el `for update`: dos requests casi simultáneas
+(alguien cierra la visita justo mientras el modal de reagendar estaba
+abierto) podían pasar el chequeo de la acción y aun así escribir un
+reagendamiento sobre una visita ya cerrada. Si la función lo rechaza, el error
+sube como una excepción de Postgres y termina en la pantalla de error general
+de Next — no se armó un mensaje amigable para ese caso puntual, porque es una
+carrera rarísima (doble submit en el mismo instante) y no un escenario de uso
+normal como el de `asignarTecnico` (decisión 21), que sí lo amerita.
+
+## 30. El chequeo de quién puede reagendar es el mismo que el resto del formulario de terreno
+
+`cargarVisitaEditable()` (`lib/acciones/visitas.ts`) ya resuelve exactamente
+la regla que pide el encargo: el técnico solo en su propia visita, coordinación
+y administración en cualquiera, y ninguno de los dos si el estado es
+REALIZADA. `reagendarVisitaAccion` la reusa tal cual en vez de escribir un
+chequeo paralelo — reagendar es una forma más de editar la visita, no una
+acción con reglas de acceso distintas al resto de las secciones del
+formulario.
+
+Lo único que `cargarVisitaEditable` no expone es la sesión completa (solo la
+visita), y `reagendado_por` necesita el `userId`. En vez de tocar la firma de
+una función compartida por seis Server Actions más, `reagendarVisitaAccion`
+vuelve a llamar `requerirSesion()` — está memoizada con `cache` de React
+(decisión 6), así que no es una segunda consulta.
+
+## 31. Un solo componente de diálogo, dos lugares de entrada
+
+`DialogoReagendar` (`components/visitas/dialogo-reagendar.tsx`) es el mismo
+componente para las tres entradas que pide el encargo: el técnico y
+coordinación/administración desde `/visitas/[id]` (variante "botón", al lado
+de "Marcar como pendiente" en `CierreVisita`), y coordinación además como
+acción rápida en el listado (variante "enlace", bajo la fecha de cada fila en
+`TablaVisitas`) — mismo patrón de modal que "Asignar técnico": no navega,
+se cierra solo cuando la acción vuelve con éxito.
+
+Como el listado monta una instancia del diálogo **por fila** (hasta 25 a la
+vez), los ids de los campos y del `aria-labelledby` no pueden ser fijos como
+en `DialogoPendiente` o `DialogoReabrir` — esos viven una sola vez por
+página, este no. Van armados con `useId()` de React, que da un id único por
+instancia del componente.
+
+El banner de confirmación arriba de la tabla, que antes era solo de la
+asignación (`Asignado: ...`), se generalizó a `{ etiqueta, mensaje }` para que
+sirva también para "Reagendada: ...". Es el mismo mecanismo que ya explica la
+decisión 21: ninguna de las dos acciones redirige, así que el aviso no puede
+viajar en la URL y vuelve en el estado de la Server Action.
+
+## 32. El historial de reagendamientos no se muestra si está vacío
+
+A diferencia de `PanelHistorial` (el de la sucursal, que dice "es la primera
+visita registrada" cuando no hay nada), `HistorialReagendamientos` no
+renderiza ni la sección ni un "todavía no se reagendó" cuando la lista viene
+vacía — que es el caso normal, la mayoría de las visitas no se reagendan
+nunca. Decirlo explícitamente en cada visita sería ruido permanente en una
+pantalla que ya tiene bastante secciones.
