@@ -9,10 +9,10 @@ import { SiteHeader } from "@/components/site-header";
 export default async function LayoutApp({ children }: { children: React.ReactNode; }) {
   const sesion = await getSesion();
   if (!sesion) redirect("/salir?motivo=deshabilitada");
-  const sidebarStyle = { "--sidebar-width": "calc(var(--spacing) * 55)", "--header-height": "calc(var(--spacing) * 12)", }
+  const sidebarStyle = { "--sidebar-width": "calc(var(--spacing) * 58)", "--header-height": "calc(var(--spacing) * 12)", }
   return (
   <SidebarProvider style= { sidebarStyle as React.CSSProperties }>
-    <AppSidebar variant="inset" />
+    <AppSidebar variant="sidebar" />
       <SidebarInset>
         <SiteHeader />
         <div className="p-4">

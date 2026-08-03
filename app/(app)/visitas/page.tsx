@@ -6,13 +6,17 @@ import { leerPagina, unico } from "@/lib/paginacion";
 import { clientesActivos } from "@/lib/db/clientes";
 import { tecnicosActivos } from "@/lib/db/tecnicos";
 import { hayAlgunaVisita, listarVisitas, visitasAbiertasDeTecnico, type FiltrosVisitas, } from "@/lib/db/visitas";
-import { Encabezado, EnlaceBoton } from "@/components/ui/encabezado";
+import { Encabezado, } from "@/components/ui/encabezado";
 import { EstadoVacio } from "@/components/ui/estado-vacio";
 import { Paginacion } from "@/components/ui/paginacion";
 import { BarraFiltrosVisitas } from "@/components/visitas/barra-filtros-visitas";
 import { ChipsFiltrosActivos } from "@/components/visitas/chips-filtros-activos";
 import { TablaVisitas } from "@/components/visitas/tabla-visitas";
 import { TarjetasTecnico } from "@/components/visitas/tarjetas-tecnico";
+import { SectionCards } from "@/components/section-cards";
+import { DataTable } from "@/components/data-table";
+
+import data from "./data.json"
 
 export const metadata: Metadata = { title: "Visitas" };
 
@@ -72,12 +76,21 @@ async function VistaCoordinacion({ searchParams }: { searchParams: Params }) {
   const vacioPorFiltro = filas.length === 0 && (filtrando || (await hayAlgunaVisita()));
 
   return (
+    
     <div className="mx-auto max-w-6xl">
-      <Encabezado
-        titulo="Visitas"
-        descripcion="Todo lo agendado. Las filas marcadas al costado todavía no tienen técnico."
-        acciones={<EnlaceBoton href="/visitas/nueva">Nueva visita</EnlaceBoton>}
-      />
+        <div className="flex flex-1 flex-col">
+          <div className="@container/main flex flex-1 flex-col gap-2">
+            <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
+              <SectionCards />
+              <DataTable data={data} />
+              <TablaVisitas visitas={filas} tecnicos={tecnicos} />
+          </div>
+        </div>
+    </div>
+
+
+
+      {/* seccion antigua */}
 
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-suave">
@@ -110,7 +123,6 @@ async function VistaCoordinacion({ searchParams }: { searchParams: Params }) {
         )
       ) : (
         <>
-          <TablaVisitas visitas={filas} tecnicos={tecnicos} />
 
           <Paginacion
             base="/visitas"

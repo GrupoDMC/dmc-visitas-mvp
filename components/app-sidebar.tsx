@@ -10,9 +10,9 @@ import { LayoutDashboardIcon, ListIcon, ChartBarIcon, UsersIcon, Settings2Icon, 
 
 const data = {
   user: {
-    name: "shadcn",
-    email: "m@example.com",
-    avatar: "/avatars/shadcn.jpg",
+    name: "Santiago lópez",
+    email: "slopez@grupodmc.cl",
+    avatar: "https://avatars.githubusercontent.com/u/292798018?v=4&size=64",
   },
   navMain: [
     {
