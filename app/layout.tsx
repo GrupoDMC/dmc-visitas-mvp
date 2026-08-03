@@ -1,6 +1,9 @@
 import type { Metadata, Viewport } from "next";
-import { Inter, Sora } from "next/font/google";
+import { Inter, Sora, Geist } from "next/font/google";
 import "./globals.css";
+import { cn } from "@/lib/utils";
+
+const geist = Geist({subsets:['latin'],variable:'--font-sans'});
 
 const inter = Inter({
   variable: "--font-inter",
@@ -31,10 +34,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html
-      lang="es-CL"
-      className={`${inter.variable} ${sora.variable} h-full antialiased`}
-    >
+    <html lang="es-CL" className={cn("h-full", "antialiased", inter.variable, sora.variable, "font-sans", geist.variable)}>
       <body className="min-h-full">{children}</body>
     </html>
   );

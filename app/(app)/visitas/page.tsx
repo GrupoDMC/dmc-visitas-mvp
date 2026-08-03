@@ -5,12 +5,7 @@ import { hoyEnChile } from "@/lib/fechas";
 import { leerPagina, unico } from "@/lib/paginacion";
 import { clientesActivos } from "@/lib/db/clientes";
 import { tecnicosActivos } from "@/lib/db/tecnicos";
-import {
-  hayAlgunaVisita,
-  listarVisitas,
-  visitasAbiertasDeTecnico,
-  type FiltrosVisitas,
-} from "@/lib/db/visitas";
+import { hayAlgunaVisita, listarVisitas, visitasAbiertasDeTecnico, type FiltrosVisitas, } from "@/lib/db/visitas";
 import { Encabezado, EnlaceBoton } from "@/components/ui/encabezado";
 import { EstadoVacio } from "@/components/ui/estado-vacio";
 import { Paginacion } from "@/components/ui/paginacion";
