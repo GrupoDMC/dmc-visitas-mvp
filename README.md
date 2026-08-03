@@ -124,9 +124,34 @@ navegación — esconder un enlace no es un permiso.
 
 ## Estado actual
 
-Hecho: ingreso, sesión, roles, shell, estados de error y carga.
-`/visitas`, `/clientes`, `/sucursales`, `/tecnicos` y `/mis-visitas` existen
-como marcadores con el control de acceso ya puesto, pendientes de contenido.
+**Fase 1** — ingreso, sesión, roles, shell, estados de error y carga.
+
+**Fase 2** — maestros de clientes, sucursales y técnicos:
+
+| Ruta | Qué es |
+| ---- | ------ |
+| `/clientes` | Listado, con buscador por razón social o RUT y filtro activo/inactivo |
+| `/clientes/nuevo` | Alta |
+| `/clientes/[id]` | Ficha: datos + tabla de sucursales |
+| `/clientes/[id]/editar` | Edición |
+| `/clientes/[id]/sucursales/nueva` | Alta de sucursal |
+| `/clientes/[id]/sucursales/[sucursalId]` | Edición de sucursal |
+| `/tecnicos` | Listado, con buscador y filtro |
+| `/tecnicos/nuevo` | Alta |
+| `/tecnicos/[id]` | Edición |
+
+Las sucursales no tienen listado de primer nivel: se administran desde la ficha
+de su cliente.
+
+Nada se borra nunca. "Eliminar" es siempre desactivar (`activo = false`); los
+inactivos siguen en los listados detrás del filtro, y desaparecen solo de los
+selects para crear cosas nuevas.
+
+Pendientes de contenido: `/visitas` y `/mis-visitas`, que siguen siendo
+marcadores con el control de acceso ya puesto.
+
+Datos de ejemplo opcionales en `docs/04_seed.sql` — no se cargan solos, hay que
+pegarlos a mano en el SQL Editor de Supabase.
 
 ## Comandos
 

@@ -1,16 +1,20 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { endurecer } from "@/lib/supabase/opciones-cookie";
+import { esRutaDeMaestros, INICIO_TECNICO } from "@/lib/navegacion";
 
 /**
  * En Next.js 16 el antiguo `middleware.ts` se llama `proxy.ts`.
  *
- * Hace dos cosas y ninguna más:
+ * Hace tres cosas y ninguna más:
  *  1. Refresca el token de sesión y reescribe las cookies.
  *  2. Chequeo optimista: sin sesión, a /login.
+ *  3. Rebota a un TECNICO que intente entrar a los maestros.
  *
- * NO decide permisos ni lee el perfil. Eso lo hace requerirSesion() en el
- * layout, que sí puede consultar la base. Acá solo miramos si hay usuario.
+ * Lo de (3) es comodidad, no la barrera de seguridad. La barrera está en
+ * `requerirVerTodas()`, que corre en la página con la sesión ya validada y
+ * cubre también a las Server Actions, que no pasan por acá. Si la consulta de
+ * abajo falla, dejamos pasar: la página va a frenar igual.
  */
 
 const RUTAS_PUBLICAS = ["/login"];
@@ -19,6 +23,40 @@ function esPublica(pathname: string): boolean {
   return RUTAS_PUBLICAS.some(
     (ruta) => pathname === ruta || pathname.startsWith(`${ruta}/`),
   );
+}
+
+/**
+ * Rol del usuario, leído directo de PostgREST.
+ *
+ * No usa `lib/supabase/admin.ts` a propósito: el proxy corre en un runtime
+ * aparte del render y la documentación de Next pide no compartir módulos con
+ * estado entre los dos. Un `fetch` suelto no tiene ese problema.
+ *
+ * Solo se llama en las rutas de maestros. Un técnico navegando sus visitas no
+ * paga este viaje de red, que es justo el que no queremos cobrarle a alguien
+ * en terreno con mala señal.
+ */
+async function rolDelUsuario(usuarioId: string): Promise<string | null> {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const clave = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !clave) return null;
+
+  try {
+    const respuesta = await fetch(
+      `${url}/rest/v1/perfil?id=eq.${encodeURIComponent(usuarioId)}&select=rol&limit=1`,
+      {
+        headers: { apikey: clave, Authorization: `Bearer ${clave}` },
+        cache: "no-store",
+      },
+    );
+
+    if (!respuesta.ok) return null;
+
+    const filas: Array<{ rol?: string }> = await respuesta.json();
+    return filas[0]?.rol ?? null;
+  } catch {
+    return null;
+  }
 }
 
 export async function proxy(request: NextRequest) {
@@ -71,6 +109,19 @@ export async function proxy(request: NextRequest) {
     destino.pathname = "/";
     destino.search = "";
     return NextResponse.redirect(destino);
+  }
+
+  // Clientes, sucursales y técnicos son de coordinación. Un técnico que llegue
+  // por URL directa vuelve a sus visitas.
+  if (user && esRutaDeMaestros(pathname)) {
+    const rol = await rolDelUsuario(user.id);
+
+    if (rol === "TECNICO") {
+      const destino = request.nextUrl.clone();
+      destino.pathname = INICIO_TECNICO;
+      destino.search = "";
+      return NextResponse.redirect(destino);
+    }
   }
 
   return response;

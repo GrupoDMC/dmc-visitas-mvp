@@ -39,6 +39,32 @@ export type PerfilRow = {
   creado_en: string;
 };
 
+/** cliente */
+export type ClienteRow = {
+  id: number;
+  rut: string;
+  razon_social: string;
+  nombre_fantasia: string | null;
+  telefono: string | null;
+  email: string | null;
+  activo: boolean;
+  creado_en: string;
+};
+
+/** sucursal */
+export type SucursalRow = {
+  id: number;
+  cliente_id: number;
+  nombre: string;
+  codigo_interno: string | null;
+  direccion: string | null;
+  comuna: string | null;
+  region: string | null;
+  telefono: string | null;
+  activo: boolean;
+  creado_en: string;
+};
+
 /** tecnico */
 export type TecnicoRow = {
   id: number;

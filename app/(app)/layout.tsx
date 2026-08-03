@@ -1,7 +1,9 @@
+import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import { getSesion, nombreRol } from "@/lib/auth";
 import { navegacionPara } from "@/lib/navegacion";
 import { ShellApp } from "@/components/shell/shell-app";
+import { Toast } from "@/components/ui/toast";
 
 /**
  * Guardia real de la aplicación. El proxy hace un chequeo optimista sobre la
@@ -25,6 +27,12 @@ export default async function LayoutApp({
       items={navegacionPara(sesion.rol)}
     >
       {children}
+      {/* Vive en el layout para que cualquier acción que redirija con `?ok=`
+          muestre su confirmación sin que la pantalla tenga que saber nada.
+          El Suspense es porque lee search params. */}
+      <Suspense fallback={null}>
+        <Toast />
+      </Suspense>
     </ShellApp>
   );
 }
