@@ -1,7 +1,16 @@
 import "server-only";
 
 import { supabaseAdmin } from "@/lib/supabase/admin";
-import type { EstadoVisita } from "./tipos";
+import { rango, totalPaginas, type Pagina } from "@/lib/paginacion";
+import { limpiarBusqueda } from "./filtros";
+import type {
+  ClienteDeVisita,
+  EstadoVisita,
+  SucursalDeVisita,
+  TecnicoDeVisita,
+  TipoTrabajo,
+  VisitaRow,
+} from "./tipos";
 
 /**
  * Una visita "abierta" es la que todavía le puede caer encima a alguien.
@@ -47,4 +56,340 @@ export function frasearVisitasAbiertas(cantidad: number): string {
   return cantidad === 1
     ? "1 visita abierta"
     : `${cantidad} visitas abiertas`;
+}
+
+// ---------------------------------------------------------------------------
+// LISTADOS
+// ---------------------------------------------------------------------------
+
+/**
+ * Los datos embebidos se piden por nombre de tabla y no con hint de FK
+ * (`cliente:cliente_id(...)`) porque `visita` tiene exactamente una clave
+ * foránea a cada una de las tres. Sin ambigüedad, PostgREST resuelve solo.
+ */
+const CAMPOS_LISTADO =
+  "id, folio, estado, tipo_trabajo, fecha_programada, hora_programada, " +
+  "tecnico_id, cliente ( razon_social ), " +
+  "sucursal ( nombre, direccion, comuna, telefono ), " +
+  "tecnico ( nombres, apellidos )";
+
+export type VisitaEnListado = Pick<
+  VisitaRow,
+  | "id"
+  | "folio"
+  | "estado"
+  | "tipo_trabajo"
+  | "fecha_programada"
+  | "hora_programada"
+  | "tecnico_id"
+> & {
+  cliente: ClienteDeVisita | null;
+  sucursal: SucursalDeVisita | null;
+  tecnico: TecnicoDeVisita | null;
+};
+
+/**
+ * Filtros del listado de coordinación. Todos llegan como texto porque viven en
+ * la URL: es la fuente de verdad, para que un link filtrado se pueda compartir.
+ *
+ * Vacío siempre significa "sin filtrar". `tecnico` tiene además el valor
+ * especial `sin`, que es el filtro más útil de todos: las visitas que todavía
+ * no tienen a quién mandarle.
+ */
+export type FiltrosVisitas = {
+  busqueda: string;
+  desde: string;
+  hasta: string;
+  estado: string;
+  tecnico: string;
+  cliente: string;
+};
+
+export const SIN_TECNICO = "sin";
+
+/**
+ * Tope de ids que el buscador libre arrastra por cliente y por sucursal.
+ *
+ * El buscador tiene que pegar contra folio, razón social y nombre de sucursal a
+ * la vez, y esas dos últimas viven en otras tablas. PostgREST no filtra la
+ * tabla de arriba por una condición de una embebida dentro de un `or`, así que
+ * se resuelven primero los ids que coinciden y después se los mete en el `in`.
+ *
+ * Son dos consultas más, las dos por índice y sobre tablas chicas. El tope está
+ * para que una búsqueda de una sola letra no arme una URL de 40 KB; si alguien
+ * lo alcanza, el resultado queda incompleto, pero buscar "a" tampoco pretendía
+ * ser preciso.
+ */
+const TOPE_BUSQUEDA = 300;
+
+async function idsQueCoinciden(
+  tabla: "cliente" | "sucursal",
+  columna: string,
+  termino: string,
+): Promise<number[]> {
+  const { data, error } = await supabaseAdmin()
+    .from(tabla)
+    .select("id")
+    .ilike(columna, `%${termino}%`)
+    .limit(TOPE_BUSQUEDA)
+    .returns<{ id: number }[]>();
+
+  if (error) {
+    throw new Error(`No se pudo buscar en ${tabla}: ${error.message}`);
+  }
+
+  return (data ?? []).map((fila) => fila.id);
+}
+
+function idNumerico(valor: string): number | null {
+  const numero = Number(valor);
+  return Number.isInteger(numero) && numero > 0 ? numero : null;
+}
+
+/**
+ * Listado de coordinación, paginado de 25.
+ *
+ * Orden: las sin fecha primero —son las que nacieron en terreno, recién
+ * llegadas y sin agendar—, después las más recientes. Ordenar ascendente
+ * dejaría arriba las visitas de hace tres meses, que es lo que menos importa.
+ */
+export async function listarVisitas(
+  filtros: FiltrosVisitas,
+  pagina: number,
+): Promise<Pagina<VisitaEnListado>> {
+  const { desde, hasta } = rango(pagina);
+
+  let consulta = supabaseAdmin()
+    .from("visita")
+    .select(CAMPOS_LISTADO, { count: "exact" })
+    .order("fecha_programada", { ascending: false, nullsFirst: true })
+    .order("hora_programada", { ascending: true, nullsFirst: true })
+    .order("id", { ascending: false })
+    .range(desde, hasta);
+
+  if (filtros.desde) consulta = consulta.gte("fecha_programada", filtros.desde);
+  if (filtros.hasta) consulta = consulta.lte("fecha_programada", filtros.hasta);
+  if (filtros.estado) consulta = consulta.eq("estado", filtros.estado);
+
+  if (filtros.tecnico === SIN_TECNICO) {
+    consulta = consulta.is("tecnico_id", null);
+  } else {
+    const tecnicoId = idNumerico(filtros.tecnico);
+    if (tecnicoId) consulta = consulta.eq("tecnico_id", tecnicoId);
+  }
+
+  const clienteId = idNumerico(filtros.cliente);
+  if (clienteId) consulta = consulta.eq("cliente_id", clienteId);
+
+  const termino = limpiarBusqueda(filtros.busqueda);
+  if (termino) {
+    const [clientes, sucursales] = await Promise.all([
+      idsQueCoinciden("cliente", "razon_social", termino),
+      idsQueCoinciden("sucursal", "nombre", termino),
+    ]);
+
+    const partes = [`folio.ilike.%${termino}%`];
+    if (clientes.length) partes.push(`cliente_id.in.(${clientes.join(",")})`);
+    if (sucursales.length) partes.push(`sucursal_id.in.(${sucursales.join(",")})`);
+
+    consulta = consulta.or(partes.join(","));
+  }
+
+  const { data, error, count } = await consulta.returns<VisitaEnListado[]>();
+
+  if (error) {
+    throw new Error(`No se pudo leer el listado de visitas: ${error.message}`);
+  }
+
+  const total = count ?? 0;
+
+  return { filas: data ?? [], total, pagina, paginas: totalPaginas(total) };
+}
+
+/**
+ * ¿Hay alguna visita cargada? Igual que en los maestros: distingue "no hay
+ * ninguna" de "ninguna coincide con el filtro", que llevan a acciones opuestas.
+ * Corre solo cuando el listado ya salió vacío.
+ */
+export async function hayAlgunaVisita(): Promise<boolean> {
+  const { count, error } = await supabaseAdmin()
+    .from("visita")
+    .select("id", { count: "exact", head: true });
+
+  if (error) {
+    throw new Error(`No se pudieron contar las visitas: ${error.message}`);
+  }
+
+  return (count ?? 0) > 0;
+}
+
+/**
+ * Todas las visitas sin cerrar de un técnico.
+ *
+ * No pagina: son las que tiene encima, y si un técnico llega a 200 visitas
+ * abiertas el problema no es la paginación. El tope está por las dudas.
+ *
+ * Ordenadas ascendente y con las sin fecha primero: acá sí manda lo que viene,
+ * y las de terreno sin agendar son las que quedaron a medio cerrar.
+ */
+export async function visitasAbiertasDeTecnico(
+  tecnicoId: number,
+): Promise<VisitaEnListado[]> {
+  const { data, error } = await supabaseAdmin()
+    .from("visita")
+    .select(CAMPOS_LISTADO)
+    .eq("tecnico_id", tecnicoId)
+    .in("estado", ESTADOS_ABIERTOS)
+    .order("fecha_programada", { ascending: true, nullsFirst: true })
+    .order("hora_programada", { ascending: true, nullsFirst: true })
+    .limit(200)
+    .returns<VisitaEnListado[]>();
+
+  if (error) {
+    throw new Error(`No se pudieron leer tus visitas: ${error.message}`);
+  }
+
+  return data ?? [];
+}
+
+/**
+ * Las últimas visitas de una sucursal, para el panel de historial del detalle.
+ * `exceptoId` saca del listado a la visita que se está mirando.
+ */
+export async function ultimasVisitasDeSucursal(
+  sucursalId: number,
+  exceptoId: number,
+  limite = 5,
+): Promise<VisitaEnListado[]> {
+  const { data, error } = await supabaseAdmin()
+    .from("visita")
+    .select(CAMPOS_LISTADO)
+    .eq("sucursal_id", sucursalId)
+    .neq("id", exceptoId)
+    .order("fecha_programada", { ascending: false, nullsFirst: true })
+    .order("id", { ascending: false })
+    .limit(limite)
+    .returns<VisitaEnListado[]>();
+
+  if (error) {
+    throw new Error(
+      `No se pudo leer el historial de la sucursal: ${error.message}`,
+    );
+  }
+
+  return data ?? [];
+}
+
+// ---------------------------------------------------------------------------
+// DETALLE
+// ---------------------------------------------------------------------------
+
+export type VisitaDetalle = VisitaRow & {
+  cliente: { id: number; rut: string; razon_social: string } | null;
+  sucursal: {
+    id: number;
+    nombre: string;
+    codigo_interno: string | null;
+    direccion: string | null;
+    comuna: string | null;
+    region: string | null;
+    telefono: string | null;
+  } | null;
+  tecnico: {
+    id: number;
+    nombres: string;
+    apellidos: string;
+    telefono: string | null;
+  } | null;
+};
+
+const CAMPOS_DETALLE =
+  "id, folio, cliente_id, sucursal_id, tecnico_id, estado, tipo_trabajo, " +
+  "fecha_programada, hora_programada, contacto_nombre, contacto_email, " +
+  "contacto_telefono, descripcion_trabajo, creado_en, " +
+  "cliente ( id, rut, razon_social ), " +
+  "sucursal ( id, nombre, codigo_interno, direccion, comuna, region, telefono ), " +
+  "tecnico ( id, nombres, apellidos, telefono )";
+
+export async function obtenerVisita(id: number): Promise<VisitaDetalle | null> {
+  const { data, error } = await supabaseAdmin()
+    .from("visita")
+    .select(CAMPOS_DETALLE)
+    .eq("id", id)
+    .maybeSingle<VisitaDetalle>();
+
+  if (error) {
+    throw new Error(`No se pudo leer la visita: ${error.message}`);
+  }
+
+  return data;
+}
+
+// ---------------------------------------------------------------------------
+// ESCRITURA
+// ---------------------------------------------------------------------------
+
+/**
+ * Lo que se escribe al crear una visita.
+ *
+ * `folio` no está y no puede estar: lo genera la base con su propia secuencia
+ * (`docs/01_esquema.sql`). Mandarlo desde acá sería pisarle el número.
+ *
+ * Los `contacto_*` son un SNAPSHOT de esta visita. No leen ni actualizan la
+ * sucursal: quien recibe al técnico un martes puede no ser quien figura como
+ * contacto, y la visita tiene que registrar quién estaba de verdad.
+ */
+export type DatosVisitaNueva = {
+  cliente_id: number;
+  sucursal_id: number;
+  tecnico_id: number | null;
+  tipo_trabajo: TipoTrabajo | null;
+  fecha_programada: string | null;
+  hora_programada: string | null;
+  descripcion_trabajo: string | null;
+  contacto_nombre: string | null;
+  contacto_email: string | null;
+  contacto_telefono: string | null;
+  creado_por: string;
+};
+
+export async function crearVisita(
+  datos: DatosVisitaNueva,
+): Promise<{ id: number; folio: string }> {
+  const { data, error } = await supabaseAdmin()
+    .from("visita")
+    // El estado va explícito aunque la columna lo tenga por defecto: que una
+    // visita nace PROGRAMADA es una regla del negocio, no un detalle del DDL.
+    .insert({ ...datos, estado: "PROGRAMADA" })
+    .select("id, folio")
+    .single<{ id: number; folio: string }>();
+
+  if (error) {
+    throw new Error(`No se pudo crear la visita: ${error.message}`);
+  }
+
+  return data;
+}
+
+/**
+ * Asigna un técnico a una o varias visitas. Devuelve cuántas cambiaron de
+ * verdad, que no es lo mismo que cuántas se pidieron: entre que el coordinador
+ * marcó las casillas y apretó el botón, alguna pudo desaparecer del filtro.
+ */
+export async function asignarTecnico(
+  ids: number[],
+  tecnicoId: number,
+): Promise<number> {
+  const { data, error } = await supabaseAdmin()
+    .from("visita")
+    .update({ tecnico_id: tecnicoId })
+    .in("id", ids)
+    .select("id")
+    .returns<{ id: number }[]>();
+
+  if (error) {
+    throw new Error(`No se pudo asignar el técnico: ${error.message}`);
+  }
+
+  return (data ?? []).length;
 }

@@ -358,3 +358,212 @@ Los listados distinguen ahora tres casos, cada uno con su acción:
 La consulta extra (`hayAlgunCliente()` / `hayAlgunTecnico()`) es un `count`
 con `head: true`, y corre **solo** cuando el listado ya salió vacío. En el
 camino normal no cuesta nada.
+
+---
+
+# Fase 3 — Visitas
+
+---
+
+## 19. La cascada cliente → sucursal se resuelve en el navegador
+
+El encargo pide "seleccionar cliente → se cargan sus sucursales". La forma
+obvia sería pedirlas al servidor al elegir el cliente. No se hizo así, y el
+motivo es la regla central del proyecto: **ningún componente de cliente habla
+con la base**. Para pedirlas haría falta un Route Handler nuevo — más código,
+más superficie que proteger, y un viaje de red entre dos selects que el
+coordinador siente.
+
+`/visitas/nueva` recibe **todas** las sucursales activas de una vez
+(`sucursalesActivasConCliente()`) y el filtro por cliente pasa en el navegador.
+Cabe de sobra: DMC tiene decenas de sucursales, no miles.
+
+**Cuándo deja de servir.** Si esto llegara a las ~2000 sucursales, el HTML de
+la pantalla empieza a pesar. Ahí se convierte en un Route Handler y el
+formulario lo consulta al cambiar el cliente. Está aislado en una sola función,
+así que es un cambio de un archivo.
+
+Efecto lateral bueno: el teléfono que se sugiere en `contacto_telefono` ya está
+del lado del cliente, así que la sugerencia es instantánea y no pestañea.
+
+---
+
+## 20. El teléfono se sugiere, no se impone
+
+"Al elegir sucursal, precargá teléfono en `contacto_telefono` como sugerencia
+editable."
+
+La trampa está en qué pasa cuando se cambia de sucursal **después** de haber
+corregido el teléfono a mano. Si se pisa siempre, se borra lo escrito; si no se
+pisa nunca, queda el teléfono de la sucursal anterior, que es peor porque nadie
+lo nota.
+
+La regla implementada: se reemplaza **solo si el campo está vacío o si todavía
+tiene la sugerencia anterior**. Un teléfono tipeado a mano no se toca nunca.
+
+Y lo más importante, que el encargo subraya: los `contacto_*` son un **snapshot
+de esa visita**. No leen ni escriben la sucursal. Quien recibe al técnico un
+martes puede no ser el contacto oficial, y la visita tiene que registrar quién
+estaba de verdad.
+
+---
+
+## 21. Asignar es la única acción que no redirige
+
+Todo el resto de la app confirma con `redirect(conAviso(...))` (decisión 15).
+La asignación no puede: el coordinador está en un listado filtrado, con
+paginación y con más filas por repartir. Sacarlo de ahí para que vuelva a
+entrar es exactamente lo contrario de lo que necesita un lunes a la mañana.
+
+Entonces la acción `asignarTecnicoAccion`:
+
+- **no** hace `redirect`;
+- llama a `revalidatePath("/visitas")`, que en Next 16 devuelve la tabla ya
+  actualizada **en la misma respuesta** de la acción;
+- devuelve la confirmación en el estado (`EstadoAsignacion.exito`), que se
+  muestra arriba de la tabla en una región `aria-live`.
+
+Por eso `EstadoAsignacion` y `SIN_ASIGNACION` viven en `lib/acciones/formulario.ts`
+y no junto a la acción: un módulo `"use server"` solo puede exportar funciones
+asíncronas, ni constantes ni objetos.
+
+La acción devuelve **cuántas filas cambiaron de verdad**, que no siempre es
+cuántas se pidieron. Si alguien borró o movió una visita mientras el modal
+estaba abierto, el mensaje lo dice en vez de mentir un "listo".
+
+---
+
+## 22. El buscador libre necesita dos consultas previas
+
+"Un buscador libre que pegue contra folio, razón social y nombre de sucursal."
+
+`folio` está en `visita`; los otros dos están en `cliente` y `sucursal`.
+PostgREST **no** filtra la tabla de arriba con una condición sobre una tabla
+embebida dentro de un `or`. Así que `listarVisitas()` primero resuelve qué
+clientes y qué sucursales coinciden, y después arma:
+
+```
+or=(folio.ilike.*termino*, cliente_id.in.(...), sucursal_id.in.(...))
+```
+
+Son dos consultas más, las dos por índice y sobre tablas chicas.
+
+**Deuda conocida:** hay un tope de 300 ids por lado (`TOPE_BUSQUEDA`). Sin él,
+buscar una sola letra armaría una URL de decenas de KB. Si alguien lo alcanza,
+el resultado queda incompleto — pero buscar "a" tampoco pretendía ser preciso.
+
+El término pasa por `limpiarBusqueda()`, el mismo saneador de los maestros:
+saca comas, paréntesis y comodines, que son justo los caracteres con los que se
+podría torcer un `or` desde la barra de direcciones.
+
+---
+
+## 23. Cuatro grupos en el listado del técnico, no tres
+
+El encargo pide "Hoy", "Esta semana" y "Pendientes de cerrar". Se agregó un
+cuarto grupo, **"Más adelante"**, que aparece solo si tiene algo.
+
+Sin él, una visita agendada para dentro de tres semanas no caía en ningún grupo
+y **el técnico no tenía forma de saber que la tenía**. Ocultar trabajo asignado
+es un error más caro que un título de más en la pantalla.
+
+El reparto es excluyente y en este orden:
+
+| Grupo | Condición |
+|---|---|
+| Hoy | `fecha_programada` = hoy |
+| Pendientes de cerrar | sin fecha, o fecha anterior a hoy |
+| Esta semana | entre mañana y el domingo de esta semana |
+| Más adelante | después de ese domingo |
+
+Una visita de hoy que ya está `EN_CURSO` queda en "Hoy" y no en pendientes:
+sigue siendo el trabajo del día, no algo que se arrastra. Las que nacieron en
+terreno (sin fecha) caen en pendientes, que es donde el técnico las busca.
+
+Solo se traen las **abiertas** (`ESTADOS_ABIERTOS`): una visita `REALIZADA` no
+tiene nada que hacer en la pantalla de trabajo del día. Todavía no hay pantalla
+para que el técnico revise lo que ya cerró; si hace falta, es una línea más.
+
+---
+
+## 24. "Hoy" se calcula en horario de Chile, no del servidor
+
+`lib/fechas.ts` no es un archivo de utilidades decorativas. Tiene dos reglas y
+las dos vienen de bugs que se pagan caro en producción:
+
+**1. `hoyEnChile()` usa `Intl` con `America/Santiago`.** El servidor de Vercel
+corre en UTC. Un `new Date().toISOString().slice(0,10)` después de las 21:00
+hora de Chile ya devuelve *mañana* — y las 21:00 es exactamente cuando un
+técnico revisa la agenda del día siguiente. Todo el agrupado del listado
+depende de este dato.
+
+**2. Las fechas de agendamiento nunca se convierten a `Date` para mostrarlas.**
+`fecha_programada` es `date` y `hora_programada` es `time`: no tienen zona
+horaria y no la queremos. `new Date("2026-08-12")` se interpreta como
+medianoche UTC y en Chile se imprime como **11 de agosto**. El formateo parte
+la cadena y listo.
+
+---
+
+## 25. Al técnico que abre una visita ajena se le devuelve 404
+
+Como pide el encargo, y con dos precisiones que importan:
+
+**El chequeo cubre también el título de la pestaña.** `generateMetadata` pone
+el folio, así que pasa por el mismo permiso que la página. Un 404 con
+`<title>V-2026-00042</title>` confirmaría que ese folio existe.
+
+**Un perfil TECNICO sin técnico vinculado no es dueño de nada.** El chequeo
+ingenuo `visita.tecnico_id !== sesion.tecnicoId` da falso cuando los dos son
+`null`, y le abriría **todas las visitas sin asignar**. La restricción
+`ck_perfil_tecnico` del esquema hace que ese perfil no debería existir, pero de
+un dato que no debería existir tampoco se saca un permiso.
+
+Las dos lecturas comparten una sola consulta gracias a `cache` de React.
+
+---
+
+## 26. `/mis-visitas` ahora redirige a `/visitas`
+
+Cierra lo que la decisión 8 dejó pendiente. `/visitas` ya no llama a
+`requerirVerTodas()`: mira el rol y devuelve una pantalla u otra. Un técnico
+que entra a `/clientes` ahora hace un solo salto y aterriza en sus visitas, que
+era la intención original.
+
+`/mis-visitas` queda como redirección en vez de borrarse: puede estar guardada
+en el celular de alguien, y un 404 en el acceso directo del técnico es un
+llamado telefónico un lunes a las 8 de la mañana.
+
+---
+
+## 27. `REAGENDADA` dejó de ser gris
+
+La decisión 2 pedía definir el color de `REAGENDADA` y `CANCELADA` **antes de
+construir el listado de visitas**, que es donde se ven los seis estados juntos.
+No llegó una definición, así que se tomó la mínima que destraba: `REAGENDADA`
+pasa a violeta `#6D28D9`. Con el gris anterior se leía idéntica a `PROGRAMADA`
+de reojo, que era justo el problema que la decisión 2 anticipaba.
+
+`CANCELADA` queda en gris claro `#9CA3AF`. Es provisorio y se cambia en una
+línea de `app/globals.css`. El badge siempre muestra el texto del estado junto
+al punto, así que ningún color es el único portador de la información.
+
+---
+
+## 28. Lo que la fase 3 dejó explícitamente afuera
+
+- **La fila sin técnico se marca con una barra ámbar a la izquierda**, no con
+  el fondo entero: el fondo compite con el hover y con el badge de estado. La
+  columna dice "Sin asignar" igual, así que el color no informa solo.
+- **La asignación en lote necesita JavaScript.** Marcar veinte casillas y
+  mandarlas juntas no tiene equivalente sin JS. La asignación de a una fila
+  también abre el mismo modal. El resto de la pantalla —filtros, paginación,
+  navegación— sí anda sin JavaScript.
+- **No se valida que la fecha programada sea futura.** Cargar una visita de
+  ayer que no se alcanzó a registrar es un caso real de marcha blanca.
+- **No hay edición de visita.** El encargo de la fase 3 es crear, asignar,
+  listar y ver. Cambiar fecha o tipo de trabajo después no está pedido; el
+  formulario de la fase 4 va a editar parte de esos campos.
+- **Los `contacto_*` de una visita creada en terreno quedan vacíos si el
+  técnico no los llena.** Son opcionales a propósito: pedirlos con el encargado
+  de tienda esperando es la forma más rápida de que nadie use la pantalla.

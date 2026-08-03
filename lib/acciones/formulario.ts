@@ -20,6 +20,27 @@ export type EstadoFormulario = {
 
 export const SIN_ERRORES: EstadoFormulario = { error: null, errores: {} };
 
+/**
+ * Estado de la asignación de técnico, que además del error lleva la
+ * confirmación.
+ *
+ * Es la única acción de la app que no redirige al terminar —el coordinador se
+ * queda en el mismo listado filtrado—, así que el "listo" no puede viajar en la
+ * URL como el resto (ver `lib/avisos.ts`). Vuelve en el estado y se muestra al
+ * lado del botón.
+ *
+ * Vive acá y no en `acciones/visitas.ts` porque ese archivo es `"use server"`:
+ * un módulo de servidor solo puede exportar funciones asíncronas, ni constantes
+ * ni objetos.
+ */
+export type EstadoAsignacion = EstadoFormulario & { exito: string | null };
+
+export const SIN_ASIGNACION: EstadoAsignacion = {
+  error: null,
+  errores: {},
+  exito: null,
+};
+
 /** Un problema general, sin campo culpable. */
 export function falla(mensaje: string): EstadoFormulario {
   return { error: mensaje, errores: {} };

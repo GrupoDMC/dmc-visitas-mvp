@@ -1,3 +1,4 @@
+import { nombreEstado } from "@/lib/catalogos";
 import type { EstadoVisita } from "@/lib/db/tipos";
 
 /**
@@ -7,20 +8,23 @@ import type { EstadoVisita } from "@/lib/db/tipos";
  *
  * Nota: la dirección visual definió color para PROGRAMADA, EN_CURSO,
  * REALIZADA y PENDIENTE. REAGENDADA y CANCELADA existen en
- * cat_estado_visita pero no tenían color asignado; van en gris hasta que
- * se defina uno.
+ * cat_estado_visita y llevan un color provisorio (ver `app/globals.css`).
+ *
+ * El texto sale de `lib/catalogos.ts`, que es la única lista de estados de la
+ * app: acá se decide cómo se pinta, no cómo se llama.
  */
-const ESTADOS: Record<EstadoVisita, { texto: string; punto: string }> = {
-  PROGRAMADA: { texto: "Programada", punto: "bg-programada" },
-  EN_CURSO: { texto: "En curso", punto: "bg-encurso" },
-  REALIZADA: { texto: "Realizada", punto: "bg-realizada" },
-  PENDIENTE: { texto: "Pendiente", punto: "bg-pendiente" },
-  REAGENDADA: { texto: "Reagendada", punto: "bg-reagendada" },
-  CANCELADA: { texto: "Cancelada", punto: "bg-cancelada" },
+const PUNTOS: Record<EstadoVisita, string> = {
+  PROGRAMADA: "bg-programada",
+  EN_CURSO: "bg-encurso",
+  REALIZADA: "bg-realizada",
+  PENDIENTE: "bg-pendiente",
+  REAGENDADA: "bg-reagendada",
+  CANCELADA: "bg-cancelada",
 };
 
 export function BadgeEstado({ estado }: { estado: EstadoVisita }) {
-  const { texto, punto } = ESTADOS[estado];
+  const texto = nombreEstado(estado);
+  const punto = PUNTOS[estado];
 
   return (
     <span className="inline-flex items-center gap-1.5 rounded-base border border-borde bg-superficie px-2 py-0.5 text-xs font-medium text-texto">

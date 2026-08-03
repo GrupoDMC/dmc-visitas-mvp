@@ -76,3 +76,40 @@ export type TecnicoRow = {
   activo: boolean;
   creado_en: string;
 };
+
+/**
+ * visita — solo las columnas que la fase 3 lee o escribe.
+ *
+ * Las de terreno (trabajo_realizado, observaciones, motivo_pendiente,
+ * responsable_tienda_*, fecha_inicio, fecha_termino) existen en el esquema y
+ * las llena la fase 4.
+ *
+ * `fecha_programada` es `date` y `hora_programada` es `time`: llegan como
+ * `"2026-08-12"` y `"09:30:00"`, sin zona horaria. Ver `lib/fechas.ts`.
+ */
+export type VisitaRow = {
+  id: number;
+  folio: string;
+  cliente_id: number;
+  sucursal_id: number;
+  tecnico_id: number | null;
+  estado: EstadoVisita;
+  tipo_trabajo: TipoTrabajo | null;
+  fecha_programada: string | null;
+  hora_programada: string | null;
+  contacto_nombre: string | null;
+  contacto_email: string | null;
+  contacto_telefono: string | null;
+  descripcion_trabajo: string | null;
+  creado_en: string;
+};
+
+/** Los datos embebidos que acompañan a una visita en los listados. */
+export type ClienteDeVisita = { razon_social: string };
+export type SucursalDeVisita = {
+  nombre: string;
+  direccion: string | null;
+  comuna: string | null;
+  telefono: string | null;
+};
+export type TecnicoDeVisita = { nombres: string; apellidos: string };

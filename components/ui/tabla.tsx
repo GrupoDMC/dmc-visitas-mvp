@@ -49,8 +49,18 @@ export function Th({
   );
 }
 
-export function Fila({ children }: { children: ReactNode }) {
-  return <tr className="h-11 transition-colors hover:bg-fondo">{children}</tr>;
+export function Fila({
+  children,
+  className = "",
+}: {
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <tr className={`h-11 transition-colors hover:bg-fondo ${className}`}>
+      {children}
+    </tr>
+  );
 }
 
 export function Td({

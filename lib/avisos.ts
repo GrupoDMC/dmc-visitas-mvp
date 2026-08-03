@@ -19,7 +19,16 @@ export const AVISOS = {
   "tecnico-guardado": "Cambios guardados.",
   "tecnico-desactivado": "Técnico desactivado. Ya no aparece para asignar visitas.",
   "tecnico-activado": "Técnico reactivado.",
+  "visita-creada": "Visita creada.",
+  "visita-en-terreno-creada":
+    "Visita abierta en terreno. Quedó a tu nombre, sin fecha agendada.",
 } as const;
+
+/**
+ * La asignación de técnico NO tiene clave acá: es la única acción que no
+ * redirige, porque el coordinador se queda en el listado que venía filtrando.
+ * Su confirmación vuelve en el estado de la acción. Ver `lib/acciones/visitas.ts`.
+ */
 
 export type ClaveAviso = keyof typeof AVISOS;
 

@@ -98,6 +98,44 @@ export async function cambiarActivoSucursal(
   }
 }
 
+/**
+ * Todas las sucursales activas, con su cliente.
+ *
+ * Es lo que come el select en cascada de "Nueva visita": el formulario recibe
+ * las sucursales de todos los clientes de una vez y filtra en el navegador al
+ * elegir el cliente. Se hace así, y no pidiéndolas cuando se elige el cliente,
+ * porque ningún componente de cliente puede hablar con la base — la regla
+ * central del proyecto — y montar un endpoint solo para esto es más código y
+ * un viaje de red más para el coordinador.
+ *
+ * Cabe: DMC tiene decenas de sucursales, no miles. Si algún día son miles, esto
+ * pasa a ser una ruta de API y el formulario la consulta al cambiar el cliente.
+ */
+export async function sucursalesActivasConCliente(): Promise<
+  Pick<
+    SucursalRow,
+    "id" | "cliente_id" | "nombre" | "direccion" | "comuna" | "telefono"
+  >[]
+> {
+  const { data, error } = await supabaseAdmin()
+    .from("sucursal")
+    .select("id, cliente_id, nombre, direccion, comuna, telefono")
+    .eq("activo", true)
+    .order("nombre", { ascending: true })
+    .returns<
+      Pick<
+        SucursalRow,
+        "id" | "cliente_id" | "nombre" | "direccion" | "comuna" | "telefono"
+      >[]
+    >();
+
+  if (error) {
+    throw new Error(`No se pudieron leer las sucursales activas: ${error.message}`);
+  }
+
+  return data ?? [];
+}
+
 /** Sucursales activas de un cliente, para el select de creación de visitas. */
 export async function sucursalesActivasDeCliente(
   clienteId: number,

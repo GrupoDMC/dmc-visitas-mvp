@@ -14,7 +14,9 @@ export type ItemNav = {
  * coordinación.
  */
 const ITEMS: readonly ItemNav[] = [
-  { href: "/mis-visitas", etiqueta: "Mis visitas", roles: ["TECNICO"] },
+  // Misma ruta, distinto nombre y distinta pantalla según el rol: `/visitas`
+  // le muestra al técnico sus tarjetas y al coordinador la tabla completa.
+  { href: "/visitas", etiqueta: "Mis visitas", roles: ["TECNICO"] },
   { href: "/visitas", etiqueta: "Visitas", roles: ["ADMIN", "COORDINADOR"] },
   { href: "/clientes", etiqueta: "Clientes", roles: ["ADMIN", "COORDINADOR"] },
   { href: "/tecnicos", etiqueta: "Técnicos", roles: ["ADMIN", "COORDINADOR"] },

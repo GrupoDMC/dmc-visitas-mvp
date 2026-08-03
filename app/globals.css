@@ -21,7 +21,11 @@
   --color-encurso: #b45309;
   --color-realizada: #15803d;
   --color-pendiente: #b91c1c;
-  --color-reagendada: #6b7280;
+  /* REAGENDADA y CANCELADA no tenían color en la dirección visual original.
+     Provisorios, pero distinguibles: en el listado de coordinación se ven los
+     seis estados en la misma pantalla, y con REAGENDADA en el mismo gris que
+     PROGRAMADA las dos filas se leían idénticas de reojo. */
+  --color-reagendada: #6d28d9;
   --color-cancelada: #9ca3af;
 
   /* Error de formulario */

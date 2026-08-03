@@ -2,6 +2,7 @@ import type {
   InputHTMLAttributes,
   ReactNode,
   SelectHTMLAttributes,
+  TextareaHTMLAttributes,
 } from "react";
 
 /**
@@ -102,6 +103,35 @@ export function Selector({
     >
       {children}
     </select>
+  );
+}
+
+/**
+ * Textarea. Va SIEMPRE controlada desde afuera, igual que el resto: React 19
+ * vacía los campos no controlados en cuanto termina la acción, también cuando
+ * vuelve con un error de validación, y acá lo que se pierde son párrafos.
+ */
+export function AreaTexto({
+  invalido,
+  className = "",
+  rows = 4,
+  ...props
+}: TextareaHTMLAttributes<HTMLTextAreaElement> & { invalido?: boolean }) {
+  return (
+    <textarea
+      {...props}
+      rows={rows}
+      aria-invalid={invalido || undefined}
+      className={[
+        "w-full rounded-base border bg-superficie px-3 py-2 text-base text-texto",
+        "placeholder:text-suave",
+        invalido ? "border-error" : "border-borde",
+        "focus:border-acento focus:outline-none focus-visible:outline-2",
+        "focus-visible:outline-offset-2 focus-visible:outline-acento",
+        "disabled:cursor-not-allowed disabled:bg-fondo disabled:text-suave",
+        className,
+      ].join(" ")}
+    />
   );
 }
 

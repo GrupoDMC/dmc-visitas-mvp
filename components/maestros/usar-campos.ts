@@ -20,11 +20,23 @@ export function useCampos<T extends Record<string, string>>(iniciales: T) {
   const [valores, setValores] = useState<T>(iniciales);
 
   function alCambiar(campo: keyof T) {
-    return (evento: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+    return (
+      evento: ChangeEvent<
+        HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement
+      >,
+    ) => {
       const valor = evento.target.value;
       setValores((previos) => ({ ...previos, [campo]: valor }));
     };
   }
 
-  return { valores, alCambiar };
+  /**
+   * Escribir un campo desde código, no desde el teclado. Lo usa la cascada de
+   * "Nueva visita" para sugerir el teléfono de la sucursal en el contacto.
+   */
+  function fijar(campo: keyof T, valor: string) {
+    setValores((previos) => ({ ...previos, [campo]: valor }));
+  }
+
+  return { valores, alCambiar, fijar };
 }
