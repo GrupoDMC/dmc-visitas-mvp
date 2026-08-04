@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import { FormularioIngreso } from "./formulario-ingreso";
-import { LoginForm } from "@/components/login-form";
 
 export const metadata: Metadata = {
   title: "Entrar · Visitas técnicas",
