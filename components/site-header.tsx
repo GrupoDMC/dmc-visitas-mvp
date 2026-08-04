@@ -9,10 +9,12 @@ interface PageData {
 }
 
 const pageMap: Record<string, PageData> = {
-  "/": { titulo: "Inicio", descripcion: "Resumen general" },
+  "/": { titulo: "Inicio", descripcion: "" },
   "/visitas": { titulo: "Visitas", descripcion: "Todo lo agendado. Las filas marcadas al costado todavía no tienen técnico." },
-  "/documentos": { titulo: "Documentos", descripcion: "Archivos y expedientes" },
-  "/configuracion": { titulo: "Configuración", descripcion: "Ajustes de la cuenta" },
+  "/clientes": { titulo: "Clientes", descripcion: "Las empresas a las que se les hacen visitas, con sus sucursales." },
+  "/tecnicos": { titulo: "Tecnicos", descripcion: "Quiénes salen a terreno. Solo los activos aparecen para asignar visitas." },
+  "/usuarios": { titulo: "Usuarios", descripcion: "Quién puede entrar a la app y con qué rol. Restablecer contraseña y desactivar se hacen desde la ficha de cada uno." },
+  "/exportar": { titulo: "Exportar", descripcion: "CSV crudo, con BOM UTF-8 y separador punto y coma, listo para Excel en Windows. Las fechas salen en ISO 8601, sin formatear." },
 }
 
 function getPageMeta(pathname: string): PageData {
@@ -30,7 +32,7 @@ export function SiteHeader() {
   const { titulo, descripcion } = getPageMeta(pathname)
 
   return (
-    <header className="sticky  top-0 z-40 flex h-(--header-height) shrink-0 items-center gap-2 border-b bg-background transition-[width,height] ease-linear group-has-data-[collapsible=icon]/sidebar-wrapper:h-(--header-height)">
+    <header className="sticky  top-0 z-40 flex py-3 shrink-0 items-center gap-2 border-b bg-background transition-[width,height] ease-linear group-has-data-[collapsible=icon]/sidebar-wrapper:h-(--header-height)">
       <div className="flex w-full items-center gap-1 px-4 lg:gap-2 lg:px-6">
         <SidebarTrigger className="-ml-1" />
         <Separator orientation="vertical" className="mx-2 h-4 data-vertical:self-auto" />

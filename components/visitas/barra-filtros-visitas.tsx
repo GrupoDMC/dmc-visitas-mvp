@@ -18,7 +18,7 @@ export function BarraFiltrosVisitas({ filtros, clientes, tecnicos }: { filtros: 
   return (
     <Form action="/visitas" key={Object.values(filtros).join("|")} className="rounded-card border border-borde bg-superficie p-3 shadow-tarjeta">
       <div className="grid grid-cols-4 gap-3">
-        {/* Fila 1: buscador (3 col) + cliente (1 col) */}
+        {/* fila 1: buscador y cliente  */}
         <div className="col-span-3">
           <label htmlFor="q" className={ETIQUETA}>
             Buscar
@@ -55,32 +55,7 @@ export function BarraFiltrosVisitas({ filtros, clientes, tecnicos }: { filtros: 
           </select>
         </div>
 
-        {/* Fila 2: filtros, 1 col cada uno */}
-        <div className="col-span-1">
-          <label htmlFor="desde" className={ETIQUETA}>
-            Desde
-          </label>
-          <input
-            id="desde"
-            name="desde"
-            type="date"
-            defaultValue={filtros.desde}
-            className={CONTROL}
-          />
-        </div>
-
-        <div className="col-span-1">
-          <label htmlFor="hasta" className={ETIQUETA}>
-            Hasta
-          </label>
-          <input
-            id="hasta"
-            name="hasta"
-            type="date"
-            defaultValue={filtros.hasta}
-            className={CONTROL}
-          />
-        </div>
+        {/* Fila 2: filtros*/}
 
         <div className="col-span-1">
           <label htmlFor="estado" className={ETIQUETA}>
@@ -121,6 +96,34 @@ export function BarraFiltrosVisitas({ filtros, clientes, tecnicos }: { filtros: 
             ))}
           </select>
         </div>
+
+        {/* Fechas */}
+        
+        <div className="col-span-1">
+          <label htmlFor="desde" className={ETIQUETA}>
+            Desde
+          </label>
+          <input
+            id="desde"
+            name="desde"
+            type="date"
+            defaultValue={filtros.desde}
+            className={CONTROL}
+          />
+        </div>
+
+        <div className="col-span-1">
+          <label htmlFor="hasta" className={ETIQUETA}>
+            Hasta
+          </label>
+          <input
+            id="hasta"
+            name="hasta"
+            type="date"
+            defaultValue={filtros.hasta}
+            className={CONTROL}
+          />
+        </div>    
       </div>
     </Form>
   );
