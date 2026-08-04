@@ -13,6 +13,7 @@ import { DataTable } from "@/components/data-table";
 import visitasData from "@/mocks/visitas.json"
 import tecnicosData from "@/mocks/tecnicos.json"
 import clientesData from "@/mocks/clientes.json"
+import { Fab } from "@/components/fab";
 
 export const metadata: Metadata = { title: "Visitas" };
 
@@ -50,6 +51,7 @@ async function VistaCoordinacion({ searchParams }: { searchParams: Params }) {
               <BarraFiltrosVisitas filtros={filtros} clientes={clientesData} tecnicos={tecnicosData}/>
               <SectionCards />
               <DataTable data={visitasData} />
+              <Fab url="/visitas/nueva-visita"/>
             </div>
           </div>
         </div>
@@ -79,7 +81,7 @@ async function VistaTecnico({ sesion }: { sesion: Sesion }) {
   }
 
   const hoy = hoyEnChile();
-  const visitas = await visitasAbiertasDeTecnico(sesion.tecnicoId);
+  // const visitas = await visitasAbiertasDeTecnico(sesion.tecnicoId);
 
   return (
     // El espacio de abajo es para el botón fijo: sin él, la última tarjeta
@@ -89,7 +91,7 @@ async function VistaTecnico({ sesion }: { sesion: Sesion }) {
         titulo="Mis visitas"
         descripcion="Lo que tenés abierto. Tocá una para registrar lo que hiciste."
       />
-
+{/* 
       {visitas.length === 0 ? (
         <EstadoVacio
           titulo="No tenés visitas pendientes"
@@ -101,7 +103,7 @@ async function VistaTecnico({ sesion }: { sesion: Sesion }) {
         />
       ) : (
         <TarjetasTecnico visitas={visitas} hoy={hoy} />
-      )}
+      )} */}
 
       {/* Fijo abajo y a mano: el técnico que llega a un lugar sin agendamiento
           previo no tiene que buscar nada en un menú. */}
