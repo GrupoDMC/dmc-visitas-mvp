@@ -3,45 +3,24 @@ import type { Metadata } from "next";
 import { esTecnico, requerirSesion, type Sesion } from "@/lib/auth";
 import { hoyEnChile } from "@/lib/fechas";
 import { leerPagina, unico } from "@/lib/paginacion";
-import { clientesActivos } from "@/lib/db/clientes";
-import { tecnicosActivos } from "@/lib/db/tecnicos";
-import { hayAlgunaVisita, listarVisitas, visitasAbiertasDeTecnico, type FiltrosVisitas, } from "@/lib/db/visitas";
 import { Encabezado, } from "@/components/ui/encabezado";
 import { EstadoVacio } from "@/components/ui/estado-vacio";
-import { Paginacion } from "@/components/ui/paginacion";
 import { BarraFiltrosVisitas } from "@/components/visitas/barra-filtros-visitas";
 import { ChipsFiltrosActivos } from "@/components/visitas/chips-filtros-activos";
-import { TablaVisitas } from "@/components/visitas/tabla-visitas";
 import { TarjetasTecnico } from "@/components/visitas/tarjetas-tecnico";
 import { SectionCards } from "@/components/section-cards";
 import { DataTable } from "@/components/data-table";
-
-import data from "./data.json"
+import visitasData from "@/mocks/visitas.json"
+import tecnicosData from "@/mocks/tecnicos.json"
+import clientesData from "@/mocks/clientes.json"
 
 export const metadata: Metadata = { title: "Visitas" };
 
 type Params = Promise<{ [clave: string]: string | string[] | undefined }>;
 
-/**
- * Una ruta, dos pantallas.
- *
- * `/visitas` le muestra al coordinador la tabla de todo lo agendado, con
- * filtros y asignación en lote; y al técnico sus propias visitas en tarjetas,
- * agrupadas por urgencia y pensadas para el pulgar. Son necesidades distintas
- * sobre los mismos datos, no la misma pantalla con menos columnas.
- *
- * Comparten URL para que el enlace de la navegación sea uno solo y para que
- * `/visitas/[id]` cuelgue del mismo lugar para todos.
- */
-export default async function PaginaVisitas({
-  searchParams,
-}: {
-  searchParams: Params;
-}) {
+export default async function PaginaVisitas({ searchParams }: { searchParams: Params;}) {
   const sesion = await requerirSesion();
-
   if (esTecnico(sesion)) return <VistaTecnico sesion={sesion} />;
-
   return <VistaCoordinacion searchParams={searchParams} />;
 }
 
@@ -62,83 +41,20 @@ async function VistaCoordinacion({ searchParams }: { searchParams: Params }) {
     tecnico: unico(params.tecnico),
     cliente: unico(params.cliente),
   };
-  const pagina = leerPagina(params.pagina);
-
-  const [{ filas, total, paginas }, clientes, tecnicos] = await Promise.all([
-    listarVisitas(filtros, pagina),
-    clientesActivos(),
-    tecnicosActivos(),
-  ]);
-
-  const filtrando = Object.values(filtros).some(Boolean);
-  // Igual que en los maestros: "no hay ninguna" y "ninguna coincide" llevan a
-  // acciones opuestas. La consulta extra corre solo si ya salió vacío.
-  const vacioPorFiltro = filas.length === 0 && (filtrando || (await hayAlgunaVisita()));
 
   return (
-    
-    <div className="mx-auto max-w-6xl">
+      <div className="mx-auto max-w-6xl px-4">
         <div className="flex flex-1 flex-col">
           <div className="@container/main flex flex-1 flex-col gap-2">
-            <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
+            <div className="flex flex-col gap-4  md:gap-6">
+              <BarraFiltrosVisitas filtros={filtros} clientes={clientesData} tecnicos={tecnicosData}/>
               <SectionCards />
-              <BarraFiltrosVisitas filtros={filtros} clientes={clientes} tecnicos={tecnicos}/>
-              <DataTable data={data} />
-              <TablaVisitas visitas={filas} tecnicos={tecnicos} />
+              <DataTable data={visitasData} />
+            </div>
           </div>
         </div>
-    </div>
-
-
-
-      {/* seccion antigua */}
-
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm text-suave">
-          <span className="tabular-nums font-medium text-texto">{total}</span>{" "}
-          {total === 1 ? "visita" : "visitas"}
-          {filtrando ? " con estos filtros" : " en total"}
-        </p>
-        <ChipsFiltrosActivos filtros={filtros} clientes={clientes} tecnicos={tecnicos} />
+        {/* <ChipsFiltrosActivos filtros={filtros} clientes={clientes} tecnicos={tecnicos} /> */}
       </div>
-
-
-
-      {filas.length === 0 ? (
-        vacioPorFiltro ? (
-          <EstadoVacio
-            titulo="Ninguna visita coincide con estos filtros"
-            descripcion="Probá con un rango de fechas más ancho, o sacá el filtro de técnico o de estado."
-            accion={{ href: "/visitas", etiqueta: "Limpiar los filtros" }}
-          />
-        ) : (
-          <EstadoVacio
-            titulo="Todavía no hay visitas agendadas"
-            descripcion="Agendá la primera y después asignale técnico. También podés dejarla sin asignar y repartir todo junto."
-            accion={{ href: "/visitas/nueva", etiqueta: "Agendar la primera visita" }}
-          />
-        )
-      ) : (
-        <>
-
-          <Paginacion
-            base="/visitas"
-            filtros={{
-              q: filtros.busqueda,
-              desde: filtros.desde,
-              hasta: filtros.hasta,
-              estado: filtros.estado,
-              tecnico: filtros.tecnico,
-              cliente: filtros.cliente,
-            }}
-            pagina={pagina}
-            paginas={paginas}
-            total={total}
-            unidad={{ singular: "visita", plural: "visitas" }}
-          />
-        </>
-      )}
-    </div>
   );
 }
 

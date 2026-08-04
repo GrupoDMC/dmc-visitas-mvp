@@ -1,0 +1,32 @@
+[
+  {
+    "id": 1,
+    "rut": "76.123.456-1",
+    "razonSocial": "TUA SpA"
+  },
+  {
+    "id": 2,
+    "rut": "76.234.567-2",
+    "razonSocial": "Maui and Sons Chile SpA"
+  },
+  {
+    "id": 3,
+    "rut": "76.345.678-3",
+    "razonSocial": "Casaideas S.A."
+  },
+  {
+    "id": 4,
+    "rut": "76.456.789-4",
+    "razonSocial": "Urco Puma SpA"
+  },
+  {
+    "id": 5,
+    "rut": "76.567.890-5",
+    "razonSocial": "Adidas Chile Ltda."
+  },
+  {
+    "id": 6,
+    "rut": "76.678.901-6",
+    "razonSocial": "Nike Chile SpA"
+  }
+]

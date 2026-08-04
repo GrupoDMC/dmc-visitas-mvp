@@ -1,0 +1,22 @@
+[
+  {
+    "id": 2,
+    "nombres": "Osneidy",
+    "apellidos": "Diaz"
+  },
+  {
+    "id": 5,
+    "nombres": "Sebastián Alonso",
+    "apellidos": "Muñoz Vera"
+  },
+  {
+    "id": 3,
+    "nombres": "Harold",
+    "apellidos": "Peralta"
+  },
+  {
+    "id": 4,
+    "nombres": "Camila Andrea",
+    "apellidos": "Rojas Pinto"
+  }
+]
