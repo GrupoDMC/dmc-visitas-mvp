@@ -18,9 +18,9 @@ export function SectionCards() {
       {/* carta 1 */}
       <Card className="@container/card">
         <CardHeader>
-          <CardDescription>Visitas durate el año</CardDescription>
+          <CardDescription>Visitas Realizadas</CardDescription>
           <CardTitle className="text-2xl font-semibold tabular-nums @[250px]/card:text-3xl">
-            125
+            47
           </CardTitle>
         </CardHeader>
         <CardFooter className="flex-col items-start gap-1.5 text-sm">
@@ -36,9 +36,9 @@ export function SectionCards() {
       {/* carta 2 */}
       <Card className="@container/card">
         <CardHeader>
-          <CardDescription>Visitas durate el año</CardDescription>
+          <CardDescription>Visitas en curso</CardDescription>
           <CardTitle className="text-2xl font-semibold tabular-nums @[250px]/card:text-3xl">
-            125
+            4
           </CardTitle>
         </CardHeader>
         <CardFooter className="flex-col items-start gap-1.5 text-sm">
@@ -54,9 +54,9 @@ export function SectionCards() {
       {/* carta 3 */}
       <Card className="@container/card">
         <CardHeader>
-          <CardDescription>Visitas durate el año</CardDescription>
+          <CardDescription>Visitas pendientes</CardDescription>
           <CardTitle className="text-2xl font-semibold tabular-nums @[250px]/card:text-3xl">
-            125
+            12
           </CardTitle>
         </CardHeader>
         <CardFooter className="flex-col items-start gap-1.5 text-sm">
@@ -72,9 +72,9 @@ export function SectionCards() {
       {/* carta 4 */}
       <Card className="@container/card">
         <CardHeader>
-          <CardDescription>Visitas durate el año</CardDescription>
+          <CardDescription>Visitas canceladas</CardDescription>
           <CardTitle className="text-2xl font-semibold tabular-nums @[250px]/card:text-3xl">
-            125
+            0
           </CardTitle>
         </CardHeader>
         <CardFooter className="flex-col items-start gap-1.5 text-sm">
