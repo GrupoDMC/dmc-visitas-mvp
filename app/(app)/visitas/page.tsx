@@ -1,8 +1,17 @@
 import Link from "next/link";
 import type { Metadata } from "next";
 import { esTecnico, requerirSesion, type Sesion } from "@/lib/auth";
-import { hoyEnChile } from "@/lib/fechas";
+import { hoyEnChile, fechaCorta } from "@/lib/fechas";
+import { nombreEstado, nombreTipoTrabajo } from "@/lib/catalogos";
 import { leerPagina, unico } from "@/lib/paginacion";
+import {
+  listarVisitas,
+  visitasAbiertasDeTecnico,
+  contarVisitasPorEstado,
+  type FiltrosVisitas,
+} from "@/lib/db/visitas";
+import { tecnicosActivos } from "@/lib/db/tecnicos";
+import { clientesActivos } from "@/lib/db/clientes";
 import { Encabezado, } from "@/components/ui/encabezado";
 import { EstadoVacio } from "@/components/ui/estado-vacio";
 import { BarraFiltrosVisitas } from "@/components/visitas/barra-filtros-visitas";
@@ -10,9 +19,10 @@ import { ChipsFiltrosActivos } from "@/components/visitas/chips-filtros-activos"
 import { TarjetasTecnico } from "@/components/visitas/tarjetas-tecnico";
 import { SectionCards } from "@/components/section-cards";
 import { DataTable } from "@/components/data-table";
-import visitasData from "@/mocks/visitas.json"
-import tecnicosData from "@/mocks/tecnicos.json"
-import clientesData from "@/mocks/clientes.json"
+// Datos mockeados — reemplazados por las consultas reales de arriba (lib/db/*).
+// import visitasData from "@/mocks/visitas.json"
+// import tecnicosData from "@/mocks/tecnicos.json"
+// import clientesData from "@/mocks/clientes.json"
 import { Fab } from "@/components/fab";
 
 export const metadata: Metadata = { title: "Visitas" };
@@ -43,14 +53,37 @@ async function VistaCoordinacion({ searchParams }: { searchParams: Params }) {
     cliente: unico(params.cliente),
   };
 
+  const pagina = leerPagina(params.pagina);
+
+  const [listado, tecnicos, clientes, conteos] = await Promise.all([
+    listarVisitas(filtros, pagina),
+    tecnicosActivos(),
+    clientesActivos(),
+    contarVisitasPorEstado(),
+  ]);
+
+  // La tabla se armó contra el shape de mocks/visitas.json (plano, con
+  // etiquetas ya traducidas); acá se adapta lo que devuelve el listado real.
+  const filas = listado.filas.map((visita) => ({
+    id: visita.id,
+    folio: visita.folio,
+    fecha: fechaCorta(visita.fecha_programada) ?? "Sin fecha",
+    cliente: visita.cliente?.razon_social ?? "—",
+    sucursal: visita.sucursal?.nombre ?? "—",
+    comuna: visita.sucursal?.comuna ?? "—",
+    trabajo: nombreTipoTrabajo(visita.tipo_trabajo) ?? "—",
+    tecnico: visita.tecnico ? `${visita.tecnico.nombres} ${visita.tecnico.apellidos}` : "",
+    estado: nombreEstado(visita.estado),
+  }));
+
   return (
       <div className="mx-auto max-w-6xl px-4">
         <div className="flex flex-1 flex-col">
           <div className="@container/main flex flex-1 flex-col gap-2">
             <div className="flex flex-col gap-4  md:gap-6">
-              <BarraFiltrosVisitas filtros={filtros} clientes={clientesData} tecnicos={tecnicosData}/>
-              <SectionCards />
-              <DataTable data={visitasData} />
+              <BarraFiltrosVisitas filtros={filtros} clientes={clientes} tecnicos={tecnicos}/>
+              <SectionCards conteos={conteos} />
+              <DataTable data={filas} />
               <Fab url="/visitas/nueva-visita"/>
             </div>
           </div>
@@ -81,7 +114,7 @@ async function VistaTecnico({ sesion }: { sesion: Sesion }) {
   }
 
   const hoy = hoyEnChile();
-  // const visitas = await visitasAbiertasDeTecnico(sesion.tecnicoId);
+  const visitas = await visitasAbiertasDeTecnico(sesion.tecnicoId);
 
   return (
     // El espacio de abajo es para el botón fijo: sin él, la última tarjeta
@@ -91,7 +124,7 @@ async function VistaTecnico({ sesion }: { sesion: Sesion }) {
         titulo="Mis visitas"
         descripcion="Lo que tenés abierto. Tocá una para registrar lo que hiciste."
       />
-{/* 
+
       {visitas.length === 0 ? (
         <EstadoVacio
           titulo="No tenés visitas pendientes"
@@ -103,7 +136,7 @@ async function VistaTecnico({ sesion }: { sesion: Sesion }) {
         />
       ) : (
         <TarjetasTecnico visitas={visitas} hoy={hoy} />
-      )} */}
+      )}
 
       {/* Fijo abajo y a mano: el técnico que llega a un lugar sin agendamiento
           previo no tiene que buscar nada en un menú. */}

@@ -1,8 +1,8 @@
-import Form from "next/form";
 import { ESTADOS_VISITA } from "@/lib/catalogos";
 import { SIN_TECNICO, type FiltrosVisitas } from "@/lib/db/visitas";
+import { FormFiltros } from "./form-filtros";
 
-interface ClienteProps { id: number; razonSocial: string }
+interface ClienteProps { id: number; razon_social: string }
 interface TecnicoProps { id: number; nombres: string; apellidos: string }
 const CONTROL =
   "mt-1.5 h-10 w-full rounded-base border border-borde bg-superficie px-3 " +
@@ -16,7 +16,7 @@ const ETIQUETA = "block text-sm font-medium text-texto";
 export function BarraFiltrosVisitas({ filtros, clientes, tecnicos }: { filtros: FiltrosVisitas; clientes: ClienteProps[]; tecnicos: TecnicoProps[] }) {
 
   return (
-    <Form action="/visitas" key={Object.values(filtros).join("|")} className="rounded-card border border-borde bg-superficie p-3 shadow-tarjeta">
+    <FormFiltros action="/visitas" formKey={Object.values(filtros).join("|")} className="rounded-card border border-borde bg-superficie p-3 shadow-tarjeta">
       <div className="grid grid-cols-4 gap-3">
         {/* fila 1: buscador y cliente  */}
         <div className="col-span-3">
@@ -49,7 +49,7 @@ export function BarraFiltrosVisitas({ filtros, clientes, tecnicos }: { filtros: 
             <option value="">Todos</option>
             {clientes.map((cliente: ClienteProps) => (
               <option key={cliente.id} value={cliente.id}>
-                {cliente.razonSocial}
+                {cliente.razon_social}
               </option>
             ))}
           </select>
@@ -123,8 +123,8 @@ export function BarraFiltrosVisitas({ filtros, clientes, tecnicos }: { filtros: 
             defaultValue={filtros.hasta}
             className={CONTROL}
           />
-        </div>    
+        </div>
       </div>
-    </Form>
+    </FormFiltros>
   );
 }

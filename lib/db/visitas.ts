@@ -58,6 +58,38 @@ export function frasearVisitasAbiertas(cantidad: number): string {
     : `${cantidad} visitas abiertas`;
 }
 
+/** Conteos para las tarjetas resumen del listado de coordinación. */
+export type ConteoVisitasPorEstado = {
+  realizadas: number;
+  enCurso: number;
+  pendientes: number;
+  canceladas: number;
+};
+
+async function contarPorEstado(estado: EstadoVisita): Promise<number> {
+  const { count, error } = await supabaseAdmin()
+    .from("visita")
+    .select("id", { count: "exact", head: true })
+    .eq("estado", estado);
+
+  if (error) {
+    throw new Error(`No se pudieron contar las visitas: ${error.message}`);
+  }
+
+  return count ?? 0;
+}
+
+export async function contarVisitasPorEstado(): Promise<ConteoVisitasPorEstado> {
+  const [realizadas, enCurso, pendientes, canceladas] = await Promise.all([
+    contarPorEstado("REALIZADA"),
+    contarPorEstado("EN_CURSO"),
+    contarPorEstado("PENDIENTE"),
+    contarPorEstado("CANCELADA"),
+  ]);
+
+  return { realizadas, enCurso, pendientes, canceladas };
+}
+
 // ---------------------------------------------------------------------------
 // LISTADOS
 // ---------------------------------------------------------------------------
