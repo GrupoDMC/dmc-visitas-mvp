@@ -9,11 +9,6 @@ import { Sidebar, SidebarContent, SidebarFooter, SidebarHeader, SidebarMenu, Sid
 import { LayoutDashboardIcon, ListIcon, ChartBarIcon, UsersIcon, Settings2Icon, FileChartColumnIcon,  } from "lucide-react"
 
 const data = {
-  user: {
-    name: "Santiago lópez",
-    email: "slopez@grupodmc.cl",
-    avatar: "https://avatars.githubusercontent.com/u/292798018?v=4&size=64",
-  },
   navMain: [
     {
       title: "Visitas",
@@ -41,20 +36,16 @@ const data = {
       icon: (<FileChartColumnIcon/>),
     },
   ],
-
-  navSecondary: [
-    {
-      title: "Settings",
-      url: "/configuracion",
-      icon: (
-        <Settings2Icon
-        />
-      ),
-    }
-  ],
-
 }
-export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
+type AppSidebarProps = React.ComponentProps<typeof Sidebar> & {
+  user: {
+    name: string
+    email: string
+    avatar?: string
+  }
+}
+
+export function AppSidebar({ user, ...props }: AppSidebarProps) {
   return (
     <Sidebar collapsible="offcanvas" {...props}>
       <SidebarHeader>
@@ -66,10 +57,9 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       </SidebarHeader>
       <SidebarContent>
         <NavMain items={data.navMain} />
-        <NavSecondary items={data.navSecondary} className="mt-auto" />
       </SidebarContent>
       <SidebarFooter>
-        <NavUser user={data.user} />
+        <NavUser {...user} />
       </SidebarFooter>
     </Sidebar>
   )

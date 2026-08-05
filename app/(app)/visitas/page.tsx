@@ -88,7 +88,7 @@ async function VistaCoordinacion({ searchParams }: { searchParams: Params }) {
             </div>
           </div>
         </div>
-        {/* <ChipsFiltrosActivos filtros={filtros} clientes={clientes} tecnicos={tecnicos} /> */}
+        <ChipsFiltrosActivos filtros={filtros} clientes={clientes} tecnicos={tecnicos} />
       </div>
   );
 }

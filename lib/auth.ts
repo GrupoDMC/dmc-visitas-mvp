@@ -9,6 +9,7 @@ import type { Rol } from "@/lib/db/tipos";
 export type Sesion = {
   userId: string;
   nombre: string;
+  email: string;
   rol: Rol;
   tecnicoId: number | null;
 };
@@ -39,6 +40,7 @@ export const getSesion = cache(async (): Promise<Sesion | null> => {
   return {
     userId: perfil.id,
     nombre: perfil.nombre,
+    email: user.email ?? "",
     rol: perfil.rol,
     tecnicoId: perfil.tecnico_id,
   };

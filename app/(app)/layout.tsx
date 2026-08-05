@@ -12,7 +12,7 @@ export default async function LayoutApp({ children }: { children: React.ReactNod
   const sidebarStyle = { "--sidebar-width": "calc(var(--spacing) * 58)", "--header-height": "calc(var(--spacing) * 12)", }
   return (
   <SidebarProvider style= { sidebarStyle as React.CSSProperties }>
-    <AppSidebar variant="sidebar" />
+    <AppSidebar variant="sidebar" user={{ name: sesion.nombre, email: sesion.email }}/>
       <SidebarInset>
         <SiteHeader />
         <div className="p-4">
