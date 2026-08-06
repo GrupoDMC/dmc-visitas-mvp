@@ -19,7 +19,7 @@ import type {
  * rebota en el insert.
  */
 
-export const ESTADOS_VISITA: readonly { codigo: EstadoVisita; nombre: string }[] = [
+export const ESTADOS_VISITA:  { codigo: EstadoVisita; nombre: string }[] = [
   { codigo: "PROGRAMADA", nombre: "Programada" },
   { codigo: "EN_CURSO", nombre: "En curso" },
   { codigo: "REALIZADA", nombre: "Realizada" },

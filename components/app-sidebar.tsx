@@ -3,10 +3,9 @@
 import * as React from "react"
 import Image from "next/image"
 import { NavMain } from "@/components/nav-main"
-import { NavSecondary } from "@/components/nav-secondary"
 import { NavUser } from "@/components/nav-user"
 import { Sidebar, SidebarContent, SidebarFooter, SidebarHeader, SidebarMenu, SidebarMenuItem, } from "@/components/ui/sidebar"
-import { LayoutDashboardIcon, ListIcon, ChartBarIcon, UsersIcon, Settings2Icon, FileChartColumnIcon,  } from "lucide-react"
+import { LayoutDashboardIcon, ListIcon, ChartBarIcon, UsersIcon, FileChartColumnIcon,  } from "lucide-react"
 
 const data = {
   navMain: [
