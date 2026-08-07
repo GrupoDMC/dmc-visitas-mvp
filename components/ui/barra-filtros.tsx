@@ -1,10 +1,12 @@
+import { EstadoVisita } from "@/lib/db/tipos";
 import Form from "next/form";
 import Link from "next/link";
 
 type ContentDDL = {
-  NOMBRE: string,
-  CODIGO: string,
+  codigo: EstadoVisita
+  nombre: string
 }
+
 
 interface filtrosProps { 
   base: string;
@@ -39,7 +41,7 @@ export function BarraFiltros({ base, busqueda, estado, etiquetaBusqueda, ayudaBu
         <select id="estado" name="estado" defaultValue={estado || "activos"} className="mt-1.5 h-10 w-full rounded-base border border-borde bg-superficie px-3 text-base text-texto focus:border-acento focus:outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-acento">
           {
             ddlProp.map((item, index) => (
-              <option key={index} value={item.CODIGO}>{item.NOMBRE}</option>
+              <option key={index} value={item.codigo}>{item.nombre}</option>
             ))
           }
         </select>

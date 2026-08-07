@@ -21,11 +21,11 @@ import type {
 
 export const ESTADOS_VISITA:  { codigo: EstadoVisita; nombre: string }[] = [
   { codigo: "PROGRAMADA", nombre: "Programada" },
-  { codigo: "EN_CURSO", nombre: "En curso" },
+  { codigo: "EN_CURSO",  nombre: "En curso" },
   { codigo: "REALIZADA", nombre: "Realizada" },
   { codigo: "PENDIENTE", nombre: "Pendiente" },
   { codigo: "REAGENDADA", nombre: "Reagendada" },
-  { codigo: "CANCELADA", nombre: "Cancelada" },
+  { codigo: "CANCELADA",  nombre: "Cancelada" },
 ];
 
 export const TIPOS_TRABAJO: readonly { codigo: TipoTrabajo; nombre: string }[] = [

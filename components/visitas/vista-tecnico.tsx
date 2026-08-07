@@ -4,16 +4,30 @@ import { Sesion } from "@/lib/auth";
 import { visitasAbiertasDeTecnico } from "@/lib/db/visitas";
 import { BarraFiltros } from "../ui/barra-filtros";
 import { ESTADOS_VISITA } from "@/lib/catalogos";
+import { EstadoVisita } from "@/lib/db/tipos";
+
+
+type ContentDDL = {
+  codigo: EstadoVisita,
+  nombre: string,
+}
+
 
 async function VistaTecnico({ sesion }: { sesion: Sesion }) {
+  // declaraciones
   const tecnicoId = Number(sesion?.tecnicoId);
+  const estadosDDL: ContentDDL[] = ESTADOS_VISITA.map(e => ({
+    codigo: e.codigo,
+    nombre: e.nombre,
+  }))
+  // validacion de usuario
   if (!tecnicoId) {
     throw new Error("tecnicoId inválido");
   }  
   const visitas = await visitasAbiertasDeTecnico(tecnicoId);
   return (
     <div className="pb-20">
-      <BarraFiltros base="/tecnicos" busqueda={""} estado={"estado"} etiquetaBusqueda="Buscar Visita" ayudaBusqueda="Filtrar visita por Cliente o Mall" ddlProp={ESTADOS_VISITA}/>
+      <BarraFiltros base="/tecnicos" busqueda={""} estado={"estado"} etiquetaBusqueda="Buscar Visita" ayudaBusqueda="Filtrar visita por Cliente o Mall" ddlProp={estadosDDL}/>
       <div className="flex justify-center">
         <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3">
           {
