@@ -26,6 +26,10 @@ import { SeccionProblemas } from "@/components/visitas/seccion-problemas";
 import { SeccionMateriales } from "@/components/visitas/seccion-materiales";
 import { SeccionFirmas } from "@/components/visitas/seccion-firmas";
 import { CierreVisita } from "@/components/visitas/cierre-visita";
+import {
+  AsistenteFormularioVisita,
+  type PasoAsistente,
+} from "@/components/visitas/asistente-formulario-visita";
 
 type Props = { params: Promise<{ id: string }> };
 
@@ -130,37 +134,76 @@ export default async function PaginaVisita({ params }: Props) {
   const hora = horaCorta(visita.hora_programada);
   const trabajo = nombreTipoTrabajo(visita.tipo_trabajo);
 
+  const firmaTecnico = firmas.find((f) => f.tipo === "TECNICO") ?? null;
+  const firmaTienda = firmas.find((f) => f.tipo === "TIENDA") ?? null;
+
+  const pasos: PasoAsistente[] = [
+    {
+      id: "datos",
+      titulo: "Datos de la visita",
+      completo: visita.tipo_trabajo !== null,
+      contenido: <SeccionDatosVisita visita={visita} soloLectura={soloLectura} />,
+    },
+    {
+      id: "trabajo",
+      titulo: "Trabajo realizado",
+      completo: visita.trabajo_realizado !== null,
+      contenido: <SeccionTrabajoRealizado visita={visita} soloLectura={soloLectura} />,
+    },
+    {
+      id: "problemas",
+      titulo: "Problemas detectados",
+      completo: problemas.length > 0,
+      contenido: (
+        <SeccionProblemas
+          visitaId={visita.id}
+          problemas={problemas}
+          soloLectura={soloLectura}
+        />
+      ),
+    },
+    {
+      id: "materiales",
+      titulo: "Materiales",
+      completo: materiales.length > 0,
+      contenido: (
+        <SeccionMateriales
+          visitaId={visita.id}
+          materiales={materiales}
+          soloLectura={soloLectura}
+        />
+      ),
+    },
+    {
+      id: "firmas",
+      titulo: "Firmas",
+      completo: firmaTecnico !== null && firmaTienda !== null,
+      contenido: (
+        <SeccionFirmas
+          visitaId={visita.id}
+          firmas={firmas}
+          soloLectura={soloLectura}
+          nombreTecnicoAsignado={visita.tecnico ? nombreTecnico(visita.tecnico) : null}
+        />
+      ),
+    },
+    {
+      id: "cierre",
+      titulo: "Cierre de la visita",
+      completo: visita.estado !== "PROGRAMADA" && visita.estado !== "EN_CURSO",
+      contenido: (
+        <CierreVisita
+          visitaId={visita.id}
+          estado={visita.estado}
+          puedeGestionar={puedeGestionar}
+        />
+      ),
+    },
+  ];
+
   return (
     <div className="mx-auto max-w-5xl">
-      <div className="mb-4">
-
-        <div className="flex flex-col gap-4 lg:col-start-1 lg:row-start-2">
-
-          <SeccionDatosVisita visita={visita} soloLectura={soloLectura} />
-          <SeccionTrabajoRealizado visita={visita} soloLectura={soloLectura} />
-          <SeccionProblemas
-            visitaId={visita.id}
-            problemas={problemas}
-            soloLectura={soloLectura}
-          />
-          <SeccionMateriales
-            visitaId={visita.id}
-            materiales={materiales}
-            soloLectura={soloLectura}
-          />
-          <SeccionFirmas
-            visitaId={visita.id}
-            firmas={firmas}
-            soloLectura={soloLectura}
-            nombreTecnicoAsignado={visita.tecnico ? nombreTecnico(visita.tecnico) : null}
-          />
-          <CierreVisita
-            visitaId={visita.id}
-            estado={visita.estado}
-            puedeGestionar={puedeGestionar}
-          />
-        </div>
-      </div>
+      <AsistenteFormularioVisita pasos={pasos} />
     </div>
   );
 }

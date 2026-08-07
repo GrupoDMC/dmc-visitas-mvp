@@ -22,12 +22,12 @@ export default async function LoginPage({
   return (
     <div className="grid min-h-svh lg:grid-cols-2">
       {/* LADO IZQUIERDO */}
-      <div className="relative flex flex-col gap-6 overflow-hidden bg-linear-to-br from-blue-900 via-blue-950 to-blue-950 p-6 text-white md:p-10">
+      <div className="relative flex flex-col gap-6 overflow-hidden bg-linear-to-br from-[#241a29] via-[#180f1d] to-[#120b16] p-6 text-white md:p-10">
         {/* Glow morado (brand) */}
-        <div className="pointer-events-none absolute top-1/2 left-1/2 -z-10 h-100 w-100 -translate-x-1/2 -translate-y-1/2 rounded-full bg-purple-600/20 blur-3xl" />
+        <div className="pointer-events-none absolute top-1/2 left-1/2 -z-10 h-100 w-100 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[#6B0F8F]/25 blur-3xl" />
 
         {/* Logo */}
-        {/* <div className="flex justify-center">
+        <div className="flex justify-center">
           <div className="rounded-xl bg-white/95 px-4 py-2 shadow-sm">
             <Image
               src="/DMC-log.png.png"
@@ -38,7 +38,7 @@ export default async function LoginPage({
               className="h-auto w-40"
             />
           </div>
-        </div> */}
+        </div>
 
         {/* Formulario */}
         <div className="flex flex-1 items-center justify-center">
@@ -71,7 +71,7 @@ export default async function LoginPage({
         />
 
         {/* Overlay oscuro + tono morado */}
-        <div className="absolute inset-0 bg-linear-to-t from-black/80 via-black/60 to-purple-900/40" />
+        <div className="absolute inset-0 bg-linear-to-t from-black/80 via-black/60 to-[#6B0F8F]/40" />
 
         {/* Texto */}
         <div className="absolute bottom-10 left-10 max-w-md text-white">

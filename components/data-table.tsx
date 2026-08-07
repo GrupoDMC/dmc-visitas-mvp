@@ -18,7 +18,6 @@ import {
 import { z } from "zod"
 
 import { useIsMobile } from "@/hooks/use-mobile"
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import {
@@ -60,7 +59,32 @@ import {
   Tabs,
   TabsContent,
 } from "@/components/ui/tabs"
-import { CircleCheckIcon, LoaderIcon, EllipsisVerticalIcon, ChevronsLeftIcon, ChevronLeftIcon, ChevronRightIcon, ChevronsRightIcon } from "lucide-react"
+import { EllipsisVerticalIcon, ChevronsLeftIcon, ChevronLeftIcon, ChevronRightIcon, ChevronsRightIcon } from "lucide-react"
+
+const ESTILOS_ESTADO: Record<string, { punto: string; fondo: string; texto: string }> = {
+  "Programada": { punto: "bg-programada", fondo: "bg-programada-fondo", texto: "text-programada-texto" },
+  "En curso": { punto: "bg-encurso", fondo: "bg-encurso-fondo", texto: "text-encurso-texto" },
+  "Realizada": { punto: "bg-realizada", fondo: "bg-realizada-fondo", texto: "text-realizada-texto" },
+  "Pendiente": { punto: "bg-pendiente", fondo: "bg-pendiente-fondo", texto: "text-pendiente-texto" },
+  "Reagendada": { punto: "bg-reagendada", fondo: "bg-reagendada-fondo", texto: "text-reagendada-texto" },
+  "Cancelada": { punto: "bg-cancelada", fondo: "bg-cancelada-fondo", texto: "text-cancelada-texto" },
+}
+
+function BadgeEstadoTabla({ estado }: { estado: string }) {
+  const estilo = ESTILOS_ESTADO[estado] ?? {
+    punto: "bg-suave",
+    fondo: "bg-fondo",
+    texto: "text-suave",
+  }
+  return (
+    <span
+      className={`inline-flex items-center gap-1.5 rounded-4xl px-2 py-0.5 text-xs font-medium ${estilo.fondo} ${estilo.texto}`}
+    >
+      <span className={`size-1.5 shrink-0 rounded-full ${estilo.punto}`} aria-hidden />
+      {estado}
+    </span>
+  )
+}
 
 export const schema = z.object({
   id: z.number(),
@@ -149,17 +173,7 @@ const columns: ColumnDef<z.infer<typeof schema>>[] = [
   {
     accessorKey: "estado",
     header: "Estado",
-    cell: ({ row }) => (
-      <Badge variant="outline" className="px-1.5 text-muted-foreground">
-        {row.original.estado === "Realizada" ? (
-          <CircleCheckIcon className="fill-green-500 dark:fill-green-400" />
-        ) : (
-          <LoaderIcon
-          />
-        )}
-        {row.original.estado}
-      </Badge>
-    ),
+    cell: ({ row }) => <BadgeEstadoTabla estado={row.original.estado} />,
   },
   {
     id: "actions",
@@ -240,14 +254,18 @@ export function DataTable({
         value="outline"
         className="relative flex flex-col gap-4 overflow-auto"
       >
-        <div className="overflow-hidden rounded-lg border">
+        <div className="overflow-hidden rounded-card border border-borde bg-superficie shadow-tarjeta">
           <Table>
-              <TableHeader className="sticky top-0 z-10 bg-muted">
+              <TableHeader className="sticky top-0 z-10 bg-fondo">
                 {table.getHeaderGroups().map((headerGroup) => (
-                  <TableRow key={headerGroup.id}>
+                  <TableRow key={headerGroup.id} className="hover:bg-transparent">
                     {headerGroup.headers.map((header) => {
                       return (
-                        <TableHead key={header.id} colSpan={header.colSpan}>
+                        <TableHead
+                          key={header.id}
+                          colSpan={header.colSpan}
+                          className="text-xs font-medium text-suave"
+                        >
                           {header.isPlaceholder
                             ? null
                             : flexRender(
@@ -266,6 +284,7 @@ export function DataTable({
                     <TableRow
                       key={row.id}
                       data-state={row.getIsSelected() && "selected"}
+                      className="hover:bg-fondo"
                     >
                       {row.getVisibleCells().map((cell) => (
                         <TableCell key={cell.id}>
@@ -278,9 +297,9 @@ export function DataTable({
                   <TableRow>
                     <TableCell
                       colSpan={columns.length}
-                      className="h-24 text-center"
+                      className="h-24 text-center text-suave"
                     >
-                      No results.
+                      Sin resultados.
                     </TableCell>
                   </TableRow>
                 )}
@@ -475,8 +494,8 @@ function TableCellViewer({ item }: { item: z.infer<typeof schema> }) {
           </form>
         </div>
         <DrawerFooter>
-          <Button>Submit</Button>
-          <DrawerClose render={<Button variant="outline" />}>Done</DrawerClose>
+          <Button>Guardar</Button>
+          <DrawerClose render={<Button variant="outline" />}>Cerrar</DrawerClose>
         </DrawerFooter>
       </DrawerContent>
     </Drawer>

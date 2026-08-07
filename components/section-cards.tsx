@@ -1,51 +1,77 @@
 import {
-  Card,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card"
+  CheckCircle2Icon,
+  ClockIcon,
+  AlertTriangleIcon,
+  XCircleIcon,
+  type LucideIcon,
+} from "lucide-react"
 import type { ConteoVisitasPorEstado } from "@/lib/db/visitas"
 
+type Estadistica = {
+  etiqueta: string
+  valor: number
+  Icono: LucideIcon
+  punto: string
+  fondoIcono: string
+  colorIcono: string
+}
+
 export function SectionCards({ conteos }: { conteos: ConteoVisitasPorEstado }) {
+  const estadisticas: Estadistica[] = [
+    {
+      etiqueta: "Visitas realizadas",
+      valor: conteos.realizadas,
+      Icono: CheckCircle2Icon,
+      punto: "bg-realizada",
+      fondoIcono: "bg-realizada-fondo",
+      colorIcono: "text-realizada-texto",
+    },
+    {
+      etiqueta: "Visitas en curso",
+      valor: conteos.enCurso,
+      Icono: ClockIcon,
+      punto: "bg-encurso",
+      fondoIcono: "bg-encurso-fondo",
+      colorIcono: "text-encurso-texto",
+    },
+    {
+      etiqueta: "Visitas pendientes",
+      valor: conteos.pendientes,
+      Icono: AlertTriangleIcon,
+      punto: "bg-pendiente",
+      fondoIcono: "bg-pendiente-fondo",
+      colorIcono: "text-pendiente-texto",
+    },
+    {
+      etiqueta: "Visitas canceladas",
+      valor: conteos.canceladas,
+      Icono: XCircleIcon,
+      punto: "bg-cancelada",
+      fondoIcono: "bg-cancelada-fondo",
+      colorIcono: "text-cancelada-texto",
+    },
+  ]
+
   return (
-    <div className="grid grid-cols-1 gap-4  *:data-[slot=card]:bg-linear-to-t *:data-[slot=card]:from-primary/5 *:data-[slot=card]:to-card *:data-[slot=card]:shadow-xs @xl/main:grid-cols-2 @5xl/main:grid-cols-4 dark:*:data-[slot=card]:bg-card">
-
-      <Card className="@container/card">
-        <CardHeader>
-          <CardDescription>Visitas Realizadas</CardDescription>
-          <CardTitle className="text-2xl font-semibold tabular-nums @[250px]/card:text-3xl">
-            {conteos.realizadas}
-          </CardTitle>
-        </CardHeader>
-      </Card>
-
-      <Card className="@container/card">
-        <CardHeader>
-          <CardDescription>Visitas en curso</CardDescription>
-          <CardTitle className="text-2xl font-semibold tabular-nums @[250px]/card:text-3xl">
-            {conteos.enCurso}
-          </CardTitle>
-        </CardHeader>
-      </Card>
-
-      <Card className="@container/card">
-        <CardHeader>
-          <CardDescription>Visitas pendientes</CardDescription>
-          <CardTitle className="text-2xl font-semibold tabular-nums @[250px]/card:text-3xl">
-            {conteos.pendientes}
-          </CardTitle>
-        </CardHeader>
-      </Card>
-
-      <Card className="@container/card">
-        <CardHeader>
-          <CardDescription>Visitas canceladas</CardDescription>
-          <CardTitle className="text-2xl font-semibold tabular-nums @[250px]/card:text-3xl">
-            {conteos.canceladas}
-          </CardTitle>
-        </CardHeader>
-      </Card>
-
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      {estadisticas.map((stat) => (
+        <div
+          key={stat.etiqueta}
+          className="flex items-center gap-4 rounded-card border border-borde bg-superficie p-4 shadow-tarjeta"
+        >
+          <div
+            className={`flex size-11 shrink-0 items-center justify-center rounded-full ${stat.fondoIcono} ${stat.colorIcono}`}
+          >
+            <stat.Icono className="size-5" aria-hidden />
+          </div>
+          <div className="min-w-0">
+            <p className="text-sm text-suave">{stat.etiqueta}</p>
+            <p className="text-2xl font-semibold tabular-nums text-texto">
+              {stat.valor}
+            </p>
+          </div>
+        </div>
+      ))}
     </div>
   )
 }

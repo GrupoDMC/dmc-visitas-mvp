@@ -12,7 +12,7 @@ const ESTADO_INICIAL: EstadoIngreso = { error: null }
 
 const estiloCampo = cn(
   "h-11 border-white/15 bg-white/5 text-white placeholder:text-white/35",
-  "focus-visible:border-purple-400 focus-visible:ring-purple-400/40",
+  "focus-visible:border-[#9B5BB5] focus-visible:ring-[#9B5BB5]/40",
   "aria-invalid:border-red-400/60 aria-invalid:ring-red-400/20",
   "autofill:shadow-[inset_0_0_0px_1000px_var(--color-zinc-900)] autofill:[-webkit-text-fill-color:white]"
 )
@@ -24,7 +24,7 @@ function BotonEntrar() {
     <Button
       type="submit"
       disabled={pending}
-      className="h-11 w-full bg-purple-600 text-white hover:bg-purple-500"
+      className="h-11 w-full bg-[#6B0F8F] text-white hover:bg-[#55106F]"
     >
       {pending ? "Entrando…" : "Entrar"}
     </Button>

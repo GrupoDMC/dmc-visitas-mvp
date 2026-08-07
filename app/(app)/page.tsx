@@ -18,23 +18,24 @@ export default async function PaginaInicio() {
           : "Vas a ver todas las visitas del equipo."}
       </p>
 
-      <div className="mt-6 rounded-card border border-borde bg-superficie shadow-tarjeta">
-        <div className="border-b border-borde px-4 py-3">
+      <div className="mt-6 overflow-hidden rounded-card border border-borde bg-superficie shadow-tarjeta">
+        <div className="flex items-center gap-2 border-b border-borde bg-fondo px-4 py-3">
+          <span className="size-1.5 rounded-full bg-realizada" aria-hidden />
           <h2 className="text-sm font-medium text-texto">Tu sesión</h2>
         </div>
         <dl className="divide-y divide-borde text-sm">
           <div className="flex items-center justify-between gap-4 px-4 py-3">
             <dt className="text-suave">Nombre</dt>
-            <dd className="text-right text-texto">{sesion.nombre}</dd>
+            <dd className="text-right font-medium text-texto">{sesion.nombre}</dd>
           </div>
           <div className="flex items-center justify-between gap-4 px-4 py-3">
             <dt className="text-suave">Rol</dt>
-            <dd className="text-right text-texto">{nombreRol(sesion.rol)}</dd>
+            <dd className="text-right font-medium text-texto">{nombreRol(sesion.rol)}</dd>
           </div>
           {sesion.tecnicoId !== null ? (
             <div className="flex items-center justify-between gap-4 px-4 py-3">
               <dt className="text-suave">Ficha de técnico</dt>
-              <dd className="text-right tabular-nums text-texto">
+              <dd className="text-right font-medium tabular-nums text-texto">
                 #{sesion.tecnicoId}
               </dd>
             </div>
@@ -45,12 +46,12 @@ export default async function PaginaInicio() {
       {secciones.length > 0 ? (
         <div className="mt-6">
           <h2 className="text-sm font-medium text-texto">Ir a</h2>
-          <ul className="mt-2 flex flex-wrap gap-2">
+          <ul className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3">
             {secciones.map((seccion) => (
               <li key={seccion.href}>
                 <Link
                   href={seccion.href}
-                  className="flex min-h-11 items-center rounded-base border border-borde bg-superficie px-3 text-sm text-texto transition-colors hover:bg-fondo sm:min-h-10"
+                  className="flex min-h-16 items-center justify-center rounded-card border border-borde bg-superficie px-3 text-center text-sm font-medium text-texto shadow-tarjeta transition-colors hover:border-acento hover:bg-acento-suave hover:text-acento"
                 >
                   {seccion.etiqueta}
                 </Link>

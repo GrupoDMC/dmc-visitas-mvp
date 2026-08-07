@@ -47,17 +47,24 @@ type AppSidebarProps = React.ComponentProps<typeof Sidebar> & {
 export function AppSidebar({ user, ...props }: AppSidebarProps) {
   return (
     <Sidebar collapsible="offcanvas" {...props}>
-      <SidebarHeader>
+      <SidebarHeader className="border-b border-sidebar-border px-3 py-4">
         <SidebarMenu>
           <SidebarMenuItem>
-            <Image className="w-1/2 h-auto" src={"/DMC-logo.png"} alt="logo de la empresa DMC" width={"130"} height={"80"} loading="eager"/>
+            <Image
+              className="h-auto w-28 group-data-[collapsible=icon]:w-8"
+              src={"/DMC-log.png.png"}
+              alt="Logo Grupo DMC"
+              width={130}
+              height={80}
+              loading="eager"
+            />
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarHeader>
       <SidebarContent>
         <NavMain items={data.navMain} />
       </SidebarContent>
-      <SidebarFooter>
+      <SidebarFooter className="border-t border-sidebar-border">
         <NavUser {...user} />
       </SidebarFooter>
     </Sidebar>

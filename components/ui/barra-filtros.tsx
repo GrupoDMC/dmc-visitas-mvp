@@ -39,11 +39,11 @@ export function BarraFiltros({ base, busqueda, estado, etiquetaBusqueda, ayudaBu
           Mostrar
         </label>
         <select id="estado" name="estado" defaultValue={estado || "activos"} className="mt-1.5 h-10 w-full rounded-base border border-borde bg-superficie px-3 text-base text-texto focus:border-acento focus:outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-acento">
-          {
+          {/* {
             ddlProp.map((item, index) => (
               <option key={index} value={item.codigo}>{item.nombre}</option>
             ))
-          }
+          } */}
         </select>
       </div>
 
