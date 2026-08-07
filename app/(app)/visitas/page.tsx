@@ -7,10 +7,7 @@ export const metadata: Metadata = { title: "Visitas" };
 type Params = Promise<{ [clave: string]: string | string[] | undefined }>;
 
 export default async function PaginaVisitas({ searchParams }: { searchParams: Params;}) {
-  const sesion = await requerirSesion();
-  console.log(sesion);
-  console.log(esTecnico(sesion));
-  
+  const sesion = await requerirSesion();  
   if (esTecnico(sesion)) {
     return <VistaTecnico sesion={sesion} />;
   } else {

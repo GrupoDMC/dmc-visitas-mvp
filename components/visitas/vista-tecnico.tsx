@@ -29,7 +29,7 @@ async function VistaTecnico({ sesion }: { sesion: Sesion }) {
     <div className="pb-20">
       <BarraFiltros base="/tecnicos" busqueda={""} estado={"estado"} etiquetaBusqueda="Buscar Visita" ayudaBusqueda="Filtrar visita por Cliente o Mall" ddlProp={estadosDDL}/>
       <div className="flex justify-center">
-        <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3">
+        <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
           {
             visitas.map((visita) => (
               <CardVisita key={visita.id} {...visita}/>
