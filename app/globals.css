@@ -1,0 +1,316 @@
+@import "tailwindcss";
+
+/* Tokens 1:1 con el sistema de diseño de los mockups (Claude Design ·
+   Modernist): fondo claro, texto casi negro, acento rojo/coral, radios en 0. */
+:root {
+  --color-bg: #f3f2f2;
+  --color-surface: #eae9e9;
+  --color-surface-2: #eae7e7;
+  --color-surface-3: #f8f4f4;
+  --color-text: #201e1d;
+  --color-divider: rgba(32, 30, 29, 0.4);
+  --color-divider-soft: rgba(32, 30, 29, 0.25);
+  --color-divider-faint: rgba(32, 30, 29, 0.18);
+
+  --color-accent: #ec3013;
+  --color-accent-hover: #dd2b0f;
+  --color-accent-active: #ae1800;
+  --color-accent-100: #fff2ef;
+  --color-accent-200: #ffe0d9;
+  --color-accent-300: #ffc4b8;
+  --color-accent-400: #ff9783;
+  --color-accent-800: #7c1405;
+  --color-accent-900: #4d170e;
+
+  --color-accent-2-100: #fff2ef;
+  --color-accent-2-800: #71261b;
+
+  --color-neutral-100: #f8f4f4;
+  --color-neutral-200: #eae7e7;
+  --color-neutral-300: #d7d3d3;
+  --color-neutral-400: #bab6b6;
+  --color-neutral-500: #9b9797;
+  --color-neutral-600: #7d7979;
+  --color-neutral-700: #605d5d;
+  --color-neutral-800: #444141;
+  --color-neutral-900: #2d2b2b;
+
+  --font-heading-weight: 800;
+}
+
+@theme inline {
+  --color-bg: var(--color-bg);
+  --color-surface: var(--color-surface);
+  --color-text: var(--color-text);
+  --color-accent: var(--color-accent);
+  --font-sans: var(--font-archivo), system-ui, sans-serif;
+  --radius-none: 0px;
+}
+
+/* En capa `base`: así las utilidades de Tailwind (capa `utilities`, que va
+   después) siguen pudiendo pisar estos defaults, p.ej. `text-[...]` sobre un
+   <a>. Sin capa, este CSS "de autor" le gana a cualquier utilidad sin
+   importar el orden o la especificidad, y el texto queda invisible. */
+@layer base {
+  html,
+  body {
+    margin: 0;
+    padding: 0;
+  }
+
+  * ,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+
+  /* El lienzo detrás de la columna móvil, igual que en los mockups: la columna
+     se pinta con --color-bg y lo que sobra a los lados queda en este gris. */
+  body {
+    background: #c9c7c6;
+    color: var(--color-text);
+    font-family: var(--font-archivo), system-ui, sans-serif;
+    font-size: 15px;
+    line-height: 1.55;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* Los enlaces heredan el color del contenedor. En los mockups todo lo que se
+     puede clicar (KPI, filas del panel, ítems de nav) es un <button> con
+     `color:inherit`; acá son <Link>, así que si `a` pintara de rojo por defecto
+     los títulos y cifras dentro de esos enlaces saldrían todos en acento.
+     Los enlaces que sí van en rojo lo declaran con `.link` o una utilidad. */
+  a {
+    color: inherit;
+    text-decoration: none;
+  }
+
+  .link {
+    color: var(--color-accent-active);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+  .link:hover {
+    color: var(--color-accent);
+  }
+
+  input,
+  select,
+  textarea,
+  button {
+    font-family: var(--font-archivo), system-ui, sans-serif;
+  }
+
+  button:focus-visible,
+  a:focus-visible,
+  input:focus-visible,
+  select:focus-visible,
+  textarea:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes upSheet {
+  from {
+    transform: translateY(14px);
+    opacity: 0.4;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+@keyframes upDlg {
+  from {
+    transform: translateY(10px);
+    opacity: 0.5;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+.animate-fade-in {
+  animation: fadeIn 0.2s ease-out;
+}
+.animate-up-sheet {
+  animation: upSheet 0.18s ease-out;
+}
+.animate-up-dlg {
+  animation: upDlg 0.16s ease-out;
+}
+
+@layer components {
+/* — botones — */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  cursor: pointer;
+  font-weight: 800;
+  font-size: 14px;
+  line-height: 1.2;
+  color: var(--color-text);
+  background: transparent;
+  border: 1px solid transparent;
+  padding: 0 16px;
+  min-height: 42px;
+  border-radius: 0;
+  white-space: nowrap;
+}
+.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.btn-primary {
+  background: var(--color-accent);
+  color: var(--color-bg);
+}
+.btn-primary:hover {
+  background: var(--color-accent-hover);
+}
+.btn-primary:active {
+  background: var(--color-accent-active);
+}
+.btn-secondary {
+  border-color: var(--color-divider);
+}
+.btn-secondary:hover {
+  background: rgba(32, 30, 29, 0.07);
+}
+.btn-secondary:active {
+  background: rgba(32, 30, 29, 0.14);
+}
+.btn-ghost {
+  color: var(--color-accent);
+  padding-inline: 4px;
+  font-weight: 400;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.btn-ghost:hover {
+  background: rgba(236, 48, 19, 0.1);
+}
+.btn-icon {
+  width: 36px;
+  height: 36px;
+  padding: 0;
+}
+
+/* — formularios — */
+.field label {
+  display: block;
+  font-size: 11px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  opacity: 0.62;
+  margin-bottom: 6px;
+}
+.input {
+  width: 100%;
+  min-height: 42px;
+  padding: 8px 12px;
+  font: inherit;
+  font-size: 14px;
+  color: var(--color-text);
+  caret-color: var(--color-accent);
+  background: var(--color-surface);
+  border: 1px solid var(--color-divider);
+  border-radius: 0;
+}
+.input:hover {
+  border-color: rgba(32, 30, 29, 0.55);
+}
+.input:focus-visible {
+  border-color: var(--color-accent);
+  outline-offset: 0;
+}
+textarea.input {
+  min-height: 90px;
+  resize: vertical;
+}
+
+/* — tags / badges de estado — */
+.tag {
+  display: inline-flex;
+  align-items: center;
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  padding: 3px 10px;
+  border-radius: 0;
+  white-space: nowrap;
+}
+.tag-accent {
+  background: var(--color-accent-100);
+  color: var(--color-accent-800);
+}
+.tag-accent-2 {
+  background: var(--color-accent-2-100);
+  color: var(--color-accent-2-800);
+}
+.tag-neutral {
+  background: var(--color-neutral-100);
+  color: var(--color-neutral-800);
+}
+.tag-outline {
+  border: 1px solid var(--color-accent);
+  color: var(--color-accent);
+}
+.tag-dark {
+  background: var(--color-text);
+  color: var(--color-bg);
+}
+
+/* — tablas — */
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+.table th {
+  text-align: left;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(32, 30, 29, 0.6);
+  padding: 8px;
+  border-bottom: 2px solid var(--color-divider);
+}
+.table td {
+  padding: 8px;
+  border-bottom: 1px solid var(--color-divider);
+}
+.table tbody tr:hover {
+  background: rgba(32, 30, 29, 0.05);
+}
+
+/* — segmented control (Hoy/Semana/Mes) — */
+.seg {
+  display: inline-flex;
+  overflow: hidden;
+  border: 1px solid var(--color-divider);
+}
+.seg-opt {
+  display: inline-flex;
+  align-items: center;
+  min-height: 38px;
+  padding: 0 14px;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.seg-opt + .seg-opt {
+  border-left: 1px solid var(--color-divider);
+}
+}
