@@ -25,12 +25,15 @@ export function getSqlConfig(): MssqlConfig {
           password: process.env.DB_PASSWORD,
         }),
     options: {
-      encrypt: true,
-      trustServerCertificate: true, // cert autofirmado en dev local
+      encrypt: process.env.DB_ENCRYPT !== "false",
+      // true solo con cert autofirmado (dev local). En producción debe ser
+      // false: con true se acepta cualquier certificado y la conexión queda
+      // expuesta a man-in-the-middle.
+      trustServerCertificate: process.env.DB_TRUST_SERVER_CERT === "true",
       trustedConnection: useWindowsAuth, // Windows Integrated Security
     },
     pool: {
-      max: 10,
+      max: Number(process.env.DB_POOL_MAX ?? 10),
       min: 0,
       idleTimeoutMillis: 30000,
     },

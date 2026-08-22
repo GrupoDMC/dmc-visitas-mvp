@@ -71,20 +71,37 @@ El login valida contra `lib/mock/maestros.ts` (autenticación mock, contraseñas
 
 ## Variables de entorno
 
-Se leen desde `.env.local` (no versionado). Ninguna es necesaria mientras la app corra con mocks;
-todas aplican al activar la capa real de SQL Server.
+Ninguna es necesaria mientras la app corra con mocks; todas aplican al activar la capa real de
+SQL Server. La plantilla documentada es [`.env.example`](.env.example) — el único archivo `.env`
+versionado. Para empezar: `cp .env.example .env.local`.
 
-```dotenv
-DB_SERVER=localhost
-DB_PORT=14330            # instancia local SQL2022 — no el 1433 por defecto
-DB_NAME=DMC_Contingencia # obligatoria: sin ella getSqlConfig() lanza error
-DB_USER=
-DB_PASSWORD=
-DB_TRUSTED_CONNECTION=false   # true para usar Windows Integrated Security (ignora DB_USER/DB_PASSWORD)
-```
+| Archivo | Cuándo se carga | Qué lleva |
+| --- | --- | --- |
+| `.env.example` | nunca (plantilla) | documentación de cada variable |
+| `.env.development` | `npm run dev` | host/puerto/TLS de desarrollo, sin secretos |
+| `.env.production` | `npm run build` / `npm start` | host/TLS de producción, **sin** contraseña |
+| `.env.local` | siempre, pisa a los dos anteriores | credenciales de tu SQL local |
 
-En desarrollo la conexión usa `encrypt: true` con `trustServerCertificate: true` (certificado
-autofirmado local).
+En producción, `DB_USER` y `DB_PASSWORD` se definen como variables del entorno del servidor
+(IIS, PM2, Docker…), no en un archivo: tienen precedencia sobre todos los `.env*`.
+
+| Variable | Default | Notas |
+| --- | --- | --- |
+| `DB_NAME` | — | **Obligatoria**: sin ella `getSqlConfig()` lanza error |
+| `DB_SERVER` | `localhost` | |
+| `DB_PORT` | `14330` | instancia local SQL2022 — no el 1433 por defecto |
+| `DB_USER` / `DB_PASSWORD` | — | ignoradas si `DB_TRUSTED_CONNECTION=true` |
+| `DB_TRUSTED_CONNECTION` | `false` | Windows Auth — **no funciona con `mssql@11`**, ver abajo |
+| `DB_ENCRYPT` | `true` | solo el literal `"false"` lo desactiva |
+| `DB_TRUST_SERVER_CERT` | `false` | `true` en dev (cert autofirmado); **`false` en producción** |
+| `DB_POOL_MAX` | `10` | conexiones máximas del pool |
+
+Todas se leen server-side en `lib/db/config.ts`; ninguna debe llevar prefijo `NEXT_PUBLIC_`, que
+las expondría en el bundle del navegador junto con la contraseña.
+
+> **Windows Integrated Security no está operativo.** `options.trustedConnection` es exclusiva del
+> driver `msnodesqlv8`; `mssql@11` usa `tedious`, que la ignora en silencio e intenta conectar sin
+> credenciales. Usa autenticación SQL, o migra a `msnodesqlv8` / `authentication.type: 'ntlm'`.
 
 ---
 
