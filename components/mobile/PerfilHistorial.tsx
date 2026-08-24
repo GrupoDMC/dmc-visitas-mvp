@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import Sheet from "./Sheet";
 import Tag from "@/components/Tag";
 import { ESTADO_PROBLEMA_LABEL, ESTADO_PROBLEMA_TAG, ESTADO_VISITA_LABEL, ESTADO_VISITA_TAG } from "@/lib/ui/estado";
-import { getCatalogoProblemaByCodigo, getCatalogoTrabajoByCodigo } from "@/lib/mock/catalogos";
+import { nombreProblema, nombreTrabajo, useReferencias } from "@/lib/ui/referencias";
 import type { Visita } from "@/lib/types";
 
 type Filtro = "hoy" | "semana" | "mes";
@@ -23,6 +23,7 @@ function diasAtras(fecha: string, hoy: string): number {
 
 /** "Mis visitas realizadas" del perfil — ventana móvil de hoy / 7 / 30 días. */
 export default function PerfilHistorial({ visitas, hoy }: { visitas: Visita[]; hoy: string }) {
+  const { problemas: catalogoProblema } = useReferencias();
   const [filtro, setFiltro] = useState<Filtro>("semana");
   const [abierta, setAbierta] = useState<Visita | null>(null);
 
@@ -96,7 +97,7 @@ export default function PerfilHistorial({ visitas, hoy }: { visitas: Visita[]; h
               {abiertos.length > 0 ? (
                 <div className="text-xs text-[var(--color-accent-800)] mt-2">
                   {abiertos.length} problema{abiertos.length > 1 ? "s" : ""} abierto{abiertos.length > 1 ? "s" : ""}:{" "}
-                  {getCatalogoProblemaByCodigo(abiertos[0].tipoCodigo)?.nombre ?? abiertos[0].tipoCodigo}
+                  {nombreProblema(catalogoProblema, abiertos[0].tipoCodigo)}
                 </div>
               ) : null}
               <div className="flex items-center gap-1.5 mt-2 text-[11px] leading-none tracking-[.07em] uppercase opacity-60">
@@ -119,6 +120,7 @@ export default function PerfilHistorial({ visitas, hoy }: { visitas: Visita[]; h
 }
 
 function ActaSheet({ visita, onCerrar }: { visita: Visita; onCerrar: () => void }) {
+  const { problemas: catalogoProblema, trabajos: catalogoTrabajo } = useReferencias();
   const ejec = visita.ejecucion;
   const duracion =
     ejec?.horaInicio && ejec.horaTermino
@@ -156,7 +158,7 @@ function ActaSheet({ visita, onCerrar }: { visita: Visita; onCerrar: () => void 
               {trabajos.map((t) => (
                 <div key={t.id} className="border-l-[3px] border-[var(--color-text)] pl-3">
                   <div className="font-extrabold text-[15px] leading-[1.25]">
-                    {getCatalogoTrabajoByCodigo(t.trabajoCodigo)?.nombre ?? t.trabajoCodigo}
+                    {nombreTrabajo(catalogoTrabajo, t.trabajoCodigo)}
                   </div>
                   {t.subtrabajos.length > 0 ? (
                     <div className="flex flex-wrap gap-1.5 mt-1.5">
@@ -191,7 +193,7 @@ function ActaSheet({ visita, onCerrar }: { visita: Visita; onCerrar: () => void 
                 <div key={p.id} className="px-3 py-3 bg-[var(--color-accent-200)] border-l-[3px] border-[var(--color-accent)]">
                   <div className="flex items-baseline gap-2 flex-wrap">
                     <div className="font-extrabold text-sm leading-[1.25] text-[var(--color-accent-800)]">
-                      {getCatalogoProblemaByCodigo(p.tipoCodigo)?.nombre ?? p.tipoCodigo}
+                      {nombreProblema(catalogoProblema, p.tipoCodigo)}
                     </div>
                     <Tag variant={ESTADO_PROBLEMA_TAG[p.estado]} className="ml-auto">
                       {ESTADO_PROBLEMA_LABEL[p.estado]}

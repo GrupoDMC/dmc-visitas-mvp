@@ -1,11 +1,13 @@
 import { notFound } from "next/navigation";
-import { getVisitaCompletaPorFolio, getActaEnviada } from "@/lib/mock/visitas";
+import { getActaEnviada, getVisitaCompletaPorFolio } from "@/lib/data/visitas";
 import ActaView from "@/components/admin/ActaView";
+
+export const dynamic = "force-dynamic";
 
 export default async function ActaPage({ params }: { params: Promise<{ folio: string }> }) {
   const { folio } = await params;
-  const visita = getVisitaCompletaPorFolio(decodeURIComponent(folio));
+  const visita = await getVisitaCompletaPorFolio(decodeURIComponent(folio));
   if (!visita) notFound();
 
-  return <ActaView visita={visita} enviada={getActaEnviada(visita.folio)} />;
+  return <ActaView visita={visita} enviada={await getActaEnviada(visita.folio)} />;
 }

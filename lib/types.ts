@@ -1,6 +1,6 @@
 // Tipos 1:1 con el schema `dmc` definido en sql/dmc_contingencia_sqlserver.sql.
-// Mientras la conexión real a SQL Server no esté forzada, estos tipos son también
-// la forma de los datos mock en lib/mock/*.
+// Es la forma que devuelve la capa de consultas de lib/data/*, ya con los
+// nombres en camelCase y las fechas como texto ISO.
 
 export type RolUsuario = "ADMIN" | "COORDINADOR" | "TECNICO";
 
@@ -207,7 +207,8 @@ export interface Visita {
   problemaOrigenId: number | null;
   creadaEnTerreno: boolean;
   creadoEn: string;
-  // Relaciones resueltas para la UI (join en memoria sobre los mocks)
+  // Relaciones ya resueltas para la UI: la consulta trae los maestros con la
+  // visita y agrupa las tablas hijas en memoria (ver lib/data/visitas).
   cliente?: Cliente;
   sucursal?: Sucursal;
   tecnico?: Tecnico;

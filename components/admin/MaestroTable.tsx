@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import AdminHeader from "@/components/admin/AdminHeader";
 import FiltrosBar from "@/components/admin/FiltrosBar";
 import Dialogo, { type CampoDef, type FormValores } from "@/components/admin/Dialogo";
@@ -22,6 +23,10 @@ export interface FieldConfig extends CampoDef {
  * Tabla de un maestro con su diálogo de alta y edición — el mismo patrón del
  * mockup para Técnicos, Usuarios, Clientes y Sucursales. La fila no abre nada:
  * el diálogo se abre solo desde el lápiz.
+ *
+ * Las filas llegan ya consultadas desde el servidor y no se guardan en estado
+ * local: al grabar se escribe en SQL Server y se pide un refresh, para que lo
+ * que se ve sea siempre lo que quedó en la base y no una copia optimista.
  */
 export default function MaestroTable<T extends { id: number }>({
   kicker,
@@ -31,12 +36,12 @@ export default function MaestroTable<T extends { id: number }>({
   dialogoKicker,
   nota,
   columns,
-  initialRows,
+  rows,
   fields,
   searchKeys,
   phBusqueda,
   toFormValues,
-  fromFormValues,
+  guardarAction,
   emptyRow,
   validar,
 }: {
@@ -47,20 +52,22 @@ export default function MaestroTable<T extends { id: number }>({
   dialogoKicker: string;
   nota?: string;
   columns: Column<T>[];
-  initialRows: T[];
+  rows: T[];
   fields: FieldConfig[];
   searchKeys: (row: T) => string;
   phBusqueda: string;
   toFormValues: (row: T) => FormValores;
-  fromFormValues: (form: FormValores, id: number) => T;
+  /** Persiste el formulario. `id` es null en un alta. */
+  guardarAction: (id: number | null, form: FormValores) => Promise<{ ok: boolean; error?: string }>;
   emptyRow: FormValores;
   /** Devuelve el texto del error, o null si el formulario está correcto. */
   validar?: (form: FormValores) => string | null;
 }) {
+  const router = useRouter();
   const { toast, aviso } = useToast();
-  const [rows, setRows] = useState(initialRows);
   const [busqueda, setBusqueda] = useState("");
   const [dialogo, setDialogo] = useState<{ id: number | null; form: FormValores } | null>(null);
+  const [guardando, setGuardando] = useState(false);
 
   const filtradas = useMemo(() => {
     const q = busqueda.trim().toLowerCase();
@@ -68,20 +75,20 @@ export default function MaestroTable<T extends { id: number }>({
     return rows.filter((r) => searchKeys(r).toLowerCase().includes(q));
   }, [rows, busqueda, searchKeys]);
 
-  function guardar() {
+  async function guardar() {
     if (!dialogo) return;
     const error = validar?.(dialogo.form);
     if (error) return aviso(error);
 
-    if (dialogo.id === null) {
-      const nextId = Math.max(0, ...rows.map((r) => r.id)) + 1;
-      setRows((prev) => [fromFormValues(dialogo.form, nextId), ...prev]);
-      aviso("Registro creado");
-    } else {
-      setRows((prev) => prev.map((r) => (r.id === dialogo.id ? fromFormValues(dialogo.form, r.id) : r)));
-      aviso("Cambios guardados");
-    }
+    setGuardando(true);
+    const res = await guardarAction(dialogo.id, dialogo.form);
+    setGuardando(false);
+
+    if (!res.ok) return aviso(res.error ?? "No se pudo guardar.");
+
+    aviso(dialogo.id === null ? "Registro creado" : "Cambios guardados");
     setDialogo(null);
+    router.refresh();
   }
 
   const camposVisibles = dialogo ? fields.filter((f) => !f.visible || f.visible(dialogo.form)) : [];
@@ -165,6 +172,7 @@ export default function MaestroTable<T extends { id: number }>({
           onCampo={(k, v) => setDialogo({ ...dialogo, form: { ...dialogo.form, [k]: v } })}
           onCerrar={() => setDialogo(null)}
           onGuardar={guardar}
+          guardando={guardando}
         />
       ) : null}
 

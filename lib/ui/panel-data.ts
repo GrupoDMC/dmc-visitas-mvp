@@ -1,77 +1,88 @@
+import "server-only";
 import {
-  getVisitasRango,
-  getCumplimientoRango,
-  getProblemasAbiertos,
-  getProblemasPorTipo,
+  contarProblemasAbiertos,
   getCargaTecnico,
+  getCumplimientoRango,
+  getEstadoHoyDistribucion,
+  getProblemasPorTipo,
+  getReagendas,
   getSucursalFallas,
   getTiempoEnSitio,
-  getReagendas,
-  getEstadoHoyDistribucion,
-  HOY,
-} from "@/lib/mock/queries";
-import { getTecnicoById } from "@/lib/mock/maestros";
+  getVisitasRango,
+  rangoFechas,
+  type Rango,
+} from "@/lib/data/queries";
+import { hoyISO, inicioMes, inicioSemana } from "@/lib/ui/fecha";
 import { ESTADO_VISITA_COLOR, ESTADO_VISITA_LABEL } from "@/lib/ui/estado";
-import type { EstadoVisita } from "@/lib/types";
 
-export type Rango = "Hoy" | "Semana" | "Mes";
+export type { Rango };
 
-function inicioSemana(fecha: string): string {
-  const d = new Date(`${fecha}T00:00:00`);
-  const dow = d.getDay() === 0 ? 7 : d.getDay();
-  d.setDate(d.getDate() - (dow - 1));
-  return d.toISOString().slice(0, 10);
-}
+export async function buildPanelData(rango: Rango, hoy: string = hoyISO()) {
+  const [visitas, visitasHoy, problemasAbiertosTotal] = await Promise.all([
+    getVisitasRango(rango, hoy),
+    rango === "Hoy" ? Promise.resolve(null) : getVisitasRango("Hoy", hoy),
+    contarProblemasAbiertos(),
+  ]);
+  const deHoy = visitasHoy ?? visitas;
 
-export function buildPanelData(rango: Rango) {
-  const visitas = getVisitasRango(rango, HOY);
   const programadas = visitas.length;
   const cerradas = visitas.filter((v) => v.estado === "COMPLETADA").length;
   const pctCumpl = programadas ? Math.round((100 * cerradas) / programadas) : 0;
   const reagendas = visitas.filter((v) => v.estado === "REAGENDADA" || v.estado === "PENDIENTE").length;
-  const tecnicosHoy = new Set(getVisitasRango("Hoy", HOY).map((v) => v.tecnicoId)).size;
-  const problemasAbiertos = getProblemasAbiertos();
+  const tecnicosHoy = new Set(deHoy.map((v) => v.tecnicoId)).size;
 
-  const desde = rango === "Mes" ? `${HOY.slice(0, 7)}-01` : rango === "Semana" ? inicioSemana(HOY) : HOY;
+  const desde = rango === "Mes" ? inicioMes(hoy) : rango === "Semana" ? inicioSemana(hoy) : hoy;
+
+  const [dias, estadoHoy, problemasTipo, carga, sucursalesFallas, tiempo, reagendasLista] = await Promise.all([
+    getCumplimientoRango(desde, hoy),
+    getEstadoHoyDistribucion(hoy),
+    getProblemasPorTipo(),
+    getCargaTecnico(hoy),
+    getSucursalFallas(5),
+    getTiempoEnSitio(),
+    getReagendas(5),
+  ]);
+
   // Los días sin visitas programadas no entran al gráfico: no se trabajó, así
   // que una barra en 0 solo ensuciaría la lectura del cumplimiento.
-  const dias = getCumplimientoRango(desde, HOY).filter((d) => d.programadas > 0);
+  const diasConTrabajo = dias.filter((d) => d.programadas > 0);
 
   return {
     rango,
+    hoy,
     kpis: {
       programadas,
       cerradas,
       pctCumpl,
       reagendas,
       tecnicosHoy,
-      problemasAbiertosTotal: problemasAbiertos.length,
+      problemasAbiertosTotal,
     },
-    estadoHoy: getEstadoHoyDistribucion(HOY).map((e) => ({
-      estado: e.estado as EstadoVisita,
-      label: ESTADO_VISITA_LABEL[e.estado as EstadoVisita],
-      color: ESTADO_VISITA_COLOR[e.estado as EstadoVisita],
+    estadoHoy: estadoHoy.map((e) => ({
+      estado: e.estado,
+      label: ESTADO_VISITA_LABEL[e.estado],
+      color: ESTADO_VISITA_COLOR[e.estado],
       n: e.n,
       pct: e.pct,
     })),
-    totalHoy: getVisitasRango("Hoy", HOY).length,
+    totalHoy: deHoy.length,
     cumplimiento: {
       pct: pctCumpl,
       meta: 92,
       detalle: `${cerradas} de ${programadas} visitas cerradas dentro de la fecha programada.`,
       rangoTexto:
         rango === "Hoy"
-          ? `Hoy · ${HOY}`
+          ? `Hoy · ${hoy}`
           : rango === "Semana"
             ? "Semana en curso"
-            : new Date(`${HOY}T00:00:00`).toLocaleDateString("es-CL", { month: "long", year: "numeric" }),
-      dias: dias.map((d) => ({
+            : new Date(`${hoy}T00:00:00`).toLocaleDateString("es-CL", { month: "long", year: "numeric" }),
+      dias: diasConTrabajo.map((d) => ({
         fecha: d.fecha,
         pct: d.pct,
         pctTxt: `${d.pct}%`,
         programadas: d.programadas,
         cerradas: d.cerradas,
-        esHoy: d.fecha === HOY,
+        esHoy: d.fecha === hoy,
         // La barra mide el cumplimiento del día, no cuántas visitas hubo.
         h: Math.max(2, d.pct),
         label: new Date(`${d.fecha}T00:00:00`)
@@ -79,18 +90,18 @@ export function buildPanelData(rango: Rango) {
           .replace(".", ""),
       })),
     },
-    problemasTipo: getProblemasPorTipo(),
-    carga: getCargaTecnico(HOY).map((c) => ({
+    problemasTipo,
+    carga: carga.map((c) => ({
       ...c,
-      nombre: getTecnicoById(c.tecnicoId)?.nombreCompleto ?? "—",
       pct: c.programadas ? Math.round((100 * c.realizadas) / c.programadas) : 0,
     })),
-    sucursalesFallas: getSucursalFallas()
-      .sort((a, b) => b.sinCerrar - a.sinCerrar)
-      .slice(0, 5),
-    tiempo: getTiempoEnSitio(),
-    reagendasLista: getReagendas().slice(0, 5),
+    sucursalesFallas,
+    tiempo,
+    reagendasLista,
   };
 }
 
-export type PanelData = ReturnType<typeof buildPanelData>;
+export type PanelData = Awaited<ReturnType<typeof buildPanelData>>;
+
+/** El rango se usa para la ventana de fechas del gráfico. */
+export { rangoFechas };

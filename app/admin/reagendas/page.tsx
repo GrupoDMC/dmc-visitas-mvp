@@ -1,8 +1,11 @@
 import VisitasTable from "@/components/admin/VisitasTable";
-import { getVisitasCompletas } from "@/lib/mock/visitas";
+import { getVisitasCompletas } from "@/lib/data/visitas";
 
-export default function ReagendasPage() {
-  const visitas = getVisitasCompletas().filter((v) => v.estado === "REAGENDADA" || v.estado === "PENDIENTE");
+export const dynamic = "force-dynamic";
+
+export default async function ReagendasPage() {
+  const todas = await getVisitasCompletas();
+  const visitas = todas.filter((v) => v.estado === "REAGENDADA" || v.estado === "PENDIENTE");
   return (
     <VisitasTable
       kicker="Operación · visitas que no se pudieron hacer"

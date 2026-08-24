@@ -1,10 +1,13 @@
 import { notFound, redirect } from "next/navigation";
 import { getSesion } from "@/lib/auth";
-import { getVisitaCompletaPorFolio } from "@/lib/mock/visitas";
+import { getVisitaCompletaPorFolio } from "@/lib/data/visitas";
+import { listarProblemas, listarTrabajos } from "@/lib/data/catalogos";
 import MobileShell from "@/components/mobile/MobileShell";
 import Tag from "@/components/Tag";
 import { ESTADO_PROBLEMA_LABEL, ESTADO_PROBLEMA_TAG } from "@/lib/ui/estado";
-import { getCatalogoProblemaByCodigo, getCatalogoTrabajoByCodigo } from "@/lib/mock/catalogos";
+import { nombreProblema, nombreTrabajo } from "@/lib/ui/referencias";
+
+export const dynamic = "force-dynamic";
 
 export default async function RevisarActaPage({ params }: { params: Promise<{ folio: string }> }) {
   const { folio: folioParam } = await params;
@@ -12,8 +15,10 @@ export default async function RevisarActaPage({ params }: { params: Promise<{ fo
   const sesion = await getSesion();
   if (!sesion?.tecnico) redirect("/login");
 
-  const visita = getVisitaCompletaPorFolio(folio);
+  const visita = await getVisitaCompletaPorFolio(folio);
   if (!visita || visita.tecnicoId !== sesion.tecnico.id) notFound();
+
+  const [catalogoTrabajos, catalogoProblemas] = await Promise.all([listarTrabajos(), listarProblemas()]);
 
   return (
     <MobileShell titulo="Acta guardada" volverHref={`/tecnico/visitas/${visita.folio}`}>
@@ -36,7 +41,7 @@ export default async function RevisarActaPage({ params }: { params: Promise<{ fo
               {visita.trabajos.map((t) => (
                 <div key={t.id} className="border-l-[3px] border-[var(--color-text)] pl-3 mb-2.5">
                   <div className="font-extrabold text-[15px] leading-[1.25]">
-                    {getCatalogoTrabajoByCodigo(t.trabajoCodigo)?.nombre ?? t.trabajoCodigo}
+                    {nombreTrabajo(catalogoTrabajos, t.trabajoCodigo)}
                   </div>
                   {t.subtrabajos.length > 0 ? (
                     <div className="flex flex-wrap gap-1.5 mt-1.5">
@@ -60,7 +65,7 @@ export default async function RevisarActaPage({ params }: { params: Promise<{ fo
                 <div key={p.id} className="px-3 py-3 mb-2 bg-[var(--color-accent-200)] border-l-[3px] border-[var(--color-accent)]">
                   <div className="flex items-baseline gap-2 flex-wrap">
                     <div className="font-extrabold text-sm leading-[1.25] text-[var(--color-accent-800)]">
-                      {getCatalogoProblemaByCodigo(p.tipoCodigo)?.nombre ?? p.tipoCodigo}
+                      {nombreProblema(catalogoProblemas, p.tipoCodigo)}
                     </div>
                     <Tag variant={ESTADO_PROBLEMA_TAG[p.estado]} className="ml-auto">
                       {ESTADO_PROBLEMA_LABEL[p.estado]}

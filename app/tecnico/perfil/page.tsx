@@ -1,16 +1,18 @@
 import { redirect } from "next/navigation";
 import { getSesion } from "@/lib/auth";
-import { getVisitasPorTecnico } from "@/lib/mock/visitas";
-import { HOY } from "@/lib/mock/queries";
+import { getVisitasPorTecnico } from "@/lib/data/visitas";
+import { hoyISO } from "@/lib/ui/fecha";
 import MobileShell from "@/components/mobile/MobileShell";
 import PerfilHistorial from "@/components/mobile/PerfilHistorial";
 import { logoutAction } from "@/app/actions/auth";
+
+export const dynamic = "force-dynamic";
 
 export default async function PerfilPage() {
   const sesion = await getSesion();
   if (!sesion?.tecnico) redirect("/login");
 
-  const visitas = getVisitasPorTecnico(sesion.tecnico.id);
+  const visitas = await getVisitasPorTecnico(sesion.tecnico.id);
   // Sin fila "Rol": el técnico solo tiene un rol posible y verlo no le aporta.
   const filas: { k: string; v: string }[] = [
     { k: "Nombre", v: sesion.tecnico.nombreCompleto },
@@ -32,7 +34,7 @@ export default async function PerfilPage() {
           ))}
         </div>
 
-        <PerfilHistorial visitas={visitas} hoy={HOY} />
+        <PerfilHistorial visitas={visitas} hoy={hoyISO()} />
 
         <form action={logoutAction}>
           <button

@@ -1,26 +1,36 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { COOKIE_SESION, verificarToken } from "@/lib/session";
 
-// Puerta de entrada única: sin cookie de sesión, cualquier ruta cae en /login.
-// El reparto por rol lo sigue haciendo el login (app/actions/auth.ts) y, si ya
-// hay sesión, la raíz (app/page.tsx) manda a /tecnico o /admin según el rol.
-// La validación real de la sesión ocurre en lib/auth.getSesion — esto es solo
-// el primer filtro para que nadie vea una pantalla antes de identificarse.
-const COOKIE = "dmc_session";
+// Puerta de entrada única. Antes solo miraba que la cookie existiera; ahora
+// verifica la firma del token, así que una cookie inventada o caducada no
+// llega siquiera a renderizar una pantalla.
+//
+// Sigue siendo el primer filtro, no el único: lib/auth.getSesion vuelve a leer
+// el usuario en cada petición para comprobar que existe y sigue activo.
 
-export function middleware(req: NextRequest) {
+const PUBLICAS = new Set(["/login"]);
+
+export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
-  if (pathname === "/login") return NextResponse.next();
+  if (PUBLICAS.has(pathname)) return NextResponse.next();
 
-  if (!req.cookies.get(COOKIE)?.value) {
-    const url = req.nextUrl.clone();
-    url.pathname = "/login";
-    url.search = "";
-    return NextResponse.redirect(url);
-  }
+  const token = await verificarToken(req.cookies.get(COOKIE_SESION)?.value);
+  if (token) return NextResponse.next();
 
-  return NextResponse.next();
+  const url = req.nextUrl.clone();
+  url.pathname = "/login";
+  url.search = "";
+  const respuesta = NextResponse.redirect(url);
+  // Cookie inválida o vencida: se limpia para no reintentar con ella en cada
+  // navegación.
+  respuesta.cookies.delete(COOKIE_SESION);
+  return respuesta;
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|.*\\.(?:png|jpg|jpeg|svg|ico|webp)$).*)"],
+  matcher: [
+    // Todo salvo estáticos de Next, imágenes y la ruta de diagnóstico
+    // (/api/salud tiene su propia autorización por token).
+    "/((?!_next/static|_next/image|api/salud|favicon.ico|.*\\.(?:png|jpg|jpeg|svg|ico|webp)$).*)",
+  ],
 };

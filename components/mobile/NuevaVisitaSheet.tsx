@@ -4,8 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Sheet from "@/components/mobile/Sheet";
 import { crearVisitaTecnicoAction } from "@/app/actions/visitas";
-import { clientes, sucursales } from "@/lib/mock/maestros";
-import { catalogoMotivo } from "@/lib/mock/catalogos";
+import { useReferencias } from "@/lib/ui/referencias";
 import { fmtTel } from "@/lib/ui/formato";
 
 const LABEL = "block text-[11px] tracking-[.09em] uppercase opacity-60 mb-1.5";
@@ -27,6 +26,13 @@ export default function NuevaVisitaSheet({
   onError: (mensaje: string) => void;
 }) {
   const router = useRouter();
+  const referencias = useReferencias();
+  // Solo lo que sigue vigente: una sucursal dada de baja no debe poder recibir
+  // una visita nueva.
+  const clientes = referencias.clientes.filter((c) => c.activo);
+  const sucursales = referencias.sucursales.filter((s) => s.activo);
+  const catalogoMotivo = referencias.motivos;
+
   const [clienteId, setClienteId] = useState(String(clientes[0]?.id ?? ""));
   const [sucursalId, setSucursalId] = useState(
     String(sucursales.find((s) => String(s.clienteId) === String(clientes[0]?.id))?.id ?? "")

@@ -14,7 +14,7 @@ import {
   ESTADO_PROBLEMA_LABEL,
   ESTADO_PROBLEMA_TAG,
 } from "@/lib/ui/estado";
-import { getCatalogoProblemaByCodigo, getCatalogoTrabajoByCodigo } from "@/lib/mock/catalogos";
+import { nombreProblema, nombreTrabajo, useReferencias } from "@/lib/ui/referencias";
 import type { Visita } from "@/lib/types";
 
 const AVISO_ESTADO: Record<string, string> = {
@@ -42,6 +42,7 @@ export default function ActaView({
   enviada: { para: string; cc: string; adjuntos: number } | null;
 }) {
   const router = useRouter();
+  const { problemas: catalogoProblema, trabajos: catalogoTrabajo } = useReferencias();
   const { toast, aviso } = useToast();
   const [resumenAbierto, setResumenAbierto] = useState(false);
   const [trazaAbierta, setTrazaAbierta] = useState(false);
@@ -278,7 +279,7 @@ export default function ActaView({
                     {visita.trabajos.map((t) => (
                       <div key={t.id} className="border border-black/[.35] bg-white px-4.5 py-3.5">
                         <div className="font-extrabold text-base">
-                          {getCatalogoTrabajoByCodigo(t.trabajoCodigo)?.nombre ?? t.trabajoCodigo}
+                          {nombreTrabajo(catalogoTrabajo, t.trabajoCodigo)}
                         </div>
                         {t.subtrabajos.length > 0 ? (
                           <div className="flex flex-wrap gap-1.5 mt-2">
@@ -319,7 +320,7 @@ export default function ActaView({
                         <div className="pb-3.5 border-b border-black/[.18]">
                           <div className="text-[11px] tracking-[.11em] uppercase opacity-60">Tipo de problema</div>
                           <div className="font-extrabold text-[19px] leading-[1.3] mt-1.5">
-                            {getCatalogoProblemaByCodigo(p.tipoCodigo)?.nombre ?? p.tipoCodigo}
+                            {nombreProblema(catalogoProblema, p.tipoCodigo)}
                           </div>
                         </div>
                         {p.items.length > 0 ? (

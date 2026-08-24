@@ -1,22 +1,27 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import Dialogo, { type CampoDef, type FormValores } from "@/components/admin/Dialogo";
-import { clientes, sucursales, tecnicos } from "@/lib/mock/maestros";
-import { catalogoMotivo } from "@/lib/mock/catalogos";
+import { useReferencias, type Referencias } from "@/lib/ui/referencias";
 import { crearVisitaAction, editarVisitaAction, reprogramarVisitaAction } from "@/app/actions/admin";
 import type { Visita } from "@/lib/types";
 
-const OPC_CLIENTES = clientes.map((c) => ({ v: String(c.id), t: c.nombreFantasia }));
-const OPC_TECNICOS = tecnicos.filter((t) => t.activo).map((t) => ({ v: String(t.id), t: t.nombreCompleto }));
-const OPC_MOTIVOS = catalogoMotivo.map((m) => ({ v: m.codigo, t: m.nombre }));
-
-function sucursalesDe(clienteId: string) {
-  const lista = sucursales.filter((s) => String(s.clienteId) === clienteId);
-  return lista.length
-    ? lista.map((s) => ({ v: String(s.id), t: s.nombre }))
-    : [{ v: "", t: "Sin sucursales registradas" }];
+/** Opciones de los selectores, derivadas de los maestros que baja el layout. */
+function opciones(ref: Referencias) {
+  return {
+    clientes: ref.clientes.filter((c) => c.activo).map((c) => ({ v: String(c.id), t: c.nombreFantasia })),
+    tecnicos: ref.tecnicos.filter((t) => t.activo).map((t) => ({ v: String(t.id), t: t.nombreCompleto })),
+    motivos: ref.motivos.map((m) => ({ v: m.codigo, t: m.nombre })),
+    sucursalesDe: (clienteId: string) => {
+      const lista = ref.sucursales.filter((s) => s.activo && String(s.clienteId) === clienteId);
+      return lista.length
+        ? lista.map((s) => ({ v: String(s.id), t: s.nombre }))
+        : [{ v: "", t: "Sin sucursales registradas" }];
+    },
+  };
 }
+
+type Opciones = ReturnType<typeof opciones>;
 
 /** Origen cuando la visita nace desde un problema de la vista "Problemas". */
 export interface OrigenProblema {
@@ -40,7 +45,7 @@ const MOTIVO_POR_FALLA: Record<string, string> = {
   CONTADOR_FALLA: "REVISION",
 };
 
-function valoresIniciales(visita?: Visita, origen?: OrigenProblema): FormValores {
+function valoresIniciales(opc: Opciones, visita?: Visita, origen?: OrigenProblema): FormValores {
   if (visita) {
     return {
       clienteId: String(visita.clienteId),
@@ -59,11 +64,13 @@ function valoresIniciales(visita?: Visita, origen?: OrigenProblema): FormValores
     const trabajo =
       `Resolver «${origen.tipoNombre}» levantado en ${origen.folio}. ${origen.descripcion ?? ""}` +
       (origen.solucion ? ` Indicación del técnico: ${origen.solucion}` : "");
+    const porFalla = MOTIVO_POR_FALLA[origen.tipoCodigo] ?? "REVISION";
     return {
       clienteId: String(origen.clienteId),
       sucursalId: String(origen.sucursalId),
-      tecnicoId: OPC_TECNICOS[0]?.v ?? "",
-      motivoCodigo: MOTIVO_POR_FALLA[origen.tipoCodigo] ?? "REVISION",
+      tecnicoId: opc.tecnicos[0]?.v ?? "",
+      // Si el motivo sugerido ya no está en el checklist, se cae al primero.
+      motivoCodigo: opc.motivos.some((m) => m.v === porFalla) ? porFalla : opc.motivos[0]?.v ?? "",
       fecha: "",
       hora: "",
       responsable: "",
@@ -72,12 +79,12 @@ function valoresIniciales(visita?: Visita, origen?: OrigenProblema): FormValores
       acceso: "",
     };
   }
-  const clienteId = OPC_CLIENTES[0]?.v ?? "";
+  const clienteId = opc.clientes[0]?.v ?? "";
   return {
     clienteId,
-    sucursalId: sucursalesDe(clienteId)[0]?.v ?? "",
-    tecnicoId: OPC_TECNICOS[0]?.v ?? "",
-    motivoCodigo: OPC_MOTIVOS[0]?.v ?? "",
+    sucursalId: opc.sucursalesDe(clienteId)[0]?.v ?? "",
+    tecnicoId: opc.tecnicos[0]?.v ?? "",
+    motivoCodigo: opc.motivos[0]?.v ?? "",
     fecha: "",
     hora: "",
     responsable: "",
@@ -103,16 +110,18 @@ export default function VisitaDialogo({
   onCerrar: () => void;
   onHecho: (mensaje: string, folio?: string) => void;
 }) {
-  const [form, setForm] = useState<FormValores>(() => valoresIniciales(visita, origen));
+  const ref = useReferencias();
+  const opc = useMemo(() => opciones(ref), [ref]);
+  const [form, setForm] = useState<FormValores>(() => valoresIniciales(opc, visita, origen));
   const [guardando, setGuardando] = useState(false);
 
   const esInstalacion = form.motivoCodigo === "INSTALACION";
 
   const campos: CampoDef[] = [
-    { k: "clienteId", label: "Cliente", tipo: "select", opciones: OPC_CLIENTES },
-    { k: "sucursalId", label: "Sucursal", tipo: "select", opciones: sucursalesDe(String(form.clienteId)) },
-    { k: "tecnicoId", label: "Técnico asignado", tipo: "select", opciones: OPC_TECNICOS },
-    { k: "motivoCodigo", label: "Motivo de la visita", tipo: "select", opciones: OPC_MOTIVOS },
+    { k: "clienteId", label: "Cliente", tipo: "select", opciones: opc.clientes },
+    { k: "sucursalId", label: "Sucursal", tipo: "select", opciones: opc.sucursalesDe(String(form.clienteId)) },
+    { k: "tecnicoId", label: "Técnico asignado", tipo: "select", opciones: opc.tecnicos },
+    { k: "motivoCodigo", label: "Motivo de la visita", tipo: "select", opciones: opc.motivos },
     { k: "fecha", label: "Fecha programada", tipo: "date" },
     {
       k: "hora",
@@ -143,7 +152,7 @@ export default function VisitaDialogo({
   function onCampo(k: string, valor: string | boolean) {
     setForm((prev) => {
       if (k === "clienteId") {
-        const primera = sucursalesDe(String(valor))[0]?.v ?? "";
+        const primera = opc.sucursalesDe(String(valor))[0]?.v ?? "";
         return { ...prev, clienteId: valor, sucursalId: primera };
       }
       return { ...prev, [k]: valor };
@@ -173,7 +182,7 @@ export default function VisitaDialogo({
       onHecho(res.error ?? "No se pudo guardar.");
       return;
     }
-    const tecnico = tecnicos.find((t) => String(t.id) === String(form.tecnicoId))?.nombreCompleto ?? "";
+    const tecnico = ref.tecnicos.find((t) => String(t.id) === String(form.tecnicoId))?.nombreCompleto ?? "";
     onHecho(
       visita
         ? "Cambios guardados · el técnico los ve en la próxima sincronización"
@@ -225,6 +234,8 @@ export function ReprogramarDialogo({
   onCerrar: () => void;
   onHecho: (mensaje: string) => void;
 }) {
+  const ref = useReferencias();
+  const opc = useMemo(() => opciones(ref), [ref]);
   const [form, setForm] = useState<FormValores>({
     tecnicoId: String(visita.tecnicoId),
     fecha: visita.fechaProgramada,
@@ -235,7 +246,7 @@ export function ReprogramarDialogo({
   const esInstalacion = visita.motivoCodigo === "INSTALACION";
 
   const campos: CampoDef[] = [
-    { k: "tecnicoId", label: "Técnico que asistirá", tipo: "select", opciones: OPC_TECNICOS },
+    { k: "tecnicoId", label: "Técnico que asistirá", tipo: "select", opciones: opc.tecnicos },
     { k: "fecha", label: "Nueva fecha", tipo: "date" },
     {
       k: "hora",
@@ -262,7 +273,7 @@ export function ReprogramarDialogo({
       onHecho(res.error ?? "No se pudo reprogramar.");
       return;
     }
-    const tecnico = tecnicos.find((t) => String(t.id) === String(form.tecnicoId))?.nombreCompleto ?? "";
+    const tecnico = ref.tecnicos.find((t) => String(t.id) === String(form.tecnicoId))?.nombreCompleto ?? "";
     onHecho(`Reprogramada para el ${form.fecha} · ${tecnico}`);
     onCerrar();
   }

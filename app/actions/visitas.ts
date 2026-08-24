@@ -3,12 +3,12 @@
 import { revalidatePath } from "next/cache";
 import { getSesion } from "@/lib/auth";
 import {
-  cambiarEstadoVisitaMock,
-  crearVisitaMock,
+  cambiarEstadoVisita,
+  crearVisita,
   getVisitaCompletaPorFolio,
-  iniciarVisitaMock,
-} from "@/lib/mock/visitas";
-import { getSucursalById } from "@/lib/mock/maestros";
+  iniciarVisita,
+} from "@/lib/data/visitas";
+import { listarSucursales } from "@/lib/data/maestros";
 import type { EstadoVisita } from "@/lib/types";
 
 export interface ResultadoAccion {
@@ -22,9 +22,9 @@ export interface ResultadoAccion {
 async function visitaDelTecnico(folio: string) {
   const sesion = await getSesion();
   if (!sesion?.tecnico) return null;
-  const visita = getVisitaCompletaPorFolio(folio);
+  const visita = await getVisitaCompletaPorFolio(folio);
   if (!visita || visita.tecnicoId !== sesion.tecnico.id) return null;
-  return visita;
+  return { visita, sesion };
 }
 
 function revalidar(folio: string) {
@@ -32,17 +32,28 @@ function revalidar(folio: string) {
   revalidatePath("/tecnico/visitas");
   revalidatePath(`/tecnico/visitas/${folio}`);
   revalidatePath("/tecnico/perfil");
-  revalidatePath("/admin/visitas");
+  revalidatePath("/admin", "layout");
+}
+
+function comoError(err: unknown, contexto: string): ResultadoAccion {
+  console.error(`[dmc] ${contexto}:`, err);
+  return { ok: false, error: "No se pudo guardar en el servidor. Revisa la conexión e inténtalo otra vez." };
 }
 
 /** "Iniciar visita" — deja la visita EN_CURSO antes de abrir el formulario. */
 export async function iniciarVisitaAction(folio: string): Promise<ResultadoAccion> {
-  const visita = await visitaDelTecnico(folio);
-  if (!visita) return { ok: false, error: "No encontramos esa visita entre las tuyas." };
+  const contexto = await visitaDelTecnico(folio);
+  if (!contexto) return { ok: false, error: "No encontramos esa visita entre las tuyas." };
+  const { visita } = contexto;
   if (visita.estado !== "PROGRAMADA" && visita.estado !== "EN_CURSO") {
     return { ok: false, error: "Esta visita ya está cerrada." };
   }
-  iniciarVisitaMock(folio);
+
+  try {
+    await iniciarVisita(folio, visita.responsableNombre);
+  } catch (err) {
+    return comoError(err, "iniciarVisita");
+  }
   revalidar(folio);
   return { ok: true };
 }
@@ -55,8 +66,8 @@ export async function cambiarEstadoVisitaAction(input: {
   fechaNueva?: string | null;
   horaNueva?: string | null;
 }): Promise<ResultadoAccion> {
-  const visita = await visitaDelTecnico(input.folio);
-  if (!visita) return { ok: false, error: "No encontramos esa visita entre las tuyas." };
+  const contexto = await visitaDelTecnico(input.folio);
+  if (!contexto) return { ok: false, error: "No encontramos esa visita entre las tuyas." };
 
   const motivo = input.motivo.trim();
   if (!motivo) return { ok: false, error: "El motivo es obligatorio." };
@@ -64,7 +75,20 @@ export async function cambiarEstadoVisitaAction(input: {
     return { ok: false, error: "Elige la nueva fecha." };
   }
 
-  cambiarEstadoVisitaMock(input.folio, input.estado, motivo, input.fechaNueva, input.horaNueva);
+  try {
+    await cambiarEstadoVisita({
+      folio: input.folio,
+      estado: input.estado,
+      motivo,
+      fechaNueva: input.fechaNueva,
+      horaNueva: input.horaNueva,
+      origen: "MOVIL",
+      usuarioId: contexto.sesion.usuario.id,
+      tecnicoId: contexto.sesion.tecnico?.id ?? null,
+    });
+  } catch (err) {
+    return comoError(err, "cambiarEstadoVisita");
+  }
   revalidar(input.folio);
   return { ok: true };
 }
@@ -85,7 +109,7 @@ export async function crearVisitaTecnicoAction(input: {
   const sesion = await getSesion();
   if (!sesion?.tecnico) return { ok: false, error: "Tu cuenta no tiene un técnico asociado." };
 
-  const sucursal = getSucursalById(input.sucursalId);
+  const sucursal = (await listarSucursales()).find((s) => s.id === input.sucursalId);
   if (!sucursal) return { ok: false, error: "Elige la sucursal donde estás." };
   if (!input.motivoCodigo) return { ok: false, error: "Elige el motivo de la visita." };
   if (!input.fecha) return { ok: false, error: "Elige la fecha de la visita." };
@@ -93,22 +117,28 @@ export async function crearVisitaTecnicoAction(input: {
     return { ok: false, error: "La hora es obligatoria para instalaciones." };
   }
 
-  const visita = crearVisitaMock({
-    clienteId: sucursal.clienteId,
-    sucursalId: sucursal.id,
-    tecnicoId: sesion.tecnico.id,
-    motivoCodigo: input.motivoCodigo,
-    fechaProgramada: input.fecha,
-    horaProgramada: input.hora,
-    trabajoSolicitado: input.trabajo.trim() || "Visita agregada por el técnico, fuera de la planificación.",
-    indicacionesAcceso: null,
-    responsableNombre: input.responsableNombre || null,
-    responsableTelefono: input.responsableTelefono || null,
-    creadaEnTerreno: true,
-  });
+  try {
+    const visita = await crearVisita(
+      {
+        clienteId: sucursal.clienteId,
+        sucursalId: sucursal.id,
+        tecnicoId: sesion.tecnico.id,
+        motivoCodigo: input.motivoCodigo,
+        fechaProgramada: input.fecha,
+        horaProgramada: input.hora,
+        trabajoSolicitado: input.trabajo.trim() || "Visita agregada por el técnico, fuera de la planificación.",
+        indicacionesAcceso: null,
+        responsableNombre: input.responsableNombre || null,
+        responsableTelefono: input.responsableTelefono || null,
+        creadaEnTerreno: true,
+      },
+      sesion.usuario.id
+    );
 
-  iniciarVisitaMock(visita.folio);
-  revalidar(visita.folio);
-  revalidatePath("/admin");
-  return { ok: true, folio: visita.folio };
+    await iniciarVisita(visita.folio, visita.responsableNombre);
+    revalidar(visita.folio);
+    return { ok: true, folio: visita.folio };
+  } catch (err) {
+    return comoError(err, "crearVisitaTecnico");
+  }
 }

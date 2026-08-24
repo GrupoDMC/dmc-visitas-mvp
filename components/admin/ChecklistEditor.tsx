@@ -1,33 +1,36 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import AdminHeader from "@/components/admin/AdminHeader";
 import Confirmar, { type ConfirmarCfg } from "@/components/admin/Confirmar";
 import { Toast, useToast } from "@/components/ui/Toast";
+import {
+  actualizarTipoProblemaAction,
+  actualizarTrabajoAction,
+  crearMotivoAction,
+  crearOpcionProblemaAction,
+  crearSubtrabajoAction,
+  crearTipoProblemaAction,
+  crearTrabajoAction,
+  eliminarMotivoAction,
+  eliminarOpcionProblemaAction,
+  eliminarSubtrabajoAction,
+  eliminarTipoProblemaAction,
+  eliminarTrabajoAction,
+  renombrarMotivoAction,
+  renombrarOpcionProblemaAction,
+  renombrarSubtrabajoAction,
+  restaurarCatalogoAction,
+} from "@/app/actions/admin";
 import type { CatalogoMotivo, CatalogoProblema, CatalogoTrabajo } from "@/lib/types";
 
-let nextId = 100000;
-
-/** Convierte "Cable dañado" en CABLE_DANADO, evitando códigos repetidos. */
-function codigoDesde(nombre: string, usados: string[]): string {
-  const base =
-    (nombre || "TIPO")
-      .toUpperCase()
-      .normalize("NFD")
-      // Marcas diacríticas: "DAÑADO" descompuesto pierde la tilde de la ñ.
-      .replace(/\p{Diacritic}/gu, "")
-      .replace(/[^A-Z0-9]+/g, "_")
-      .replace(/^_|_$/g, "")
-      .slice(0, 28) || "TIPO";
-  let cod = base;
-  let n = 2;
-  while (usados.includes(cod)) {
-    cod = `${base}_${n}`;
-    n += 1;
-  }
-  return cod;
-}
-
+/**
+ * Editor de las tres listas. Cada cambio se escribe en SQL Server: el estado
+ * local existe solo para que el input responda mientras se teclea. Los nombres
+ * se graban al salir del campo (blur), no en cada tecla, para no lanzar una
+ * consulta por letra.
+ */
 export default function ChecklistEditor({
   motivosIniciales,
   tiposIniciales,
@@ -37,6 +40,7 @@ export default function ChecklistEditor({
   tiposIniciales: CatalogoProblema[];
   trabajosIniciales: CatalogoTrabajo[];
 }) {
+  const router = useRouter();
   const { toast, aviso } = useToast();
   const [motivos, setMotivos] = useState(motivosIniciales);
   const [tipos, setTipos] = useState(tiposIniciales);
@@ -45,53 +49,97 @@ export default function ChecklistEditor({
   const [abiertoTrabajo, setAbiertoTrabajo] = useState<number | null>(null);
   const [confirmar, setConfirmar] = useState<ConfirmarCfg | null>(null);
 
-  function agregarMotivo() {
-    const id = nextId++;
-    setMotivos((prev) => [
-      ...prev,
-      {
-        id,
-        codigo: codigoDesde("Nuevo motivo", prev.map((m) => m.codigo)),
-        nombre: "Nuevo motivo",
-        orden: prev.length + 1,
-        activo: true,
-      },
-    ]);
+  // Tras un router.refresh() llegan las listas recién consultadas: el estado
+  // local se resincroniza con lo que quedó realmente en la base.
+  useEffect(() => setMotivos(motivosIniciales), [motivosIniciales]);
+  useEffect(() => setTipos(tiposIniciales), [tiposIniciales]);
+  useEffect(() => setTrabajos(trabajosIniciales), [trabajosIniciales]);
+
+  /**
+   * Texto con el que quedó cada campo en la base.
+   *
+   * Hay que compararlo contra esto y NO contra el estado local: al teclear,
+   * onChange ya actualizó el estado, así que para cuando salta el blur el valor
+   * "anterior" es idéntico al nuevo y ningún cambio se detectaría jamás.
+   */
+  const guardado = useRef<Map<string, string>>(new Map());
+
+  useEffect(() => {
+    const m = guardado.current;
+    for (const x of motivosIniciales) m.set(`motivo:${x.id}`, x.nombre);
+    for (const t of tiposIniciales) {
+      m.set(`tipo:${t.id}`, t.nombre);
+      m.set(`tipo-grupo:${t.id}`, t.grupoLabel ?? "");
+      for (const o of t.opciones) m.set(`opcion:${o.id}`, o.etiqueta);
+    }
+    for (const t of trabajosIniciales) {
+      m.set(`trabajo:${t.id}`, t.nombre);
+      m.set(`trabajo-grupo:${t.id}`, t.grupoLabel ?? "");
+      for (const s of t.subtrabajos) m.set(`subtrabajo:${s.id}`, s.etiqueta);
+    }
+  }, [motivosIniciales, tiposIniciales, trabajosIniciales]);
+
+  /** Corre la acción; si falla, avisa y devuelve la lista al estado del servidor. */
+  async function persistir(
+    accion: () => Promise<{ ok: boolean; error?: string }>,
+    opciones: { refrescar?: boolean; exito?: string } = {}
+  ): Promise<boolean> {
+    const res = await accion();
+    if (!res.ok) {
+      aviso(res.error ?? "No se pudo guardar el cambio");
+      router.refresh();
+      return false;
+    }
+    if (opciones.exito) aviso(opciones.exito);
+    if (opciones.refrescar !== false) router.refresh();
+    return true;
+  }
+
+  /**
+   * Guarda un campo de texto al salir de él, solo si de verdad cambió respecto
+   * de lo que hay en la base.
+   */
+  function guardarTexto(
+    clave: string,
+    valor: string,
+    accion: (v: string) => Promise<{ ok: boolean; error?: string }>,
+    opciones: { permitirVacio?: boolean } = {}
+  ) {
+    const limpio = valor.trim();
+    if (!limpio && !opciones.permitirVacio) return;
+    if (guardado.current.get(clave) === limpio) return;
+    void (async () => {
+      if (await persistir(() => accion(limpio), { refrescar: false })) {
+        guardado.current.set(clave, limpio);
+      }
+    })();
+  }
+
+  async function agregarMotivo() {
+    const res = await crearMotivoAction("Nuevo motivo");
+    if (!res.ok || !res.fila) return aviso(res.error ?? "No se pudo agregar el motivo");
+    guardado.current.set(`motivo:${res.fila.id}`, res.fila.nombre);
+    setMotivos((prev) => [...prev, res.fila!]);
     aviso("Motivo agregado · cámbiale el nombre");
   }
 
-  function agregarTipo() {
-    const id = nextId++;
-    const nuevo: CatalogoProblema = {
-      id,
-      codigo: codigoDesde("Nuevo tipo de problema", tipos.map((t) => t.codigo)),
-      nombre: "Nuevo tipo de problema",
-      grupoLabel: null,
-      singular: null,
-      ayuda: null,
-      orden: 0,
-      activo: true,
-      opciones: [],
-    };
-    setTipos((prev) => [nuevo, ...prev]);
-    setAbiertoTipo(id);
+  async function agregarTipo() {
+    const res = await crearTipoProblemaAction("Nuevo tipo de problema");
+    if (!res.ok || !res.fila) return aviso(res.error ?? "No se pudo agregar el tipo");
+    guardado.current.set(`tipo:${res.fila.id}`, res.fila.nombre);
+    guardado.current.set(`tipo-grupo:${res.fila.id}`, "");
+    setTipos((prev) => [res.fila!, ...prev]);
+    setAbiertoTipo(res.fila.id);
     aviso("Tipo agregado · cámbiale el nombre y sus subdetalles");
   }
 
-  function agregarTrabajo() {
-    const id = nextId++;
-    const nuevo: CatalogoTrabajo = {
-      id,
-      codigo: codigoDesde("Nuevo trabajo", trabajos.map((t) => t.codigo)),
-      nombre: "Nuevo trabajo",
-      grupoLabel: null,
-      singular: null,
-      orden: 0,
-      activo: true,
-      subtrabajos: [],
-    };
-    setTrabajos((prev) => [nuevo, ...prev]);
-    setAbiertoTrabajo(id);
+  async function agregarTrabajo() {
+    const res = await crearTrabajoAction("Nuevo trabajo");
+    if (!res.ok || !res.fila) return aviso(res.error ?? "No se pudo agregar el trabajo");
+    guardado.current.set(`trabajo:${res.fila.id}`, res.fila.nombre);
+    guardado.current.set(`trabajo-grupo:${res.fila.id}`, "");
+    setTrabajos((prev) => [res.fila!, ...prev]);
+    setAbiertoTrabajo(res.fila.id);
     aviso("Trabajo agregado · cámbiale el nombre y sus subtrabajos");
   }
 
@@ -99,15 +147,15 @@ export default function ChecklistEditor({
     setConfirmar({
       titulo: "¿Restaurar el catálogo por defecto?",
       texto:
-        "Se pierden los motivos, tipos de problema y trabajos que hayas editado, y vuelven los de fábrica.",
+        "Vuelven los motivos, tipos de problema y trabajos de fábrica, con sus subdetalles. " +
+        "Lo que hayas agregado por tu cuenta se mantiene; lo de fábrica que hayas renombrado o quitado vuelve a su nombre original.",
       cta: "Restaurar catálogo",
-      accion: () => {
-        setMotivos(motivosIniciales);
-        setTipos(tiposIniciales);
-        setTrabajos(trabajosIniciales);
+      accion: async () => {
+        await persistir(() => restaurarCatalogoAction(), {
+          exito: "Checklists restaurados al catálogo por defecto",
+        });
         setAbiertoTipo(null);
         setAbiertoTrabajo(null);
-        aviso("Checklists restaurados al catálogo por defecto");
       },
     });
   }
@@ -138,6 +186,9 @@ export default function ChecklistEditor({
                   onChange={(e) =>
                     setMotivos((prev) => prev.map((x) => (x.id === m.id ? { ...x, nombre: e.target.value } : x)))
                   }
+                  onBlur={(e) =>
+                    guardarTexto(`motivo:${m.id}`, e.target.value, (v) => renombrarMotivoAction(m.id, v))
+                  }
                   placeholder="Ej: Calibración de las antenas"
                   className="input flex-1 min-w-0 bg-[var(--color-surface-3)]"
                   aria-label="Nombre del motivo"
@@ -148,9 +199,11 @@ export default function ChecklistEditor({
                       titulo: "¿Eliminar este motivo?",
                       texto: `«${m.nombre}» dejará de aparecer en el celular del técnico. Las visitas ya registradas con este motivo no se modifican.`,
                       cta: "Eliminar motivo",
-                      accion: () => {
+                      accion: async () => {
                         setMotivos((prev) => prev.filter((x) => x.id !== m.id));
-                        aviso(`«${m.nombre}» ya no aparece como motivo`);
+                        await persistir(() => eliminarMotivoAction(m.id), {
+                          exito: `«${m.nombre}» ya no aparece como motivo`,
+                        });
                       },
                     })
                   }
@@ -190,14 +243,19 @@ export default function ChecklistEditor({
               labelToggle={abiertoTipo === t.id ? "Ocultar subdetalles" : "Ver subdetalles"}
               onToggle={() => setAbiertoTipo(abiertoTipo === t.id ? null : t.id)}
               onNombre={(v) => setTipos((prev) => prev.map((x) => (x.id === t.id ? { ...x, nombre: v } : x)))}
+              onNombreCommit={(v) =>
+                guardarTexto(`tipo:${t.id}`, v, (nombre) => actualizarTipoProblemaAction(t.id, { nombre }))
+              }
               onEliminar={() =>
                 setConfirmar({
                   titulo: "¿Eliminar este tipo de problema?",
-                  texto: `«${t.nombre}» y sus ${t.opciones.length} subdetalles dejarán de aparecer en el celular del técnico.`,
+                  texto: `«${t.nombre}» y sus ${t.opciones.length} subdetalles dejarán de aparecer en el celular del técnico. Los problemas ya levantados con este tipo no se modifican.`,
                   cta: "Eliminar tipo",
-                  accion: () => {
+                  accion: async () => {
                     setTipos((prev) => prev.filter((x) => x.id !== t.id));
-                    aviso(`«${t.nombre}» ya no aparece en el celular`);
+                    await persistir(() => eliminarTipoProblemaAction(t.id), {
+                      exito: `«${t.nombre}» ya no aparece en el celular`,
+                    });
                   },
                 })
               }
@@ -206,6 +264,14 @@ export default function ChecklistEditor({
               phSub="Ej: Cable dañado"
               valorSub={t.grupoLabel ?? ""}
               onSub={(v) => setTipos((prev) => prev.map((x) => (x.id === t.id ? { ...x, grupoLabel: v } : x)))}
+              onSubCommit={(v) =>
+                guardarTexto(
+                  `tipo-grupo:${t.id}`,
+                  v,
+                  (grupoLabel) => actualizarTipoProblemaAction(t.id, { grupoLabel: grupoLabel || null }),
+                  { permitirVacio: true }
+                )
+              }
               opciones={t.opciones.map((o) => ({ id: o.id, etiqueta: o.etiqueta }))}
               vacioSub="Sin subdetalles: en el celular este tipo pide directamente una descripción escrita."
               ariaOpcion="Subdetalle"
@@ -219,15 +285,20 @@ export default function ChecklistEditor({
                   )
                 )
               }
+              onCommitOpcion={(oid, v) =>
+                guardarTexto(`opcion:${oid}`, v, (etiqueta) => renombrarOpcionProblemaAction(oid, etiqueta))
+              }
               onQuitarOpcion={(oid, etiqueta) =>
                 setConfirmar({
                   titulo: "¿Quitar este subdetalle?",
                   texto: `«${etiqueta}» dejará de aparecer dentro de «${t.nombre}».`,
                   cta: "Quitar subdetalle",
-                  accion: () =>
+                  accion: async () => {
                     setTipos((prev) =>
                       prev.map((x) => (x.id === t.id ? { ...x, opciones: x.opciones.filter((op) => op.id !== oid) } : x))
-                    ),
+                    );
+                    await persistir(() => eliminarOpcionProblemaAction(oid));
+                  },
                 })
               }
               onAgregarOpcion={(v) => {
@@ -235,20 +306,14 @@ export default function ChecklistEditor({
                 if (t.opciones.some((o) => o.etiqueta.toLowerCase() === v.trim().toLowerCase())) {
                   return aviso("Ese subdetalle ya está en la lista");
                 }
-                setTipos((prev) =>
-                  prev.map((x) =>
-                    x.id === t.id
-                      ? {
-                          ...x,
-                          grupoLabel: x.grupoLabel || "Detalle",
-                          opciones: [
-                            ...x.opciones,
-                            { id: nextId++, problemaId: t.id, etiqueta: v.trim(), orden: x.opciones.length + 1, activo: true },
-                          ],
-                        }
-                      : x
-                  )
-                );
+                void (async () => {
+                  const res = await crearOpcionProblemaAction(t.id, v.trim());
+                  if (!res.ok || !res.fila) return aviso(res.error ?? "No se pudo agregar el subdetalle");
+                  // El técnico necesita un título para el grupo: si no lo pusieron,
+                  // se deja uno genérico al aparecer el primer subdetalle.
+                  if (!t.grupoLabel) await actualizarTipoProblemaAction(t.id, { grupoLabel: "Detalle" });
+                  router.refresh();
+                })();
                 return true;
               }}
             />
@@ -283,14 +348,19 @@ export default function ChecklistEditor({
               labelToggle={abiertoTrabajo === t.id ? "Ocultar subtrabajos" : "Ver subtrabajos"}
               onToggle={() => setAbiertoTrabajo(abiertoTrabajo === t.id ? null : t.id)}
               onNombre={(v) => setTrabajos((prev) => prev.map((x) => (x.id === t.id ? { ...x, nombre: v } : x)))}
+              onNombreCommit={(v) =>
+                guardarTexto(`trabajo:${t.id}`, v, (nombre) => actualizarTrabajoAction(t.id, { nombre }))
+              }
               onEliminar={() =>
                 setConfirmar({
                   titulo: "¿Eliminar este trabajo?",
-                  texto: `«${t.nombre}» y sus ${t.subtrabajos.length} subtrabajos dejarán de aparecer en el celular del técnico.`,
+                  texto: `«${t.nombre}» y sus ${t.subtrabajos.length} subtrabajos dejarán de aparecer en el celular del técnico. Las actas ya firmadas no se modifican.`,
                   cta: "Eliminar trabajo",
-                  accion: () => {
+                  accion: async () => {
                     setTrabajos((prev) => prev.filter((x) => x.id !== t.id));
-                    aviso(`«${t.nombre}» ya no aparece en el celular`);
+                    await persistir(() => eliminarTrabajoAction(t.id), {
+                      exito: `«${t.nombre}» ya no aparece en el celular`,
+                    });
                   },
                 })
               }
@@ -299,6 +369,14 @@ export default function ChecklistEditor({
               phSub="Ej: Repuesto cambiado"
               valorSub={t.grupoLabel ?? ""}
               onSub={(v) => setTrabajos((prev) => prev.map((x) => (x.id === t.id ? { ...x, grupoLabel: v } : x)))}
+              onSubCommit={(v) =>
+                guardarTexto(
+                  `trabajo-grupo:${t.id}`,
+                  v,
+                  (grupoLabel) => actualizarTrabajoAction(t.id, { grupoLabel: grupoLabel || null }),
+                  { permitirVacio: true }
+                )
+              }
               opciones={t.subtrabajos.map((o) => ({ id: o.id, etiqueta: o.etiqueta }))}
               vacioSub="Sin subtrabajos: en el celular este trabajo se agrega directo, con detalle escrito opcional."
               ariaOpcion="Subtrabajo"
@@ -312,17 +390,22 @@ export default function ChecklistEditor({
                   )
                 )
               }
+              onCommitOpcion={(oid, v) =>
+                guardarTexto(`subtrabajo:${oid}`, v, (etiqueta) => renombrarSubtrabajoAction(oid, etiqueta))
+              }
               onQuitarOpcion={(oid, etiqueta) =>
                 setConfirmar({
                   titulo: "¿Quitar este subtrabajo?",
                   texto: `«${etiqueta}» dejará de aparecer dentro de «${t.nombre}».`,
                   cta: "Quitar subtrabajo",
-                  accion: () =>
+                  accion: async () => {
                     setTrabajos((prev) =>
                       prev.map((x) =>
                         x.id === t.id ? { ...x, subtrabajos: x.subtrabajos.filter((s) => s.id !== oid) } : x
                       )
-                    ),
+                    );
+                    await persistir(() => eliminarSubtrabajoAction(oid));
+                  },
                 })
               }
               onAgregarOpcion={(v) => {
@@ -330,20 +413,12 @@ export default function ChecklistEditor({
                 if (t.subtrabajos.some((o) => o.etiqueta.toLowerCase() === v.trim().toLowerCase())) {
                   return aviso("Ese subtrabajo ya está en la lista");
                 }
-                setTrabajos((prev) =>
-                  prev.map((x) =>
-                    x.id === t.id
-                      ? {
-                          ...x,
-                          grupoLabel: x.grupoLabel || "Subtrabajo",
-                          subtrabajos: [
-                            ...x.subtrabajos,
-                            { id: nextId++, trabajoId: t.id, etiqueta: v.trim(), orden: x.subtrabajos.length + 1, activo: true },
-                          ],
-                        }
-                      : x
-                  )
-                );
+                void (async () => {
+                  const res = await crearSubtrabajoAction(t.id, v.trim());
+                  if (!res.ok || !res.fila) return aviso(res.error ?? "No se pudo agregar el subtrabajo");
+                  if (!t.grupoLabel) await actualizarTrabajoAction(t.id, { grupoLabel: "Subtrabajo" });
+                  router.refresh();
+                })();
                 return true;
               }}
             />
@@ -416,17 +491,20 @@ function Desplegable({
   labelToggle,
   onToggle,
   onNombre,
+  onNombreCommit,
   onEliminar,
   ariaEliminar,
   tituloSub,
   phSub,
   valorSub,
   onSub,
+  onSubCommit,
   opciones,
   vacioSub,
   ariaOpcion,
   phNueva,
   onCambiarOpcion,
+  onCommitOpcion,
   onQuitarOpcion,
   onAgregarOpcion,
 }: {
@@ -438,17 +516,21 @@ function Desplegable({
   labelToggle: string;
   onToggle: () => void;
   onNombre: (v: string) => void;
+  /** Se dispara al salir del campo: es cuando se escribe en la base. */
+  onNombreCommit: (v: string) => void;
   onEliminar: () => void;
   ariaEliminar: string;
   tituloSub: string;
   phSub: string;
   valorSub: string;
   onSub: (v: string) => void;
+  onSubCommit: (v: string) => void;
   opciones: { id: number; etiqueta: string }[];
   vacioSub: string;
   ariaOpcion: string;
   phNueva: string;
   onCambiarOpcion: (id: number, v: string) => void;
+  onCommitOpcion: (id: number, v: string) => void;
   onQuitarOpcion: (id: number, etiqueta: string) => void;
   onAgregarOpcion: (v: string) => unknown;
 }) {
@@ -464,6 +546,7 @@ function Desplegable({
         <input
           value={nombre}
           onChange={(e) => onNombre(e.target.value)}
+          onBlur={(e) => onNombreCommit(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === "Enter") e.currentTarget.blur();
           }}
@@ -506,6 +589,7 @@ function Desplegable({
           <input
             value={valorSub}
             onChange={(e) => onSub(e.target.value)}
+            onBlur={(e) => onSubCommit(e.target.value)}
             placeholder={phSub}
             className="input max-w-[420px] min-h-10 bg-[var(--color-bg)]"
           />
@@ -516,6 +600,7 @@ function Desplegable({
                 <input
                   value={o.etiqueta}
                   onChange={(e) => onCambiarOpcion(o.id, e.target.value)}
+                  onBlur={(e) => onCommitOpcion(o.id, e.target.value)}
                   placeholder={phNueva}
                   className="input flex-1 min-w-0 min-h-10 bg-[var(--color-bg)]"
                   aria-label={ariaOpcion}

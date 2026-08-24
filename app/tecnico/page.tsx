@@ -1,17 +1,20 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getSesion } from "@/lib/auth";
-import { getVisitasPorTecnico } from "@/lib/mock/visitas";
-import { HOY } from "@/lib/mock/queries";
+import { getVisitasPorTecnico } from "@/lib/data/visitas";
+import { hoyISO } from "@/lib/ui/fecha";
 import MobileShell from "@/components/mobile/MobileShell";
 import Tag from "@/components/Tag";
 import { ESTADO_VISITA_LABEL, ESTADO_VISITA_TAG } from "@/lib/ui/estado";
+
+export const dynamic = "force-dynamic";
 
 export default async function InicioPage() {
   const sesion = await getSesion();
   if (!sesion?.tecnico) redirect("/login");
 
-  const visitas = getVisitasPorTecnico(sesion.tecnico.id);
+  const HOY = hoyISO();
+  const visitas = await getVisitasPorTecnico(sesion.tecnico.id);
   const deHoy = visitas.filter((v) => v.fechaProgramada === HOY);
   const nHoy = deHoy.length;
   const nCurso = deHoy.filter((v) => v.estado === "EN_CURSO").length;

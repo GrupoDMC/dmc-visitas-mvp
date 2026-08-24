@@ -1,6 +1,8 @@
 import ProblemasView from "@/components/admin/ProblemasView";
-import { getProblemasPorSucursal } from "@/lib/mock/queries";
+import { getProblemasPorSucursal } from "@/lib/data/queries";
 
-export default function ProblemasPage() {
-  return <ProblemasView grupos={getProblemasPorSucursal()} />;
+export const dynamic = "force-dynamic";
+
+export default async function ProblemasPage() {
+  return <ProblemasView grupos={await getProblemasPorSucursal()} />;
 }

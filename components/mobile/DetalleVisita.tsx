@@ -8,7 +8,7 @@ import { Toast, useToast } from "./toast";
 import { cambiarEstadoVisitaAction, iniciarVisitaAction } from "@/app/actions/visitas";
 import { ESTADO_VISITA_LABEL, ESTADO_VISITA_TAG } from "@/lib/ui/estado";
 import { urlMapa, urlTel } from "@/lib/ui/formato";
-import type { HistorialVista } from "@/lib/mock/historial";
+import type { HistorialVista } from "@/lib/data/historial";
 import type { EstadoVisita, Visita } from "@/lib/types";
 
 type AccionEstado = "reagendar" | "pendiente" | "cancelar";

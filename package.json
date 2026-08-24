@@ -6,13 +6,19 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "typecheck": "tsc --noEmit",
+    "hash-password": "node scripts/hash-password.mjs",
+    "sembrar-catalogos": "node --env-file=.env.development scripts/sembrar-catalogos.mjs",
+    "sembrar-catalogos:prod": "node --env-file=.env.production scripts/sembrar-catalogos.mjs",
+    "secreto": "node -e \"console.log(require('crypto').randomBytes(32).toString('hex'))\""
   },
   "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "mssql": "^11.0.1",
     "next": "15.5.23",
     "react": "19.2.8",
-    "react-dom": "19.2.8",
-    "mssql": "^11.0.1"
+    "react-dom": "19.2.8"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

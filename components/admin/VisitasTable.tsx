@@ -8,8 +8,7 @@ import FiltrosBar, { type ChipFiltro } from "@/components/admin/FiltrosBar";
 import VisitaDialogo from "@/components/admin/VisitaDialogos";
 import { Toast, useToast } from "@/components/ui/Toast";
 import { ESTADO_VISITA_LABEL, ESTADO_VISITA_TAG } from "@/lib/ui/estado";
-import { tecnicos } from "@/lib/mock/maestros";
-import { catalogoProblema } from "@/lib/mock/catalogos";
+import { useReferencias } from "@/lib/ui/referencias";
 import type { Visita, EstadoVisita } from "@/lib/types";
 
 const ESTADOS: EstadoVisita[] = ["PROGRAMADA", "EN_CURSO", "COMPLETADA", "PENDIENTE", "REAGENDADA", "CANCELADA"];
@@ -47,6 +46,7 @@ export default function VisitasTable({
   permiteCrear?: boolean;
 }) {
   const router = useRouter();
+  const { tecnicos, problemas: catalogoProblema } = useReferencias();
   const { toast, aviso } = useToast();
   const [busqueda, setBusqueda] = useState("");
   const [f, setF] = useState<Filtros>({

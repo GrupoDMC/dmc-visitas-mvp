@@ -6,7 +6,8 @@ export interface ConfirmarCfg {
   titulo: string;
   texto: string;
   cta: string;
-  accion: () => void;
+  /** Puede ser asíncrona: el diálogo se cierra sin esperar a que termine. */
+  accion: () => void | Promise<void>;
 }
 
 /**

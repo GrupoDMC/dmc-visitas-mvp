@@ -9,8 +9,7 @@ import VisitaDialogo, { type OrigenProblema } from "@/components/admin/VisitaDia
 import { Toast, useToast } from "@/components/ui/Toast";
 import { actualizarProblemaAction } from "@/app/actions/admin";
 import { ESTADO_PROBLEMA_LABEL, ESTADO_PROBLEMA_TAG } from "@/lib/ui/estado";
-import { catalogoProblema } from "@/lib/mock/catalogos";
-import { clientes } from "@/lib/mock/maestros";
+import { useReferencias } from "@/lib/ui/referencias";
 import type { EstadoProblema } from "@/lib/types";
 
 interface Item {
@@ -48,12 +47,6 @@ const ESTADOS: { codigo: EstadoProblema; label: string }[] = [
   { codigo: "RESUELTO", label: "Resuelto" },
 ];
 
-const OPC_TIPOS = catalogoProblema.map((t) => ({ v: t.codigo, t: t.nombre }));
-
-function nombreTipo(codigo: string) {
-  return catalogoProblema.find((t) => t.codigo === codigo)?.nombre ?? codigo;
-}
-
 interface Filtros {
   clienteId: string;
   fecha: string;
@@ -66,6 +59,10 @@ const SIN_FILTROS: Filtros = { clienteId: "", fecha: "", tipo: "", estado: "" };
 
 export default function ProblemasView({ grupos }: { grupos: GrupoProblemas[] }) {
   const router = useRouter();
+  const { clientes, problemas: catalogoProblema } = useReferencias();
+  const OPC_TIPOS = useMemo(() => catalogoProblema.map((t) => ({ v: t.codigo, t: t.nombre })), [catalogoProblema]);
+  const nombreTipo = (codigo: string) => catalogoProblema.find((t) => t.codigo === codigo)?.nombre ?? codigo;
+
   const { toast, aviso } = useToast();
   const [f, setF] = useState<Filtros>(SIN_FILTROS);
   /** Problema con el panel "Cambiar estado o tipo" desplegado. */

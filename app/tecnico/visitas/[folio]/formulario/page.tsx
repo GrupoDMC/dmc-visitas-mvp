@@ -1,9 +1,11 @@
 import { notFound, redirect } from "next/navigation";
 import { getSesion } from "@/lib/auth";
-import { getVisitaCompletaPorFolio } from "@/lib/mock/visitas";
-import { catalogoMotivo, catalogoTrabajo, catalogoProblema } from "@/lib/mock/catalogos";
+import { getVisitaCompletaPorFolio } from "@/lib/data/visitas";
+import { listarMotivos, listarProblemas, listarTrabajos } from "@/lib/data/catalogos";
 import MobileShell from "@/components/mobile/MobileShell";
 import FormularioVisita from "@/components/mobile/FormularioVisita";
+
+export const dynamic = "force-dynamic";
 
 export default async function FormularioPage({ params }: { params: Promise<{ folio: string }> }) {
   const { folio: folioParam } = await params;
@@ -11,15 +13,26 @@ export default async function FormularioPage({ params }: { params: Promise<{ fol
   const sesion = await getSesion();
   if (!sesion?.tecnico) redirect("/login");
 
-  const visita = getVisitaCompletaPorFolio(folio);
+  const visita = await getVisitaCompletaPorFolio(folio);
   if (!visita || visita.tecnicoId !== sesion.tecnico.id) notFound();
   if (visita.estado !== "PROGRAMADA" && visita.estado !== "EN_CURSO") {
     redirect(`/tecnico/visitas/${visita.folio}`);
   }
 
+  const [motivos, trabajos, problemas] = await Promise.all([
+    listarMotivos(),
+    listarTrabajos(),
+    listarProblemas(),
+  ]);
+
   return (
     <MobileShell titulo="Formulario" volverHref={`/tecnico/visitas/${visita.folio}`}>
-      <FormularioVisita visita={visita} motivos={catalogoMotivo} catalogoTrabajo={catalogoTrabajo} catalogoProblema={catalogoProblema} />
+      <FormularioVisita
+        visita={visita}
+        motivos={motivos}
+        catalogoTrabajo={trabajos}
+        catalogoProblema={problemas}
+      />
     </MobileShell>
   );
 }
