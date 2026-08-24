@@ -11,6 +11,7 @@ import {
   type ActaEntrada,
 } from "@/lib/data/visitas";
 import { listarSucursales } from "@/lib/data/maestros";
+import { borrarBorrador } from "@/lib/data/borradores";
 import type { EstadoVisita } from "@/lib/types";
 
 export interface ResultadoAccion {
@@ -79,6 +80,12 @@ export async function guardarActaAction(entrada: ActaEntrada): Promise<Resultado
       tecnicoId: sesion.tecnico.id,
     });
     if (!res.ok) return { ok: false, error: res.error };
+    // El acta ya está en sus tablas: el respaldo a medio llenar sobra, y si
+    // quedara ahí la próxima visita a este folio lo ofrecería para recuperar.
+    // Que falle no invalida el guardado.
+    await borrarBorrador(entrada.folio, sesion.usuario.id).catch((err) =>
+      console.error("[dmc] borrarBorrador tras guardar el acta:", err)
+    );
     revalidar(entrada.folio);
     revalidatePath(`/admin/visitas/${entrada.folio}`);
     return { ok: true, horaTermino: res.horaTermino };

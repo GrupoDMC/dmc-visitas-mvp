@@ -53,6 +53,9 @@ function comoError(err: unknown, contexto: string): ResultadoAdmin {
   if (/ck_visita_hora_instalacion/i.test(texto)) {
     return { ok: false, error: "En instalación la hora es obligatoria." };
   }
+  if (/ck_problema_otro_desc/i.test(texto)) {
+    return { ok: false, error: "Un problema del tipo «Otro» necesita una descripción escrita." };
+  }
   console.error(`[dmc] ${contexto}:`, err);
   return { ok: false, error: "No se pudo guardar en el servidor. Inténtalo otra vez." };
 }

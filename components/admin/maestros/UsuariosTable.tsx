@@ -8,14 +8,23 @@ import type { RolUsuario, Tecnico, Usuario } from "@/lib/types";
 const ROL_LABEL: Record<string, string> = { ADMIN: "Administrador", COORDINADOR: "Coordinador", TECNICO: "Técnico" };
 const SIN_TECNICO = "—";
 
-export default function UsuariosTable({ usuarios, tecnicos }: { usuarios: Usuario[]; tecnicos: Tecnico[] }) {
+export default function UsuariosTable({
+  usuarios,
+  tecnicos,
+  pestanas,
+}: {
+  usuarios: Usuario[];
+  tecnicos: Tecnico[];
+  pestanas?: React.ReactNode;
+}) {
   const nombreTecnico = (id: number | null) =>
     id ? tecnicos.find((t) => t.id === id)?.nombreCompleto ?? SIN_TECNICO : SIN_TECNICO;
 
   return (
     <MaestroTable<Usuario>
-      kicker="Maestros"
+      kicker="Maestros · quién entra al sistema"
       title="Usuarios"
+      pestanas={pestanas}
       addLabel="Nuevo usuario"
       editLabel="Editar usuario"
       dialogoKicker="Maestro · usuario"

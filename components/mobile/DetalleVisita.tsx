@@ -7,7 +7,7 @@ import Tag from "@/components/Tag";
 import { Toast, useToast } from "./toast";
 import { cambiarEstadoVisitaAction, iniciarVisitaAction } from "@/app/actions/visitas";
 import { ESTADO_VISITA_LABEL, ESTADO_VISITA_TAG, textoMotivos } from "@/lib/ui/estado";
-import { urlMapa, urlTel } from "@/lib/ui/formato";
+import { hayDireccion, urlMapa, urlTel } from "@/lib/ui/formato";
 import type { HistorialVista } from "@/lib/data/historial";
 import type { EstadoVisita, Visita } from "@/lib/types";
 
@@ -63,9 +63,17 @@ export default function DetalleVisita({ visita, historial }: { visita: Visita; h
   const cerradaConActa = visita.estado === "COMPLETADA" || visita.estado === "PENDIENTE";
   const reagenda = visita.reagendamientos?.[0];
 
+  // La dirección tal como se cargó en la sucursal: es la que abre el mapa.
+  const direccion = [visita.sucursal?.direccion, visita.sucursal?.comuna, visita.sucursal?.region];
+  const conDireccion = hayDireccion(...direccion);
+  const textoDireccion = direccion
+    .map((p) => String(p ?? "").trim())
+    .filter(Boolean)
+    .join(", ");
+
   const filas: { k: string; v: string }[] = [
     { k: "Hora", v: visita.horaProgramada ?? "Sin hora" },
-    { k: "Dirección", v: `${visita.sucursal?.direccion}, ${visita.sucursal?.comuna}` },
+    { k: "Dirección", v: textoDireccion || "Sin dirección cargada" },
     { k: "Responsable", v: `${visita.responsableNombre ?? "—"} · ${visita.responsableTelefono ?? "—"}` },
     { k: visita.motivosCodigos.length > 1 ? "Motivos" : "Motivo", v: textoMotivos(visita) },
     { k: "Estado", v: ESTADO_VISITA_LABEL[visita.estado] },
@@ -163,18 +171,33 @@ export default function DetalleVisita({ visita, historial }: { visita: Visita; h
 
         {/* ── Ruta y llamada ── */}
         <div className="flex gap-2.5 mt-4">
-          <a
-            href={urlMapa(visita.sucursal?.nombre, visita.sucursal?.direccion, visita.sucursal?.comuna)}
-            target="_blank"
-            rel="noreferrer"
-            className="flex-1 min-h-[50px] flex items-center gap-2 px-3.5 bg-transparent border border-[var(--color-divider)] text-[var(--color-text)] font-extrabold text-[13px] hover:bg-black/[.07]"
-          >
-            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M20 10c0 6-8 12-8 12S4 16 4 10a8 8 0 1116 0z" />
-              <circle cx="12" cy="10" r="3" />
-            </svg>
-            <span>Ruta</span>
-          </a>
+          {conDireccion ? (
+            <a
+              href={urlMapa(...direccion)}
+              target="_blank"
+              rel="noreferrer"
+              title={textoDireccion}
+              className="flex-1 min-h-[50px] flex items-center gap-2 px-3.5 bg-transparent border border-[var(--color-divider)] text-[var(--color-text)] font-extrabold text-[13px] hover:bg-black/[.07]"
+            >
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M20 10c0 6-8 12-8 12S4 16 4 10a8 8 0 1116 0z" />
+                <circle cx="12" cy="10" r="3" />
+              </svg>
+              <span>Ver ubicación</span>
+            </a>
+          ) : (
+            <button
+              type="button"
+              onClick={() => aviso("Esta sucursal no tiene dirección cargada. Avisa a coordinación.")}
+              className="flex-1 min-h-[50px] flex items-center gap-2 px-3.5 bg-transparent border border-[var(--color-divider)] text-[var(--color-text)] font-extrabold text-[13px] opacity-55 cursor-pointer"
+            >
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M20 10c0 6-8 12-8 12S4 16 4 10a8 8 0 1116 0z" />
+                <circle cx="12" cy="10" r="3" />
+              </svg>
+              <span>Sin dirección</span>
+            </button>
+          )}
           <a
             href={urlTel(visita.responsableTelefono)}
             className="flex-1 min-h-[50px] flex items-center gap-2 px-3.5 bg-transparent border border-[var(--color-divider)] text-[var(--color-text)] font-extrabold text-[13px] hover:bg-black/[.07]"

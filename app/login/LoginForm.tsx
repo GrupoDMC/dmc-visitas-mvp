@@ -46,7 +46,9 @@ export default function LoginForm() {
         <label htmlFor="lg-pass" className="block text-[11px] tracking-[.09em] uppercase opacity-60 mb-1.5">
           Contraseña
         </label>
-        <div className="flex gap-2">
+        {/* El ojo va dentro del campo, no en una caja aparte: es un solo
+            control y no parte en dos la fila de la contraseña. */}
+        <div className="relative">
           <input
             id="lg-pass"
             name="password"
@@ -57,18 +59,28 @@ export default function LoginForm() {
             spellCheck={false}
             placeholder="••••••••"
             required
-            className={`${CAMPO} flex-1 min-w-0`}
+            className={`${CAMPO} pr-[52px]`}
           />
           <button
             type="button"
             onClick={() => setVerPass((v) => !v)}
             aria-label={verPass ? "Ocultar contraseña" : "Ver contraseña"}
             aria-pressed={verPass}
-            className="w-[54px] min-h-[54px] flex-none grid place-items-center bg-[var(--color-surface)] border border-[var(--color-divider)] cursor-pointer text-[var(--color-text)] hover:bg-black/[.07]"
+            title={verPass ? "Ocultar contraseña" : "Ver contraseña"}
+            className="absolute right-0 top-0 bottom-0 w-[46px] grid place-items-center bg-transparent border-0 cursor-pointer text-[var(--color-text)] opacity-60 hover:opacity-100"
           >
             {verPass ? <IconoOjoTachado /> : <IconoOjo />}
           </button>
         </div>
+        <label className="flex items-center gap-2 mt-2 w-fit text-[13px] cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={verPass}
+            onChange={(e) => setVerPass(e.target.checked)}
+            className="w-4 h-4 accent-[var(--color-accent)] cursor-pointer"
+          />
+          <span className="opacity-75">Ver contraseña</span>
+        </label>
       </div>
 
       {state.error ? <Alerta>{state.error}</Alerta> : null}

@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import Tag from "@/components/Tag";
 import Dialogo, { type Adjunto } from "@/components/admin/Dialogo";
 import VisitaDialogo, { ReprogramarDialogo } from "@/components/admin/VisitaDialogos";
+import VisorFotos, { useVisorFotos } from "@/components/ui/VisorFotos";
 import { Toast, useToast } from "@/components/ui/Toast";
 import { enviarActaAction } from "@/app/actions/admin";
 import { ESTADO_PROBLEMA_LABEL, ESTADO_PROBLEMA_TAG, ESTADO_VISITA_LABEL, ESTADO_VISITA_TAG, textoMotivos, textoMotivosReales } from "@/lib/ui/estado";
@@ -42,6 +43,7 @@ export default function ActaView({
   const [resumenAbierto, setResumenAbierto] = useState(false);
   const [trazaAbierta, setTrazaAbierta] = useState(false);
   const [dialogo, setDialogo] = useState<"correo" | "editar" | "reprogramar" | null>(null);
+  const visor = useVisorFotos();
 
   const ejec = visita.ejecucion;
   const ejecutada = visita.estado !== "PROGRAMADA";
@@ -364,14 +366,14 @@ export default function ActaView({
                 Fotos del trabajo ({visita.fotos?.length ?? 0})
               </div>
               <div className="grid grid-cols-4 gap-2.5">
-                {(visita.fotos ?? []).map((f) => (
-                  <a
+                {(visita.fotos ?? []).map((f, i) => (
+                  // La foto se agranda encima del acta, no en otra pestaña.
+                  <button
                     key={f.id}
-                    href={f.archivoUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="border border-black/[.35] bg-[var(--color-surface)] aspect-[4/3] block relative overflow-hidden group"
-                    title="Abrir la foto en grande"
+                    type="button"
+                    onClick={() => visor.abrir(i)}
+                    className="border border-black/[.35] bg-[var(--color-surface)] aspect-[4/3] block relative overflow-hidden p-0 cursor-zoom-in hover:border-[var(--color-accent)]"
+                    title="Ver la foto en grande"
                   >
                     {/* Las fotos van en color: los bytes vienen de
                         dmc.visita_foto.contenido vía /api/visita/foto/<id>. */}
@@ -382,11 +384,11 @@ export default function ActaView({
                       className="w-full h-full object-cover"
                       loading="lazy"
                     />
-                    <div className="absolute left-0 right-0 bottom-0 px-2 py-1 bg-[rgba(32,30,29,.72)] text-[var(--color-bg)]">
+                    <div className="absolute left-0 right-0 bottom-0 px-2 py-1 bg-[rgba(32,30,29,.72)] text-[var(--color-bg)] text-left">
                       <div className="font-extrabold text-[11px] leading-[1.2] truncate">{f.etiqueta ?? "Foto"}</div>
                       <div className="text-[10px] leading-[1.3] opacity-80 tabular-nums">{hhmm(f.tomadaEn)}</div>
                     </div>
-                  </a>
+                  </button>
                 ))}
                 {(visita.fotos ?? []).length === 0 ? (
                   <div className="col-span-4 text-[13px] opacity-66">Sin fotos registradas.</div>
@@ -503,6 +505,9 @@ export default function ActaView({
           {[
             { k: "Creada", v: visita.creadoEn.slice(0, 16).replace("T", " · ") },
             { k: "Sincronizada", v: ejec?.sincronizadoEn ? ejec.sincronizadoEn.slice(0, 16).replace("T", " · ") : "pendiente" },
+            // Un acta registrada offline se cerró en terreno antes de llegar
+            // acá: la hora de término es la de la tienda, no la de la subida.
+            { k: "Captura", v: ejec?.registradoOffline ? "Sin señal · se envió al recuperar cobertura" : "En línea" },
             { k: "Dispositivo", v: ejec?.dispositivo ?? "—" },
             { k: "Folio", v: visita.folio },
           ].map((t) => (
@@ -537,6 +542,19 @@ export default function ActaView({
             aviso(m);
             router.refresh();
           }}
+        />
+      ) : null}
+
+      {visor.abierto ? (
+        <VisorFotos
+          fotos={(visita.fotos ?? []).map((f) => ({
+            src: f.archivoUrl,
+            titulo: f.etiqueta ?? "Foto del trabajo",
+            subtitulo: `${visita.folio} · ${visita.sucursal?.nombre ?? ""} · ${hhmm(f.tomadaEn)}`,
+          }))}
+          indice={visor.indice ?? 0}
+          onIndice={visor.mover}
+          onCerrar={visor.cerrar}
         />
       ) : null}
 

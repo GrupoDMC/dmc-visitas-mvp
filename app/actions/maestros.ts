@@ -7,11 +7,13 @@ import {
   guardarSucursal,
   guardarTecnico,
   guardarUsuario,
+  RutRepetido,
   type DatosCliente,
   type DatosSucursal,
   type DatosTecnico,
   type DatosUsuario,
 } from "@/lib/data/maestros";
+import { mensajeRut, rutCompleto } from "@/lib/ui/formato";
 import type { RolUsuario } from "@/lib/types";
 
 // Altas y ediciones de los maestros del panel. Todo escribe en SQL Server.
@@ -33,6 +35,11 @@ async function permitido(): Promise<boolean> {
  * llegar a pantalla como un volcado del driver.
  */
 function mensajeDeError(err: unknown, contexto: string): string {
+  if (err instanceof RutRepetido) {
+    return err.donde === "cliente"
+      ? `El RUT ${err.rut} ya está registrado en otra empresa. El RUT es único: busca esa empresa y edítala.`
+      : `El RUT ${err.rut} ya está registrado en otra persona. El RUT es único: busca a esa persona y edítala.`;
+  }
   const texto = err instanceof Error ? err.message : String(err);
   if (/uq_\w*rut/i.test(texto)) return "Ya existe un registro con ese RUT.";
   if (/uq_\w*email|uq_usuario_email/i.test(texto)) return "Ya existe un registro con ese correo.";
@@ -54,6 +61,7 @@ export async function guardarClienteAction(id: number | null, datos: DatosClient
   if (!datos.razonSocial.trim() || !datos.rut.trim()) {
     return { ok: false, error: "Razón social y RUT son obligatorios." };
   }
+  if (!rutCompleto(datos.rut)) return { ok: false, error: mensajeRut(datos.rut) ?? "El RUT está incompleto." };
   try {
     await guardarCliente(id, datos);
   } catch (err) {
@@ -82,6 +90,7 @@ export async function guardarTecnicoAction(id: number | null, datos: DatosTecnic
   if (!datos.nombres.trim() || !datos.rut.trim() || !datos.email.trim()) {
     return { ok: false, error: "Nombre, RUT y correo son obligatorios." };
   }
+  if (!rutCompleto(datos.rut)) return { ok: false, error: mensajeRut(datos.rut) ?? "El RUT está incompleto." };
   try {
     await guardarTecnico(id, datos);
   } catch (err) {

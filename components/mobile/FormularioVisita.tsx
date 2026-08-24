@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Sheet from "./Sheet";
 import Confirmar, { type ConfirmarCfg } from "./Confirmar";
@@ -10,7 +10,28 @@ import { Toast, useToast } from "./toast";
 import { fmtRut, fmtTel, mensajeRut, rutCompleto, rutDvCorrecto, telCompleto } from "@/lib/ui/formato";
 import { comprimirFoto } from "@/lib/ui/imagen";
 import { guardarActaAction } from "@/app/actions/visitas";
+import { descartarBorradorAction, guardarBorradorAction } from "@/app/actions/borradores";
 import { ESTADO_PROBLEMA_LABEL } from "@/lib/ui/estado";
+import {
+  actasEnCola,
+  borradorConDatos,
+  borrarBorrador,
+  encolarActa,
+  escribirBorrador,
+  hayConexion,
+  haceCuanto,
+  leerActaEnCola,
+  leerBorrador,
+  sacarDeCola,
+  type BorradorActa,
+  type FotoForm,
+  type ProblemaForm,
+  type ProblemaItemForm,
+  type Seccion,
+  type SubSeleccion,
+  type TrabajoForm,
+} from "@/lib/ui/borrador";
+import type { ActaEntrada } from "@/lib/data/visitas";
 import type {
   CatalogoMotivo,
   CatalogoProblema,
@@ -19,38 +40,12 @@ import type {
   Visita,
 } from "@/lib/types";
 
-/** Un subtrabajo o subdetalle marcado. La cantidad solo se usa cuando el
- *  checklist dice que esa opción la admite (permiteCantidad). */
-interface SubSeleccion {
-  etiqueta: string;
-  cantidad: number;
-}
-
-interface TrabajoForm {
-  id: number;
-  codigo: string;
-  subs: SubSeleccion[];
-  detalle: string;
-}
-interface ProblemaItemForm {
-  etiqueta: string;
-  cantidad: number;
-}
-interface ProblemaForm {
-  id: number;
-  codigo: string;
-  items: ProblemaItemForm[];
-  desc: string;
-  sol: string;
-  estado: EstadoProblema;
-}
-interface FotoForm {
-  id: number;
-  src: string;
-}
-
-type Seccion = "sucursal" | "motivo" | "problemas" | "fotos" | "firmas";
 const SECCIONES: Seccion[] = ["sucursal", "motivo", "problemas", "fotos", "firmas"];
+
+/** Cada cuánto se sube el respaldo del borrador cuando hay señal. */
+const CADA_CUANTO_SUBE = 30_000;
+/** Cada cuánto se reintenta sola un acta que quedó esperando cobertura. */
+const CADA_CUANTO_REINTENTA = 20_000;
 
 const ESTADOS_PROBLEMA: EstadoProblema[] = ["ABIERTO", "PENDIENTE", "RESUELTO"];
 
@@ -61,16 +56,19 @@ export default function FormularioVisita({
   motivos,
   catalogoTrabajo,
   catalogoProblema,
+  borradorServidor,
 }: {
   visita: Visita;
   motivos: CatalogoMotivo[];
   catalogoTrabajo: CatalogoTrabajo[];
   catalogoProblema: CatalogoProblema[];
+  /** Respaldo del acta a medio llenar que quedó en el servidor, si lo hay. */
+  borradorServidor?: { payload: string; guardadoEn: string } | null;
 }) {
   const router = useRouter();
   const { toast, aviso } = useToast();
 
-  const [paso, setPaso] = useState<"form" | "preview" | "ok">("form");
+  const [paso, setPaso] = useState<"form" | "preview" | "ok" | "encolada">("form");
   const [abierta, setAbierta] = useState<Seccion | null>("sucursal");
   const [guardadas, setGuardadas] = useState<Partial<Record<Seccion, boolean>>>({});
   const [confirmar, setConfirmar] = useState<ConfirmarCfg | null>(null);
@@ -117,8 +115,154 @@ export default function FormularioVisita({
     estado: "ABIERTO",
   });
 
+  // ── Borrador y envío diferido ─────────────────────────────────────────────
+  //
+  // En terreno pasan dos cosas todo el tiempo: el acta queda a medias (una
+  // llamada, la batería, el celular que se bloquea) y la señal se corta justo
+  // al guardar. Lo escrito se respalda en el propio celular en cuanto se toca
+  // algo, y el acta terminada que no salió queda en una cola que se reintenta
+  // sola. El técnico no tiene que quedarse parado esperando cobertura.
+
+  /** false hasta que se terminó de mirar si había algo que recuperar. */
+  const [listo, setListo] = useState(false);
+  const [respaldo, setRespaldo] = useState<{ guardadoEn: string; sinFotos: boolean } | null>(null);
+  const [recuperado, setRecuperado] = useState<{ guardadoEn: string; sinFotos: boolean } | null>(null);
+  const [pendiente, setPendiente] = useState<{ capturadaEn: string; intentos: number } | null>(null);
+  const [enviando, setEnviando] = useState(false);
+  const [conSenal, setConSenal] = useState(true);
+  const [otrasPendientes, setOtrasPendientes] = useState(0);
+
+  /** Último borrador escrito en el celular, para saber qué falta subir. */
+  const borradorRef = useRef<BorradorActa | null>(null);
+  const subidoRef = useRef<string>("");
+  /** La recuperación se hace una sola vez por pantalla, nunca dos. */
+  const yaRecuperado = useRef(false);
+
   useEffect(() => {
     setHoraInicio(ahora());
+  }, []);
+
+  /** Todo lo que hay en pantalla, en el formato que se guarda y se recupera. */
+  const construirBorrador = useCallback(
+    (): BorradorActa => ({
+      folio: visita.folio,
+      guardadoEn: new Date().toISOString(),
+      respNombre,
+      respRut,
+      respTel,
+      motivosCodigos,
+      obs,
+      interno,
+      trabajos,
+      problemas,
+      fotos,
+      firma,
+      guardadas,
+      horaInicio,
+    }),
+    [visita.folio, respNombre, respRut, respTel, motivosCodigos, obs, interno, trabajos, problemas, fotos, firma, guardadas, horaInicio]
+  );
+
+  const aplicarBorrador = useCallback((b: BorradorActa) => {
+    setRespNombre(b.respNombre ?? "");
+    setRespRut(b.respRut ?? "");
+    setRespTel(b.respTel ?? "");
+    if (b.motivosCodigos?.length) setMotivosCodigos(b.motivosCodigos);
+    setObs(b.obs ?? "");
+    setInterno(b.interno ?? "");
+    setTrabajos(b.trabajos ?? []);
+    setProblemas(b.problemas ?? []);
+    setFotos(b.fotos ?? []);
+    setFirma(b.firma ?? null);
+    setGuardadas(b.guardadas ?? {});
+    if (b.horaInicio && b.horaInicio !== "—") setHoraInicio(b.horaInicio);
+    // Los ids de las filas recuperadas no pueden chocar con los que se generen
+    // de acá en adelante.
+    const usados = [
+      ...(b.trabajos ?? []).map((t) => t.id),
+      ...(b.problemas ?? []).map((x) => x.id),
+      ...(b.fotos ?? []).map((f) => f.id),
+    ];
+    autoId = Math.max(autoId, ...usados.map((n) => n + 1), 1);
+  }, []);
+
+  // Al entrar: recuperar lo que hubiera quedado a medias y ver si hay un acta
+  // esperando señal. Gana la copia más nueva entre el celular y el servidor.
+  useEffect(() => {
+    // Una sola vez: un router.refresh() vuelve a mandar las props del servidor,
+    // y recuperar de nuevo pisaría con una copia vieja lo que se esté
+    // escribiendo en ese momento.
+    if (yaRecuperado.current) return;
+    yaRecuperado.current = true;
+
+    const local = leerBorrador(visita.folio);
+    let remoto: BorradorActa | null = null;
+    if (borradorServidor?.payload) {
+      try {
+        remoto = JSON.parse(borradorServidor.payload) as BorradorActa;
+      } catch {
+        remoto = null;
+      }
+    }
+    const candidatos = [local, remoto].filter((b): b is BorradorActa => borradorConDatos(b));
+    const elegido = candidatos.sort((a, b) => b.guardadoEn.localeCompare(a.guardadoEn))[0];
+    if (elegido) {
+      aplicarBorrador(elegido);
+      const estado = { guardadoEn: elegido.guardadoEn, sinFotos: Boolean(elegido.sinFotos) };
+      setRespaldo(estado);
+      setRecuperado(estado);
+      borradorRef.current = elegido;
+      subidoRef.current = remoto === elegido ? elegido.guardadoEn : "";
+    }
+
+    const enCola = leerActaEnCola(visita.folio);
+    if (enCola) setPendiente({ capturadaEn: enCola.capturadaEn, intentos: enCola.intentos });
+    setOtrasPendientes(actasEnCola().filter((a) => a.folio !== visita.folio).length);
+    setConSenal(hayConexion());
+    setListo(true);
+  }, [visita.folio, borradorServidor, aplicarBorrador]);
+
+  // Guardado en el celular: al ritmo al que se escribe, no en cada tecla.
+  useEffect(() => {
+    if (!listo || paso === "ok" || paso === "encolada") return;
+    const t = setTimeout(() => {
+      const b = construirBorrador();
+      if (!borradorConDatos(b)) return;
+      const ok = escribirBorrador(b);
+      if (!ok) return;
+      const guardado = leerBorrador(visita.folio);
+      borradorRef.current = guardado ?? b;
+      setRespaldo({ guardadoEn: b.guardadoEn, sinFotos: Boolean(guardado?.sinFotos) });
+    }, 800);
+    return () => clearTimeout(t);
+  }, [listo, paso, construirBorrador, visita.folio]);
+
+  // Respaldo en el servidor: cada tanto y solo si hay señal. Las fotos no
+  // suben acá —pesan demasiado para mandarlas cada medio minuto—, así que la
+  // copia del servidor recupera el texto y no las imágenes.
+  useEffect(() => {
+    if (!listo || paso === "ok" || paso === "encolada") return;
+    const id = setInterval(() => {
+      const b = borradorRef.current;
+      if (!b || !hayConexion() || subidoRef.current === b.guardadoEn) return;
+      subidoRef.current = b.guardadoEn;
+      void guardarBorradorAction(visita.folio, JSON.stringify({ ...b, fotos: [], sinFotos: true })).catch(() => {
+        // Sin señal o servidor caído: el borrador del celular sigue intacto.
+        subidoRef.current = "";
+      });
+    }, CADA_CUANTO_SUBE);
+    return () => clearInterval(id);
+  }, [listo, paso, visita.folio]);
+
+  // Aviso de señal: lo que decide si el acta se manda o se encola.
+  useEffect(() => {
+    const cambio = () => setConSenal(hayConexion());
+    window.addEventListener("online", cambio);
+    window.addEventListener("offline", cambio);
+    return () => {
+      window.removeEventListener("online", cambio);
+      window.removeEventListener("offline", cambio);
+    };
   }, []);
 
   const nGuardadas = SECCIONES.filter((k) => guardadas[k]).length;
@@ -136,70 +280,161 @@ export default function FormularioVisita({
   const nombreMotivos = (codigos: string[]) =>
     codigos.map((c) => motivos.find((m) => m.codigo === c)?.nombre ?? c).join(" · ") || "Sin motivo";
 
+  /** El acta tal como viaja al servidor, armada con lo que hay en pantalla. */
+  function armarEntrada(): ActaEntrada | null {
+    if (!firma) return null;
+    return {
+      folio: visita.folio,
+      responsableNombre: respNombre.trim(),
+      responsableRut: respRut.trim() || null,
+      responsableTelefono: respTel.trim() || null,
+      motivosCodigos,
+      observaciones: obs.trim() || null,
+      comentarioInterno: interno.trim() || null,
+      trabajos: trabajos.map((t) => ({
+        codigo: t.codigo,
+        detalle: t.detalle.trim() || null,
+        subtrabajos: t.subs.map((sx) => ({ etiqueta: sx.etiqueta, cantidad: sx.cantidad })),
+      })),
+      problemas: problemas.map((pr) => ({
+        tipoCodigo: pr.codigo,
+        estado: pr.estado,
+        descripcion: pr.desc.trim() || null,
+        solucion: pr.sol.trim() || null,
+        items: pr.items.map((it) => ({ etiqueta: it.etiqueta, cantidad: it.cantidad })),
+      })),
+      // Las fotos ya vienen reducidas desde que se tomaron: así el acta cabe en
+      // el celular mientras espera señal y sale rápido cuando la hay.
+      fotos: fotos.map((f) => ({ dataUrl: f.src, etiqueta: null })),
+      firma: { nombre: firma.nombre, rut: firma.rut || null, dataUrl: firma.imagen },
+      dispositivo: typeof navigator === "undefined" ? null : navigator.userAgent.slice(0, 60),
+    };
+  }
+
   /**
-   * Manda el acta entera al servidor y cierra la visita.
+   * Manda el acta y cierra la visita.
    *
-   * Hasta acá nada de lo que hay en pantalla existe en ninguna parte: las
-   * "secciones guardadas" solo marcan que el técnico las revisó. Este es el
-   * único punto donde se escribe, y cuando responde bien la visita ya está
-   * COMPLETADA para todos: al técnico deja de salirle en curso y coordinación
-   * la ve cerrada en el panel sin esperar nada.
+   * Tres finales posibles:
+   *
+   * - Salió: la visita queda COMPLETADA y coordinación la ve al instante.
+   * - El servidor la rechazó (la visita ya estaba cerrada, el checklist cambió):
+   *   es un problema real que reintentar no arregla, así que se muestra y no se
+   *   encola.
+   * - No hubo forma de llegar al servidor: el acta queda guardada en el celular
+   *   y se reintenta sola. Esto es lo que antes dejaba al técnico atrapado en la
+   *   pantalla, apretando Guardar hasta que volviera la señal.
    */
+  const enviarActa = useCallback(
+    async (entrada: ActaEntrada, capturadaEn: string, offline: boolean): Promise<boolean> => {
+      setEnviando(true);
+      setErrorGuardado(null);
+      try {
+        const res = await guardarActaAction({ ...entrada, capturadaEn, registradoOffline: offline });
+
+        if (!res.ok) {
+          // El caso del acta que sí había llegado: se cortó la señal justo al
+          // recibir la respuesta, el acta quedó encolada y al reintentar el
+          // servidor contesta que la visita ya está cerrada. No es un fallo:
+          // está guardada, solo hay que dejar de insistir.
+          if (/ya (quedó|está) cerrada/i.test(res.error ?? "")) {
+            sacarDeCola(visita.folio);
+            borrarBorrador(visita.folio);
+            borradorRef.current = null;
+            setPendiente(null);
+            setRespaldo(null);
+            setPaso("ok");
+            aviso("El acta ya estaba guardada en el servidor");
+            router.refresh();
+            return true;
+          }
+          // Cualquier otro rechazo: reintentar no lo va a arreglar. Se vuelve a
+          // la revisión, que es donde se ve el motivo y el botón de guardar.
+          sacarDeCola(visita.folio);
+          setPendiente(null);
+          setErrorGuardado(res.error ?? "No se pudo guardar la visita.");
+          setPaso("preview");
+          aviso(res.error ?? "No se pudo guardar la visita");
+          return false;
+        }
+
+        sacarDeCola(visita.folio);
+        borrarBorrador(visita.folio);
+        borradorRef.current = null;
+        setPendiente(null);
+        setRespaldo(null);
+        setHoraTermino(res.horaTermino || ahora());
+        setPaso("ok");
+        // El listado del técnico y el panel se recargan con la visita cerrada.
+        router.refresh();
+        return true;
+      } catch (err) {
+        console.error("[dmc] no se pudo enviar el acta:", err);
+        const enCola = leerActaEnCola(visita.folio);
+        const intentos = (enCola?.intentos ?? 0) + 1;
+        const guardada = encolarActa({
+          folio: visita.folio,
+          capturadaEn,
+          intentos,
+          ultimoError: err instanceof Error ? err.message : String(err),
+          entrada,
+        });
+        if (!guardada) {
+          setErrorGuardado(
+            "No hay señal y tampoco quedó espacio en el celular para guardar el acta. Borra alguna foto y vuelve a intentar."
+          );
+          aviso("No se pudo guardar el acta en el celular");
+          return false;
+        }
+        setPendiente({ capturadaEn, intentos });
+        setConSenal(false);
+        return false;
+      } finally {
+        setEnviando(false);
+      }
+    },
+    [visita.folio, aviso, router]
+  );
+
   async function guardarVisita() {
-    if (!firma) return aviso("Falta la firma de la tienda");
+    const entrada = armarEntrada();
+    if (!entrada) return aviso("Falta la firma de la tienda");
+
     setGuardando(true);
-    setErrorGuardado(null);
+    const capturadaEn = new Date().toISOString();
+    const salio = await enviarActa(entrada, capturadaEn, !hayConexion());
+    setGuardando(false);
+    if (!salio && leerActaEnCola(visita.folio)) setPaso("encolada");
+  }
 
-    try {
-      // Las fotos se reducen acá y no al tomarlas: si el técnico borra alguna,
-      // no se gastó batería comprimiéndola para nada.
-      const fotosListas = await Promise.all(fotos.map(async (f) => ({ dataUrl: await comprimirFoto(f.src), etiqueta: null })));
-
-      const res = await guardarActaAction({
-        folio: visita.folio,
-        responsableNombre: respNombre.trim(),
-        responsableRut: respRut.trim() || null,
-        responsableTelefono: respTel.trim() || null,
-        motivosCodigos,
-        observaciones: obs.trim() || null,
-        comentarioInterno: interno.trim() || null,
-        trabajos: trabajos.map((t) => ({
-          codigo: t.codigo,
-          detalle: t.detalle.trim() || null,
-          subtrabajos: t.subs.map((sx) => ({ etiqueta: sx.etiqueta, cantidad: sx.cantidad })),
-        })),
-        problemas: problemas.map((pr) => ({
-          tipoCodigo: pr.codigo,
-          estado: pr.estado,
-          descripcion: pr.desc.trim() || null,
-          solucion: pr.sol.trim() || null,
-          items: pr.items.map((it) => ({ etiqueta: it.etiqueta, cantidad: it.cantidad })),
-        })),
-        fotos: fotosListas,
-        firma: { nombre: firma.nombre, rut: firma.rut || null, dataUrl: firma.imagen },
-        dispositivo: typeof navigator === "undefined" ? null : navigator.userAgent.slice(0, 60),
-      });
-
-      if (!res.ok) {
-        setErrorGuardado(res.error ?? "No se pudo guardar la visita.");
-        aviso(res.error ?? "No se pudo guardar la visita");
+  /** "Enviar ahora" y el reintento automático: los dos pasan por acá. */
+  const reintentarPendiente = useCallback(
+    async (avisarSiFalla: boolean) => {
+      const enCola = leerActaEnCola(visita.folio);
+      if (!enCola) {
+        setPendiente(null);
         return;
       }
+      const salio = await enviarActa(enCola.entrada, enCola.capturadaEn, true);
+      if (salio) aviso("Acta sincronizada");
+      else if (avisarSiFalla) aviso("Todavía no hay señal. Sigue guardada en el celular.");
+    },
+    [visita.folio, enviarActa, aviso]
+  );
 
-      setHoraTermino(res.horaTermino || ahora());
-      setPaso("ok");
-      // El listado del técnico y el panel se recargan con la visita ya cerrada.
-      router.refresh();
-    } catch (err) {
-      console.error("[dmc] fallo al enviar el acta:", err);
-      setErrorGuardado(
-        "No se pudo enviar el acta. Revisa la señal y vuelve a apretar Guardar: lo que llenaste sigue en pantalla."
-      );
-      aviso("No se pudo enviar el acta");
-    } finally {
-      setGuardando(false);
-    }
-  }
+  // Reintento solo: al volver la señal y, si no, cada tanto.
+  useEffect(() => {
+    if (!pendiente || enviando) return;
+    const intentar = () => {
+      if (!hayConexion()) return;
+      void reintentarPendiente(false);
+    };
+    window.addEventListener("online", intentar);
+    const id = setInterval(intentar, CADA_CUANTO_REINTENTA);
+    return () => {
+      window.removeEventListener("online", intentar);
+      clearInterval(id);
+    };
+  }, [pendiente, enviando, reintentarPendiente]);
 
   /**
    * Marca una sección como revisada. NO escribe nada: el acta entera se manda
@@ -217,6 +452,65 @@ export default function FormularioVisita({
 
   const nombreTrabajo = (codigo: string) => catalogoTrabajo.find((t) => t.codigo === codigo)?.nombre ?? "Trabajo";
   const nombreProblema = (codigo: string) => catalogoProblema.find((p) => p.codigo === codigo)?.nombre ?? "Problema";
+
+  // ───────────────────────── pantalla ACTA EN ESPERA ─────────────────────────
+  //
+  // El acta está completa y guardada en el celular, pero no salió. El técnico
+  // puede irse a la siguiente tienda: se manda sola cuando vuelva la señal.
+  if (paso === "encolada" && pendiente) {
+    return (
+      <div className="px-4 pt-11 pb-6.5 flex flex-col min-h-[70vh] animate-fade-in">
+        <div className="w-14 h-14 bg-[var(--color-text)] grid place-items-center">
+          <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#f3f2f2" strokeWidth="2.2">
+            <path d="M12 3v12M8 11l4 4 4-4" />
+            <path d="M4 19h16" />
+          </svg>
+        </div>
+        <h1 className="font-extrabold text-[34px] leading-[1.05] tracking-[-.03em] mt-5 mb-2">
+          Acta guardada
+          <br />
+          en el celular
+        </h1>
+        <div className="text-[13px] tabular-nums opacity-60">
+          {visita.folio} · {visita.sucursal?.nombre} · {pendiente.capturadaEn.slice(11, 16)}
+        </div>
+        <div className="h-0.5 bg-[var(--color-divider)] mt-5 mb-4" />
+        <div className="flex gap-2.5 items-start px-3.5 py-3 bg-[var(--color-accent-200)] border-l-4 border-[var(--color-accent)]">
+          <div className="text-[13px] leading-[1.5] text-[var(--color-accent-800)]">
+            No hubo señal para enviarla. Queda completa y firmada en el equipo y se manda sola apenas haya cobertura:
+            puedes seguir a la siguiente visita. No la vuelvas a llenar.
+            {pendiente.intentos > 1 ? ` Van ${pendiente.intentos} intentos.` : ""}
+          </div>
+        </div>
+        <div className="mt-auto pt-6.5 flex flex-col gap-2.5">
+          <button
+            onClick={() => void reintentarPendiente(true)}
+            disabled={enviando}
+            className="w-full min-h-[58px] flex items-center justify-between px-4.5 bg-[var(--color-accent)] text-[var(--color-bg)] font-extrabold text-base cursor-pointer text-left hover:bg-[var(--color-accent-hover)] disabled:opacity-60"
+          >
+            <span>{enviando ? "Enviando…" : "Intentar enviarla ahora"}</span>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+              <path d="M4 12a8 8 0 018-8c3 0 5.5 1.7 7 4M20 12a8 8 0 01-8 8c-3 0-5.5-1.7-7-4" />
+              <path d="M19 4v4h-4M5 20v-4h4" />
+            </svg>
+          </button>
+          <button
+            onClick={() => router.push("/tecnico/visitas")}
+            className="w-full min-h-[50px] px-4 bg-transparent border border-[var(--color-divider)] text-[var(--color-text)] font-extrabold text-sm cursor-pointer text-left hover:bg-black/[.07]"
+          >
+            Seguir a la siguiente visita
+          </button>
+          <button
+            onClick={() => setPaso("form")}
+            className="w-full min-h-11 px-1 bg-transparent border-0 text-[var(--color-accent-active)] text-[13px] underline underline-offset-4 cursor-pointer text-left"
+          >
+            Volver al formulario
+          </button>
+        </div>
+        <Toast texto={toast} />
+      </div>
+    );
+  }
 
   // ─────────────────────────────── pantalla OK ───────────────────────────────
   if (paso === "ok") {
@@ -252,8 +546,11 @@ export default function FormularioVisita({
               <path d="M5 12h14M13 6l6 6-6 6" />
             </svg>
           </button>
+          {/* Lleva al acta que quedó en la base, no de vuelta a la pantalla
+              previa a guardar: esa mostraba otra vez el botón "Guardar visita"
+              sobre una visita ya cerrada. */}
           <button
-            onClick={() => setPaso("preview")}
+            onClick={() => router.push(`/tecnico/visitas/${visita.folio}/revisar`)}
             className="w-full min-h-[50px] px-4 bg-transparent border border-[var(--color-divider)] text-[var(--color-text)] font-extrabold text-sm cursor-pointer text-left hover:bg-black/[.07]"
           >
             Ver el acta guardada
@@ -462,8 +759,52 @@ export default function FormularioVisita({
         </div>
         <div className="flex justify-between mt-1.5 text-[10px] tracking-[.09em] uppercase opacity-62">
           <span>{nGuardadas} de 5 secciones listas</span>
-          <span>Se guarda todo al final</span>
+          <span>El acta se cierra al final</span>
         </div>
+
+        <EstadoBorrador
+          respaldo={respaldo}
+          recuperado={recuperado}
+          pendiente={pendiente}
+          enviando={enviando}
+          conSenal={conSenal}
+          otrasPendientes={otrasPendientes}
+          onOcultarRecuperado={() => setRecuperado(null)}
+          onEmpezarDeNuevo={() =>
+            setConfirmar({
+              titulo: "¿Empezar el acta de nuevo?",
+              texto:
+                "Se borra lo que habías dejado a medias en este celular —trabajos, problemas, fotos y firma— y el formulario queda en blanco.",
+              cta: "Empezar de nuevo",
+              accion: () => {
+                borrarBorrador(visita.folio);
+                borradorRef.current = null;
+                void descartarBorradorAction(visita.folio);
+                setRespaldo(null);
+                setRecuperado(null);
+                aplicarBorrador({
+                  folio: visita.folio,
+                  guardadoEn: new Date().toISOString(),
+                  respNombre: visita.responsableNombre ?? "",
+                  respRut: "",
+                  respTel: fmtTel(visita.responsableTelefono ?? ""),
+                  motivosCodigos: visita.motivosCodigos ?? [visita.motivoCodigo],
+                  obs: "",
+                  interno: "",
+                  trabajos: [],
+                  problemas: [],
+                  fotos: [],
+                  firma: null,
+                  guardadas: {},
+                  horaInicio,
+                });
+                setAbierta("sucursal");
+                aviso("Formulario en blanco");
+              },
+            })
+          }
+          onEnviarPendiente={() => void reintentarPendiente(true)}
+        />
       </div>
 
       <div className="border-t-2 border-[var(--color-divider)]">
@@ -1232,10 +1573,7 @@ export default function FormularioVisita({
 
       {sheet === "camara" ? (
         <CamaraSheet
-          onCapturar={(src) => {
-            setFotos((prev) => [...prev, { id: autoId++, src }]);
-            setGuardadas((g) => ({ ...g, fotos: false }));
-          }}
+          onCapturar={(src) => void agregarFoto(src)}
           onCerrar={() => setSheet(null)}
         />
       ) : null}
@@ -1254,14 +1592,25 @@ export default function FormularioVisita({
     }));
   }
 
+  /**
+   * Agrega una foto ya reducida.
+   *
+   * Antes se comprimían todas juntas recién al guardar. Ahora se reduce cada
+   * una al entrar, porque la foto tiene que caber en el borrador del celular
+   * —una foto de cámara pesa varios MB y el almacenamiento del navegador es de
+   * unos pocos— y porque al guardar sin señal no hay tiempo de procesar nada.
+   */
+  async function agregarFoto(src: string) {
+    const reducida = await comprimirFoto(src);
+    setFotos((prev) => [...prev, { id: autoId++, src: reducida }]);
+    setGuardadas((g) => ({ ...g, fotos: false }));
+  }
+
   function onArchivos(e: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files ?? []);
     files.forEach((file) => {
       const reader = new FileReader();
-      reader.onload = () => {
-        setFotos((prev) => [...prev, { id: autoId++, src: String(reader.result) }]);
-        setGuardadas((g) => ({ ...g, fotos: false }));
-      };
+      reader.onload = () => void agregarFoto(String(reader.result));
       reader.readAsDataURL(file);
     });
     e.target.value = "";
@@ -1311,6 +1660,108 @@ function Cabecera({
       <span className="font-extrabold text-[15px] leading-[1.2] flex-1">{titulo}</span>
       <span className={`tag tag-${chip.variante}`}>{chip.texto}</span>
     </button>
+  );
+}
+
+/**
+ * Qué pasa con lo que el técnico lleva escrito.
+ *
+ * Tres cosas que hasta ahora no se decían en ninguna parte: que lo escrito está
+ * a salvo en el celular, que se recuperó lo que había quedado a medias, y que
+ * hay un acta terminada esperando señal.
+ */
+function EstadoBorrador({
+  respaldo,
+  recuperado,
+  pendiente,
+  enviando,
+  conSenal,
+  otrasPendientes,
+  onOcultarRecuperado,
+  onEmpezarDeNuevo,
+  onEnviarPendiente,
+}: {
+  respaldo: { guardadoEn: string; sinFotos: boolean } | null;
+  recuperado: { guardadoEn: string; sinFotos: boolean } | null;
+  pendiente: { capturadaEn: string; intentos: number } | null;
+  enviando: boolean;
+  conSenal: boolean;
+  otrasPendientes: number;
+  onOcultarRecuperado: () => void;
+  onEmpezarDeNuevo: () => void;
+  onEnviarPendiente: () => void;
+}) {
+  return (
+    <div className="flex flex-col gap-2 mt-3">
+      {pendiente ? (
+        <div className="px-3.5 py-3 bg-[var(--color-accent-200)] border-l-4 border-[var(--color-accent)]">
+          <div className="text-[10px] tracking-[.12em] uppercase text-[var(--color-accent-800)]">
+            Acta terminada · falta enviarla
+          </div>
+          <div className="text-[13px] leading-[1.45] text-[var(--color-accent-800)] mt-1.5">
+            Quedó guardada en el celular a las {pendiente.capturadaEn.slice(11, 16)} y se manda sola cuando haya señal.
+            No la vuelvas a llenar.
+          </div>
+          <button
+            onClick={onEnviarPendiente}
+            disabled={enviando}
+            className="w-full min-h-[46px] flex items-center justify-between px-3.5 mt-2.5 bg-[var(--color-accent)] text-[var(--color-bg)] border-0 font-extrabold text-[13px] cursor-pointer text-left disabled:opacity-60"
+          >
+            <span>{enviando ? "Enviando…" : "Enviar ahora"}</span>
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+              <path d="M4 12a8 8 0 018-8c3 0 5.5 1.7 7 4M20 12a8 8 0 01-8 8c-3 0-5.5-1.7-7-4" />
+              <path d="M19 4v4h-4M5 20v-4h4" />
+            </svg>
+          </button>
+        </div>
+      ) : null}
+
+      {recuperado ? (
+        <div className="px-3.5 py-3 bg-[var(--color-surface)] border-l-4 border-[var(--color-text)]">
+          <div className="text-[10px] tracking-[.12em] uppercase opacity-66">Recuperamos lo que llevabas</div>
+          <div className="text-[13px] leading-[1.45] mt-1.5">
+            Esta acta quedó a medias {haceCuanto(recuperado.guardadoEn)} y se volvió a cargar tal cual.
+            {recuperado.sinFotos ? " Las fotos no alcanzaron a guardarse: hay que tomarlas de nuevo." : ""}
+          </div>
+          <div className="flex gap-3.5 items-center mt-2">
+            <button
+              onClick={onOcultarRecuperado}
+              className="min-h-10 px-1 bg-transparent border-0 font-extrabold text-[13px] cursor-pointer text-[var(--color-text)] underline underline-offset-4"
+            >
+              Seguir con esto
+            </button>
+            <button
+              onClick={onEmpezarDeNuevo}
+              className="min-h-10 px-1 bg-transparent border-0 text-[13px] cursor-pointer text-[var(--color-accent-active)] underline underline-offset-4"
+            >
+              Empezar de nuevo
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      <div className="flex items-center gap-2 text-[11px] leading-[1.3] opacity-70">
+        <span
+          className="w-2 h-2 flex-none rounded-full"
+          style={{ background: conSenal ? "var(--color-accent)" : "#8f8b8b" }}
+          aria-hidden="true"
+        />
+        <span>
+          {!conSenal
+            ? "Sin señal · lo que escribes queda guardado en el celular"
+            : respaldo
+              ? `Guardado en el celular ${haceCuanto(respaldo.guardadoEn)}`
+              : "Lo que escribas se guarda solo en este celular"}
+        </span>
+      </div>
+
+      {otrasPendientes > 0 ? (
+        <div className="text-[11px] leading-[1.3] text-[var(--color-accent-800)]">
+          Tienes {otrasPendientes} acta{otrasPendientes > 1 ? "s" : ""} de otra visita esperando señal. Se envía
+          {otrasPendientes > 1 ? "n" : ""} al abrir esa visita.
+        </div>
+      ) : null}
+    </div>
   );
 }
 

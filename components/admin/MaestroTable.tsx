@@ -31,6 +31,7 @@ export interface FieldConfig extends CampoDef {
 export default function MaestroTable<T extends { id: number }>({
   kicker,
   title,
+  pestanas,
   addLabel,
   editLabel,
   dialogoKicker,
@@ -47,6 +48,8 @@ export default function MaestroTable<T extends { id: number }>({
 }: {
   kicker: string;
   title: string;
+  /** Pestañas de la sección, si el maestro comparte pantalla con otra vista. */
+  pestanas?: React.ReactNode;
   addLabel: string;
   editLabel: string;
   dialogoKicker: string;
@@ -60,8 +63,12 @@ export default function MaestroTable<T extends { id: number }>({
   /** Persiste el formulario. `id` es null en un alta. */
   guardarAction: (id: number | null, form: FormValores) => Promise<{ ok: boolean; error?: string }>;
   emptyRow: FormValores;
-  /** Devuelve el texto del error, o null si el formulario está correcto. */
-  validar?: (form: FormValores) => string | null;
+  /**
+   * Devuelve el texto del error, o null si el formulario está correcto.
+   * `id` es null en un alta: sirve para no compararse consigo mismo al buscar
+   * repetidos (un RUT que ya está en la fila que se está editando).
+   */
+  validar?: (form: FormValores, id: number | null) => string | null;
 }) {
   const router = useRouter();
   const { toast, aviso } = useToast();
@@ -77,7 +84,7 @@ export default function MaestroTable<T extends { id: number }>({
 
   async function guardar() {
     if (!dialogo) return;
-    const error = validar?.(dialogo.form);
+    const error = validar?.(dialogo.form, dialogo.id);
     if (error) return aviso(error);
 
     setGuardando(true);
@@ -95,7 +102,7 @@ export default function MaestroTable<T extends { id: number }>({
 
   return (
     <>
-      <AdminHeader kicker={kicker} title={title}>
+      <AdminHeader kicker={kicker} title={title} pestanas={pestanas}>
         <button onClick={() => setDialogo({ id: null, form: emptyRow })} className="btn btn-primary">
           <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4">
             <path d="M12 5v14M5 12h14" />

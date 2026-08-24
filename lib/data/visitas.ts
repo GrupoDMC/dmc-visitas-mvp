@@ -873,12 +873,26 @@ export async function actualizarProblema(
   );
   if (!actual) return false;
 
-  // resuelto_en lo maneja el trigger tg_problema_cambio, no se toca desde acá.
-  await ejecutar(`UPDATE dmc.problema SET estado = @estado, tipo_codigo = @tipo WHERE id = @id`, [
-    ["estado", sql.VarChar(10), estado],
-    ["tipo", sql.VarChar(40), tipoCodigo],
-    ["id", sql.BigInt, problemaId],
-  ]);
+  // resuelto_en se escribe en el mismo UPDATE, no se deja al trigger.
+  //
+  // ck_problema_resuelto exige que RESUELTO traiga fecha de resolución, y los
+  // CHECK se evalúan durante el UPDATE: tg_problema_cambio es AFTER UPDATE y
+  // corre demasiado tarde para salvarlo. Por eso marcar «Resuelto» desde el
+  // panel fallaba siempre con una violación de constraint.
+  await ejecutar(
+    `UPDATE dmc.problema
+        SET estado = @estado,
+            tipo_codigo = @tipo,
+            resuelto_en = CASE WHEN @estado = 'RESUELTO'
+                               THEN COALESCE(resuelto_en, SYSDATETIME())
+                               ELSE NULL END
+      WHERE id = @id`,
+    [
+      ["estado", sql.VarChar(10), estado],
+      ["tipo", sql.VarChar(40), tipoCodigo],
+      ["id", sql.BigInt, problemaId],
+    ]
+  );
 
   for (const [campo, antes, ahora] of [
     ["ESTADO", actual.estado, estado],
@@ -1001,6 +1015,15 @@ export interface ActaEntrada {
   fotos: FotoActa[];
   firma: FirmaActa | null;
   dispositivo: string | null;
+  /**
+   * Cuándo el técnico apretó "Guardar visita" en el celular. Cuando el acta se
+   * llenó sin señal, esa hora es la del cierre real en terreno y puede ser muy
+   * anterior a la de esta escritura; se usa como hora de término si es
+   * coherente (posterior a la llegada y no futura).
+   */
+  capturadaEn?: string | null;
+  /** true si el acta esperó cobertura guardada en el celular. */
+  registradoOffline?: boolean;
 }
 
 export interface ResultadoActa {
@@ -1011,6 +1034,13 @@ export interface ResultadoActa {
 }
 
 const MAX_BYTES_IMAGEN = 8 * 1024 * 1024;
+
+/** ISO del celular → Date, o null si no es una fecha que se pueda creer. */
+function fechaValida(iso: string | null | undefined): Date | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
 
 /** "data:image/jpeg;base64,AAA…" → { mime, bytes }. Null si no es una imagen. */
 function decodificarImagen(dataUrl: string): { mime: string; bytes: Buffer } | null {
@@ -1081,6 +1111,15 @@ export async function guardarActa(
          INSERT INTO dmc.visita_ejecucion (visita_id, hora_inicio, responsable_nombre)
          VALUES (@id, SYSDATETIME(), @nombre);
 
+       -- La hora del celular llega en UTC (el driver manda los Date en UTC) y
+       -- el resto de la tabla está en la hora local del servidor, que es la que
+       -- pone SYSDATETIME(). Sin esta conversión el instante de cierre nunca
+       -- calzaría y siempre se caería al valor por defecto.
+       DECLARE @cierre datetime2(0) = CASE
+         WHEN @capturada IS NULL THEN NULL
+         ELSE DATEADD(second, DATEDIFF(second, SYSUTCDATETIME(), SYSDATETIME()), @capturada)
+       END;
+
        UPDATE dmc.visita_ejecucion
           SET responsable_nombre   = @nombre,
               responsable_rut      = @rut,
@@ -1089,7 +1128,17 @@ export async function guardarActa(
               observaciones        = @obs,
               comentario_interno   = @interno,
               dispositivo          = @dispositivo,
-              hora_termino         = SYSDATETIME(),
+              -- Un acta que esperó señal se cerró en terreno hace rato: vale la
+              -- hora del celular, siempre que no sea anterior a la llegada ni
+              -- esté en el futuro (ck_ejecucion_horas y relojes desajustados).
+              hora_termino         = CASE
+                                       WHEN @cierre IS NOT NULL
+                                        AND @cierre >= hora_inicio
+                                        AND @cierre <= SYSDATETIME()
+                                       THEN @cierre
+                                       ELSE SYSDATETIME()
+                                     END,
+              registrado_offline   = @offline,
               sincronizado_en      = SYSDATETIME()
         WHERE visita_id = @id;`,
       [
@@ -1101,6 +1150,8 @@ export async function guardarActa(
         ["obs", sql.NVarChar(sql.MAX), entrada.observaciones || null],
         ["interno", sql.NVarChar(sql.MAX), entrada.comentarioInterno || null],
         ["dispositivo", sql.NVarChar(60), entrada.dispositivo || null],
+        ["capturada", sql.DateTime2(0), fechaValida(entrada.capturadaEn)],
+        ["offline", sql.Bit, Boolean(entrada.registradoOffline)],
       ]
     );
 

@@ -3,7 +3,7 @@
 import MaestroTable from "@/components/admin/MaestroTable";
 import Tag from "@/components/Tag";
 import { guardarClienteAction } from "@/app/actions/maestros";
-import { mensajeRut } from "@/lib/ui/formato";
+import { mensajeRut, rutLimpio } from "@/lib/ui/formato";
 import type { Cliente, Sucursal } from "@/lib/types";
 
 export default function ClientesTable({ clientes, sucursales }: { clientes: Cliente[]; sucursales: Sucursal[] }) {
@@ -37,11 +37,19 @@ export default function ClientesTable({ clientes, sucursales }: { clientes: Clie
         { k: "nombreFantasia", label: "Nombre fantasía" },
         { k: "activo", label: "Estado", tipo: "toggle" },
       ]}
-      validar={(f) => {
+      validar={(f, id) => {
         if (!String(f.razonSocial).trim() || !String(f.rut).trim()) return "Razón social y RUT son obligatorios";
         // El dígito verificador se valida al crear: un RUT mal tecleado deja al
         // cliente duplicado y sin forma de cruzarlo con la facturación.
-        return mensajeRut(String(f.rut));
+        const error = mensajeRut(String(f.rut));
+        if (error) return error;
+        // El RUT es único entre empresas. Se avisa acá, con la lista que ya
+        // está en pantalla, para no hacer el viaje al servidor solo para eso.
+        const limpio = rutLimpio(String(f.rut));
+        const repetido = clientes.find((c) => c.id !== id && rutLimpio(c.rut) === limpio);
+        return repetido
+          ? `Ese RUT ya es de «${repetido.nombreFantasia || repetido.razonSocial}». El RUT es único entre empresas.`
+          : null;
       }}
       toFormValues={(c) => ({
         nombreFantasia: c.nombreFantasia,

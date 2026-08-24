@@ -22,6 +22,7 @@ registro de problemas, fotos, firmas— hasta cerrar el acta.
 - [Seguridad](#seguridad)
 - [Arquitectura](#arquitectura)
 - [Estado y pendientes](#estado-y-pendientes)
+- [Borrador y trabajo sin señal](#borrador-y-trabajo-sin-señal)
 - [Convenciones](#convenciones)
 
 ---
@@ -284,12 +285,14 @@ Lo que ya está resuelto:
   datos la app falla con un mensaje explícito, no con un login de prueba.
 - **Contraseñas de un solo sentido** — el maestro de usuarios no muestra la contraseña actual (el
   bcrypt no se puede revertir): solo permite reemplazarla.
+- **RUT único** — un RUT no se puede repetir entre empresas ni entre personas. Se compara sin puntos
+  ni guion (`12345678-9` y `12.345.678-9` son el mismo) y se guarda siempre con el mismo formato: la
+  UNIQUE de la base, sola, dejaba entrar el mismo registro escrito de otra forma.
 
 Lo que falta:
 
 - **Límite de intentos de login.** No hay throttling; en serverless un contador en memoria no sirve,
   hace falta apoyarse en la base o en el WAF del proveedor.
-- **Recuperación de contraseña.** El enlace del login no está implementado.
 - **Rotación de `SESSION_SECRET`.** Cambiarlo invalida todas las sesiones de golpe; no hay soporte
   para dos claves en paralelo.
 
@@ -322,10 +325,12 @@ lib/
     visitas.ts        Visitas con todas sus hijas + mutaciones
     queries.ts        Agregados del panel (usa las vistas v_* del esquema)
     historial.ts      "Última visita al local" del detalle móvil
+    borradores.ts     Respaldo del acta a medio llenar (dmc.visita_borrador)
     usuarios.ts       Consultas del inicio de sesión
   types.ts          Tipos alineados al esquema dmc
   ui/
     referencias.tsx   Contexto con maestros y catálogos para los componentes cliente
+    borrador.ts       Borrador del acta y cola de envío, en el propio celular
     fecha.ts          "Hoy" en America/Santiago
     formato.ts        Formato de RUT, teléfono y fechas
     estado.ts         Etiquetas y colores por estado
@@ -359,13 +364,18 @@ Hecho:
   limitadas al técnico dueño de la visita. El cliente reduce cada foto antes de mandarla
   (`lib/ui/imagen.ts`) porque el acta entera viaja en una sola Server Action.
 - **Checklist** — el editor trabaja sobre un borrador local y solo escribe al confirmar *Guardar
-  cambios*. Se puede reordenar, clonar una entrada con sus subdetalles y decidir por subdetalle si
+  cambios*. Las filas se reordenan **arrastrándolas de su manilla** (o con ↑ ↓ cuando la manilla
+  tiene el foco); se puede clonar una entrada con sus subdetalles y decidir por subdetalle si
   lleva cantidad o solo se marca. **Nada se borra**: quitar una entrada la deja `activo = 0`.
 - **Motivos múltiples** — una visita puede venir por varias cosas a la vez (`dmc.visita_motivo`).
   `dmc.visita.motivo_codigo` sigue siendo el principal: de él cuelgan la FK y el CHECK de la hora en
   instalación.
 - **Recuperación de contraseña** — sin servidor de correo: la solicitud queda en
-  `dmc.solicitud_password` y el administrador la atiende en *Accesos › Contraseñas pedidas*.
+  `dmc.solicitud_password` y el administrador la atiende en *Maestros › Usuarios › Contraseñas
+  pedidas*, que es la pestaña vecina a la de las cuentas.
+- **Borrador y trabajo sin señal** — el formulario del técnico se respalda solo, y el acta terminada
+  que no alcanza a salir queda en cola y se manda cuando vuelve la cobertura. Ver
+  [Borrador y trabajo sin señal](#borrador-y-trabajo-sin-señal).
 
 Lo que falta:
 
@@ -378,14 +388,46 @@ Lo que falta:
    storage contratado) y funciona, pero engorda la base y el respaldo. Si el volumen crece, mover el
    contenido a almacenamiento externo dejando la ruta en `archivo_url` es un cambio acotado: las
    rutas `/api/visita/foto/[id]` y `/api/visita/firma/[id]` ya son el único punto de lectura.
-4. **Trabajo sin señal** — `dmc.visita_borrador` y `dmc.sincronizacion_cola` existen en el esquema
-   pero la app todavía no las usa: si el celular se queda sin señal al apretar *Guardar visita*, el
-   acta sigue en pantalla y hay que reintentar con cobertura.
+4. **Cola de sincronización en la base** — `dmc.sincronizacion_cola` sigue sin uso. El trabajo sin
+   señal se resolvió donde tenía que resolverse, en el propio celular (ver *Borrador y trabajo sin
+   señal*): una cola en el servidor no sirve para algo que ocurre justamente cuando no se puede
+   hablar con el servidor. La tabla queda para una eventual sincronización de varias entidades.
 5. **Envío del acta por correo** — `enviarActaAction` registra la fila en `dmc.acta_envio` con estado
    `ENCOLADO`; falta el SMTP que la despache y la marque `ENVIADO`.
 6. **Certificado del SQL Server** — la instancia presenta uno autofirmado, así que en producción hay
    que dejar `DB_TRUST_SERVER_CERT=true` hasta instalar uno de una CA de confianza. Mientras tanto la
    conexión va cifrada pero sin validar el servidor.
+
+---
+
+## Borrador y trabajo sin señal
+
+En terreno pasan dos cosas todo el tiempo: el acta queda a medias (una llamada, la batería, el
+celular que se bloquea) y la señal se corta justo al guardar. Las dos están cubiertas, y las dos se
+resuelven **en el celular**, que es donde hay que resolverlas: cualquier solución que dependa del
+servidor no sirve para el caso en que no hay servidor.
+
+| Qué | Dónde vive | Para qué |
+| --- | --- | --- |
+| Borrador local | `localStorage` (`dmc.borrador.<folio>`) | Lo escrito se guarda a los 0,8 s de dejar de escribir. Al volver a entrar al formulario se recupera solo |
+| Borrador respaldado | `dmc.visita_borrador` | Copia de arriba, cada 30 s y solo con señal. Rescata el texto si el celular se pierde o se borran los datos de la app. **Sin fotos**: pesan demasiado para subirlas tan seguido |
+| Cola de envío | `localStorage` (`dmc.acta-pendiente.<folio>`) | El acta completa que no pudo salir. Se reintenta sola al volver la señal y cada 20 s; el técnico puede seguir a la siguiente tienda |
+
+Detalles que importan:
+
+- **Las fotos se reducen al tomarlas**, no al guardar (`comprimirFoto`): tienen que caber en el
+  almacenamiento del navegador mientras el acta espera señal, y al guardar sin cobertura no hay
+  tiempo de procesar nada. Si aun así no cabe el borrador, se guarda **sin fotos** antes que perder
+  el texto, y la pantalla lo dice.
+- **Un rechazo del servidor no se encola.** Si la visita ya estaba cerrada o el checklist cambió,
+  reintentar no lo arregla: se muestra el motivo y se saca de la cola. Solo se encola cuando no se
+  pudo llegar al servidor.
+- **El acta que sí había llegado se detecta.** Si la respuesta se perdió en el camino, el reintento
+  recibe «esta visita ya quedó cerrada» y eso se trata como éxito, no como error.
+- **La hora de cierre es la de terreno.** `capturadaEn` viaja con el acta y queda en
+  `visita_ejecucion.hora_termino` si es coherente (posterior a la llegada y no futura); la conversión
+  de UTC a la hora local del servidor se hace en SQL. El acta queda marcada con
+  `registrado_offline`, y el panel muestra *Captura: sin señal* junto a la hora de sincronización.
 
 ---
 

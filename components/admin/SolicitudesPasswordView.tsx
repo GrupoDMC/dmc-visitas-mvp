@@ -21,7 +21,13 @@ import type { SolicitudPassword } from "@/lib/types";
  * canal que corresponda. La clave se muestra una sola vez, mientras el diálogo
  * está abierto: después ya está hasheada en la base y no hay forma de leerla.
  */
-export default function SolicitudesPasswordView({ solicitudes }: { solicitudes: SolicitudPassword[] }) {
+export default function SolicitudesPasswordView({
+  solicitudes,
+  pestanas,
+}: {
+  solicitudes: SolicitudPassword[];
+  pestanas?: React.ReactNode;
+}) {
   const router = useRouter();
   const { toast, aviso } = useToast();
   const [busqueda, setBusqueda] = useState("");
@@ -59,7 +65,7 @@ export default function SolicitudesPasswordView({ solicitudes }: { solicitudes: 
 
   return (
     <>
-      <AdminHeader kicker="Accesos" title="Contraseñas pedidas" />
+      <AdminHeader kicker="Maestros · quién entra al sistema" title="Usuarios" pestanas={pestanas} />
 
       <div className="pb-10 animate-fade-in">
         <div className="flex items-center gap-2.5 flex-wrap px-7 py-4 border-b border-[var(--color-divider-soft)]">
@@ -162,7 +168,7 @@ export default function SolicitudesPasswordView({ solicitudes }: { solicitudes: 
                           disabled={s.usuarioId === null}
                           title={
                             s.usuarioId === null
-                              ? "Ese correo no tiene cuenta. Créala en Maestros › Usuarios."
+                              ? "Ese correo no tiene cuenta. Créala en la pestaña «Cuentas»."
                               : undefined
                           }
                         >

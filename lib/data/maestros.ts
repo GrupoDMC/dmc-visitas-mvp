@@ -1,10 +1,43 @@
 import "server-only";
 import { consulta, consultaCon, ejecutar, num, numONull, sql, F_TS } from "@/lib/data/sql";
 import { hashearPassword } from "@/lib/password";
+import { fmtRut, rutLimpio } from "@/lib/ui/formato";
 import type { Cliente, RolUsuario, Sucursal, Tecnico, Usuario } from "@/lib/types";
 
 // Maestros: dmc.cliente, dmc.sucursal, dmc.tecnico y dmc.usuario.
 // Lectura para las tablas del panel y escritura para sus diálogos de alta/edición.
+
+/** El RUT no distingue de quién es: una empresa o una persona, pero uno solo. */
+export class RutRepetido extends Error {
+  constructor(public readonly donde: "cliente" | "tecnico", public readonly rut: string) {
+    super(`RUT repetido en ${donde}: ${rut}`);
+    this.name = "RutRepetido";
+  }
+}
+
+/**
+ * ¿Ese RUT ya está tomado en la tabla?
+ *
+ * Se compara sin puntos ni guion y en mayúsculas: "12345678-9", "12.345.678-9"
+ * y "123456789" son el mismo RUT, y la UNIQUE de la base los daba por
+ * distintos, así que el mismo cliente entraba dos veces con solo escribirlo de
+ * otra forma. Al guardar se normaliza además el formato, para que las filas
+ * viejas y las nuevas se vean igual.
+ */
+async function rutTomado(tabla: "cliente" | "tecnico", rut: string, idPropio: number | null): Promise<boolean> {
+  const limpio = rutLimpio(rut);
+  if (!limpio) return false;
+  const filas = await consultaCon<{ id: number }>(
+    `SELECT TOP 1 id FROM dmc.${tabla}
+      WHERE REPLACE(REPLACE(UPPER(rut), '.', ''), '-', '') = @rut
+        AND (@id IS NULL OR id <> @id)`,
+    [
+      ["rut", sql.VarChar(12), limpio],
+      ["id", sql.BigInt, idPropio],
+    ]
+  );
+  return filas.length > 0;
+}
 
 // ── Clientes ────────────────────────────────────────────────────────────────
 
@@ -38,8 +71,11 @@ export interface DatosCliente {
 }
 
 export async function guardarCliente(id: number | null, d: DatosCliente): Promise<number> {
+  const rut = fmtRut(d.rut);
+  if (await rutTomado("cliente", rut, id)) throw new RutRepetido("cliente", rut);
+
   const params: Parametros = [
-    ["rut", sql.VarChar(12), d.rut],
+    ["rut", sql.VarChar(12), rut],
     ["razon", sql.NVarChar(160), d.razonSocial],
     ["fantasia", sql.NVarChar(80), d.nombreFantasia],
     ["activo", sql.Bit, d.activo],
@@ -182,9 +218,12 @@ export interface DatosTecnico {
 }
 
 export async function guardarTecnico(id: number | null, d: DatosTecnico): Promise<number> {
+  const rut = fmtRut(d.rut);
+  if (await rutTomado("tecnico", rut, id)) throw new RutRepetido("tecnico", rut);
+
   // nombre_completo es una columna calculada: no se inserta ni se actualiza.
   const params: Parametros = [
-    ["rut", sql.VarChar(12), d.rut],
+    ["rut", sql.VarChar(12), rut],
     ["nombres", sql.NVarChar(80), d.nombres],
     ["paterno", sql.NVarChar(80), d.apellidoPaterno],
     ["materno", sql.NVarChar(80), d.apellidoMaterno],

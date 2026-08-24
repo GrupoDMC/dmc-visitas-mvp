@@ -331,30 +331,31 @@ export default function ProblemasView({ grupos }: { grupos: GrupoProblemas[] }) 
                             </span>
                           ) : null}
 
-                          {!agenda ? (
-                            <button
-                              onClick={() => {
-                                const abrir = editando !== p.id;
-                                setEditando(abrir ? p.id : null);
-                                setPendiente(abrir ? { estado: p.estado, tipo: p.tipoCodigo } : null);
-                              }}
-                              className="ml-auto min-h-[34px] flex items-center gap-2 px-3 bg-transparent border border-black/[.35] text-xs cursor-pointer text-[var(--color-text)] hover:bg-black/[.07]"
+                          {/* También con visita agendada: si el problema se
+                              resolvió por otra vía, coordinación tiene que
+                              poder cerrarlo sin esperar a esa visita. */}
+                          <button
+                            onClick={() => {
+                              const abrir = editando !== p.id;
+                              setEditando(abrir ? p.id : null);
+                              setPendiente(abrir ? { estado: p.estado, tipo: p.tipoCodigo } : null);
+                            }}
+                            className="ml-auto min-h-[34px] flex items-center gap-2 px-3 bg-transparent border border-black/[.35] text-xs cursor-pointer text-[var(--color-text)] hover:bg-black/[.07]"
+                          >
+                            <span>{abierto ? "Ocultar" : "Cambiar estado o tipo"}</span>
+                            <svg
+                              width="13"
+                              height="13"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="2.4"
+                              className="transition-transform"
+                              style={{ transform: `rotate(${abierto ? 180 : 0}deg)` }}
                             >
-                              <span>{abierto ? "Ocultar" : "Cambiar estado o tipo"}</span>
-                              <svg
-                                width="13"
-                                height="13"
-                                viewBox="0 0 24 24"
-                                fill="none"
-                                stroke="currentColor"
-                                strokeWidth="2.4"
-                                className="transition-transform"
-                                style={{ transform: `rotate(${abierto ? 180 : 0}deg)` }}
-                              >
-                                <path d="M6 9l6 6 6-6" />
-                              </svg>
-                            </button>
-                          ) : null}
+                              <path d="M6 9l6 6 6-6" />
+                            </svg>
+                          </button>
                         </div>
 
                         {abierto ? (

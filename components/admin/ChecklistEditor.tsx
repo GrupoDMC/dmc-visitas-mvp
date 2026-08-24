@@ -99,6 +99,21 @@ function mover<T>(lista: T[], indice: number, delta: number): T[] {
   return copia;
 }
 
+/**
+ * Saca el elemento de `desde` y lo mete justo antes de `ranura`.
+ *
+ * `ranura` es un hueco entre filas, no una fila: con 3 filas hay 4 huecos (0 a
+ * 3). Por eso al arrastrar hacia abajo hay que descontar el que se sacó.
+ */
+function reubicar<T>(lista: T[], desde: number, ranura: number): T[] {
+  if (desde < 0 || desde >= lista.length) return lista;
+  if (ranura === desde || ranura === desde + 1) return lista;
+  const copia = [...lista];
+  const [fuera] = copia.splice(desde, 1);
+  copia.splice(desde < ranura ? ranura - 1 : ranura, 0, fuera);
+  return copia;
+}
+
 /** "Calibración" → "Calibración (copia)", "Calibración (copia 2)"… */
 function nombreDeCopia(nombre: string, usados: string[]): string {
   const base = `${nombre} (copia)`;
@@ -366,9 +381,9 @@ export default function ChecklistEditor({
 
       <div className="px-7 pt-6 pb-12 animate-fade-in max-w-[1000px]">
         <p className="mb-4 text-[13px] leading-[1.65] opacity-72 max-w-[74ch]">
-          Acá vive todo lo que el técnico elige desde listas en su celular. Cada bloque es una lista distinta. Puedes
-          mover las filas con las flechas, clonar una entrada con todos sus subdetalles y decidir si cada subdetalle se
-          marca a secas o lleva cantidad.
+          Acá vive todo lo que el técnico elige desde listas en su celular. Cada bloque es una lista distinta. Para
+          cambiar el orden, agarra una fila de su manilla (⣿) y suéltala donde va; también puedes clonar una entrada con
+          todos sus subdetalles y decidir si cada subdetalle se marca a secas o lleva cantidad.
         </p>
 
         <div className="flex items-center gap-3 flex-wrap mb-6.5">
@@ -417,14 +432,20 @@ export default function ChecklistEditor({
         >
           <div className="flex flex-col gap-2 max-w-[720px]">
             {motivosVisibles.map(({ m, i }) => (
-              <div key={m.key} className="flex items-center gap-2.5">
+              <Arrastrable
+                key={m.key}
+                grupo="motivo"
+                indice={i}
+                total={motivos.length}
+                bloqueado={!!filtro}
+                onReordenar={(desde, ranura) => editar(setMotivos, (prev) => reubicar(prev, desde, ranura))}
+                onMover={(d) => editar(setMotivos, (prev) => mover(prev, i, d))}
+                className="flex items-center gap-2.5"
+              >
+                {(agarre) => (
+              <>
+                {agarre}
                 <Numero n={i + 1} />
-                <Flechas
-                  deshabilitado={!!filtro}
-                  arriba={i > 0}
-                  abajo={i < motivos.length - 1}
-                  onMover={(d) => editar(setMotivos, (prev) => mover(prev, i, d))}
-                />
                 <input
                   value={m.nombre}
                   onChange={(e) =>
@@ -472,7 +493,9 @@ export default function ChecklistEditor({
                 >
                   <IconoBasura />
                 </button>
-              </div>
+              </>
+                )}
+              </Arrastrable>
             ))}
             {motivos.length === 0 ? (
               <Vacio>Sin motivos: el técnico no podría clasificar la visita, y coordinación no puede agendarla.</Vacio>
@@ -492,12 +515,21 @@ export default function ChecklistEditor({
           onAgregar={() => agregarGrupo(setTipos, setAbiertoTipo)}
         >
           {tiposVisibles.map(({ t, i }) => (
-            <Desplegable
+            <Arrastrable
               key={t.key}
+              grupo="tipo"
+              indice={i}
+              total={tipos.length}
+              bloqueado={!!filtro}
+              onReordenar={(desde, ranura) => editar(setTipos, (prev) => reubicar(prev, desde, ranura))}
+              onMover={(d) => editar(setTipos, (prev) => mover(prev, i, d))}
+              className="mb-2.5"
+            >
+              {(agarre) => (
+            <Desplegable
+              agarre={agarre}
               n={i + 1}
               grupo={t}
-              total={tipos.length}
-              bloqueadoMover={!!filtro}
               phNombre="Ej: Antena no detecta etiquetas"
               abierto={abiertoTipo === t.key}
               onToggle={() => setAbiertoTipo(abiertoTipo === t.key ? null : t.key)}
@@ -513,12 +545,13 @@ export default function ChecklistEditor({
               phNueva="Ej: Cable de slave a master"
               vacioSub="Sin subdetalles: en el celular este tipo pide directamente una descripción escrita."
               onCambiar={(fn) => editar(setTipos, (prev) => prev.map((x) => (x.key === t.key ? fn(x) : x)))}
-              onMover={(d) => editar(setTipos, (prev) => mover(prev, i, d))}
               onClonar={() => clonarGrupo(t, tipos, setTipos, setAbiertoTipo)}
               onQuitar={() => quitarGrupo(t, setTipos, "tipo de problema")}
               onConfirmarQuitarItem={setConfirmar}
               onAviso={aviso}
             />
+              )}
+            </Arrastrable>
           ))}
           {tipos.length === 0 ? (
             <Vacio grande>
@@ -539,12 +572,21 @@ export default function ChecklistEditor({
           onAgregar={() => agregarGrupo(setTrabajos, setAbiertoTrabajo)}
         >
           {trabajosVisibles.map(({ t, i }) => (
-            <Desplegable
+            <Arrastrable
               key={t.key}
+              grupo="trabajo"
+              indice={i}
+              total={trabajos.length}
+              bloqueado={!!filtro}
+              onReordenar={(desde, ranura) => editar(setTrabajos, (prev) => reubicar(prev, desde, ranura))}
+              onMover={(d) => editar(setTrabajos, (prev) => mover(prev, i, d))}
+              className="mb-2.5"
+            >
+              {(agarre) => (
+            <Desplegable
+              agarre={agarre}
               n={i + 1}
               grupo={t}
-              total={trabajos.length}
-              bloqueadoMover={!!filtro}
               phNombre="Ej: Calibración de antenas"
               abierto={abiertoTrabajo === t.key}
               onToggle={() => setAbiertoTrabajo(abiertoTrabajo === t.key ? null : t.key)}
@@ -560,12 +602,13 @@ export default function ChecklistEditor({
               phNueva="Ej: Tarjeta electrónica"
               vacioSub="Sin subtrabajos: en el celular este trabajo se agrega directo, con detalle escrito opcional."
               onCambiar={(fn) => editar(setTrabajos, (prev) => prev.map((x) => (x.key === t.key ? fn(x) : x)))}
-              onMover={(d) => editar(setTrabajos, (prev) => mover(prev, i, d))}
               onClonar={() => clonarGrupo(t, trabajos, setTrabajos, setAbiertoTrabajo)}
               onQuitar={() => quitarGrupo(t, setTrabajos, "trabajo")}
               onConfirmarQuitarItem={setConfirmar}
               onAviso={aviso}
             />
+              )}
+            </Arrastrable>
           ))}
           {trabajos.length === 0 ? (
             <Vacio grande>
@@ -660,10 +703,9 @@ function Bloque({
 
 /** Fila de un tipo/trabajo con sus subdetalles escondidos tras "Ver…". */
 function Desplegable({
+  agarre,
   n,
   grupo,
-  total,
-  bloqueadoMover,
   phNombre,
   abierto,
   onToggle,
@@ -675,16 +717,15 @@ function Desplegable({
   phNueva,
   vacioSub,
   onCambiar,
-  onMover,
   onClonar,
   onQuitar,
   onConfirmarQuitarItem,
   onAviso,
 }: {
+  /** La manilla de arrastre, que pone el contenedor Arrastrable. */
+  agarre: React.ReactNode;
   n: number;
   grupo: Grupo;
-  total: number;
-  bloqueadoMover: boolean;
   phNombre: string;
   abierto: boolean;
   onToggle: () => void;
@@ -696,7 +737,6 @@ function Desplegable({
   phNueva: string;
   vacioSub: string;
   onCambiar: (fn: (g: Grupo) => Grupo) => void;
-  onMover: (delta: number) => void;
   onClonar: () => void;
   onQuitar: () => void;
   onConfirmarQuitarItem: (cfg: ConfirmarCfg) => void;
@@ -721,13 +761,13 @@ function Desplegable({
   }
 
   return (
-    <div className="border border-black/[.35] mb-2.5 bg-[var(--color-surface-3)]">
+    <div className="border border-black/[.35] bg-[var(--color-surface-3)]">
       <div
         className="flex items-center gap-2.5 flex-wrap px-3 py-2.5"
         style={{ background: abierto ? "#e3e1e0" : "var(--color-surface)" }}
       >
+        {agarre}
         <Numero n={n} />
-        <Flechas deshabilitado={bloqueadoMover} arriba={n > 1} abajo={n < total} onMover={onMover} />
         <input
           value={grupo.nombre}
           onChange={(e) => onCambiar((g) => ({ ...g, nombre: e.target.value }))}
@@ -787,13 +827,23 @@ function Desplegable({
 
           <div className="flex flex-col gap-2 mt-4 max-w-[640px]">
             {grupo.items.map((o, j) => (
-              <div key={o.key} className="flex gap-2 items-center">
-                <Flechas
-                  deshabilitado={false}
-                  arriba={j > 0}
-                  abajo={j < grupo.items.length - 1}
-                  onMover={(d) => onCambiar((g) => ({ ...g, items: mover(g.items, j, d) }))}
-                />
+              // Cada grupo es su propio corral: un subdetalle no se puede
+              // arrastrar desde acá hasta otro tipo o trabajo.
+              <Arrastrable
+                key={o.key}
+                grupo={`sub-${grupo.key}`}
+                indice={j}
+                total={grupo.items.length}
+                bloqueado={false}
+                onReordenar={(desde, ranura) =>
+                  onCambiar((g) => ({ ...g, items: reubicar(g.items, desde, ranura) }))
+                }
+                onMover={(d) => onCambiar((g) => ({ ...g, items: mover(g.items, j, d) }))}
+                className="flex gap-2 items-center"
+              >
+                {(agarreItem) => (
+              <>
+                {agarreItem}
                 <input
                   value={o.etiqueta}
                   onChange={(e) =>
@@ -832,7 +882,9 @@ function Desplegable({
                     <path d="M6 6l12 12M18 6L6 18" />
                   </svg>
                 </button>
-              </div>
+              </>
+                )}
+              </Arrastrable>
             ))}
             {grupo.items.length === 0 ? (
               <div className="px-3.5 py-2.5 border border-dashed border-black/[.35] text-[13px] opacity-68">
@@ -906,45 +958,120 @@ function ModoItem({
   );
 }
 
-/** Sube o baja una fila. Es el orden con el que el técnico la va a ver. */
-function Flechas({
-  arriba,
-  abajo,
+/**
+ * Fila que se reordena arrastrándola.
+ *
+ * Antes el orden se cambiaba de a un clic por posición, con dos flechitas: para
+ * bajar una entrada seis lugares había que apretar seis veces. Ahora se agarra
+ * de la manilla y se suelta donde va.
+ *
+ * Solo la manilla arrastra: si la fila entera fuera arrastrable, seleccionar
+ * texto dentro de sus campos empezaría a mover la fila. Y la manilla también
+ * responde a las flechas del teclado, para quien no usa el mouse.
+ */
+function Arrastrable({
+  grupo,
+  indice,
+  total,
+  bloqueado,
+  onReordenar,
   onMover,
-  deshabilitado,
+  className,
+  children,
 }: {
-  arriba: boolean;
-  abajo: boolean;
-  onMover: (delta: number) => void;
+  /** Filas del mismo grupo se aceptan entre sí; de otro grupo, no. */
+  grupo: string;
+  indice: number;
+  total: number;
   /** Con la búsqueda puesta no se ven todas las filas: mover sería a ciegas. */
-  deshabilitado: boolean;
+  bloqueado: boolean;
+  /** Suelta la fila `desde` en la ranura `ranura` (hueco entre filas). */
+  onReordenar: (desde: number, ranura: number) => void;
+  /** El equivalente por teclado: una posición arriba o abajo. */
+  onMover: (delta: number) => void;
+  className?: string;
+  children: (agarre: React.ReactNode) => React.ReactNode;
 }) {
-  const clase =
-    "w-6.5 h-5 grid place-items-center border border-black/[.3] bg-transparent cursor-pointer text-[var(--color-text)] hover:bg-black/[.08] disabled:opacity-30 disabled:cursor-not-allowed";
+  const [asido, setAsido] = useState(false);
+  const [borde, setBorde] = useState<"arriba" | "abajo" | null>(null);
+  // El tipo del dataTransfer es lo único legible durante el dragover, así que
+  // el grupo viaja en el nombre del tipo. Debe ir en minúsculas.
+  const tipo = `application/x-dmc-${grupo.toLowerCase()}`;
+
+  const mitadDeArriba = (e: React.DragEvent<HTMLDivElement>) => {
+    const caja = e.currentTarget.getBoundingClientRect();
+    return e.clientY < caja.top + caja.height / 2;
+  };
+
+  const agarre = (
+    <button
+      type="button"
+      draggable={false}
+      disabled={bloqueado}
+      onPointerDown={() => setAsido(true)}
+      onPointerUp={() => setAsido(false)}
+      onKeyDown={(e) => {
+        if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
+        e.preventDefault();
+        onMover(e.key === "ArrowUp" ? -1 : 1);
+      }}
+      aria-label={`Mover: fila ${indice + 1} de ${total}`}
+      title={
+        bloqueado
+          ? "Quita la búsqueda para poder reordenar"
+          : "Arrastra para cambiar el orden (o usa ↑ ↓ del teclado)"
+      }
+      className="w-7 h-9 flex-none grid place-items-center border border-black/[.3] bg-[var(--color-bg)] text-[var(--color-text)] cursor-grab active:cursor-grabbing hover:bg-black/[.08] disabled:opacity-30 disabled:cursor-not-allowed"
+    >
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+        <circle cx="9" cy="6" r="1.7" />
+        <circle cx="15" cy="6" r="1.7" />
+        <circle cx="9" cy="12" r="1.7" />
+        <circle cx="15" cy="12" r="1.7" />
+        <circle cx="9" cy="18" r="1.7" />
+        <circle cx="15" cy="18" r="1.7" />
+      </svg>
+    </button>
+  );
+
   return (
-    <div className="flex flex-col flex-none" title={deshabilitado ? "Quita la búsqueda para poder reordenar" : "Cambiar el orden"}>
-      <button
-        type="button"
-        onClick={() => onMover(-1)}
-        disabled={deshabilitado || !arriba}
-        aria-label="Subir"
-        className={`${clase} border-b-0`}
-      >
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
-          <path d="M6 15l6-6 6 6" />
-        </svg>
-      </button>
-      <button
-        type="button"
-        onClick={() => onMover(1)}
-        disabled={deshabilitado || !abajo}
-        aria-label="Bajar"
-        className={clase}
-      >
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
-          <path d="M6 9l6 6 6-6" />
-        </svg>
-      </button>
+    <div
+      draggable={asido && !bloqueado}
+      onDragStart={(e) => {
+        if (!asido || bloqueado) return e.preventDefault();
+        e.dataTransfer.setData(tipo, String(indice));
+        e.dataTransfer.effectAllowed = "move";
+      }}
+      onDragEnd={() => {
+        setAsido(false);
+        setBorde(null);
+      }}
+      onDragOver={(e) => {
+        if (bloqueado || !e.dataTransfer.types.includes(tipo)) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "move";
+        setBorde(mitadDeArriba(e) ? "arriba" : "abajo");
+      }}
+      onDragLeave={() => setBorde(null)}
+      onDrop={(e) => {
+        setBorde(null);
+        if (bloqueado || !e.dataTransfer.types.includes(tipo)) return;
+        e.preventDefault();
+        const desde = Number(e.dataTransfer.getData(tipo));
+        if (!Number.isInteger(desde)) return;
+        onReordenar(desde, mitadDeArriba(e) ? indice : indice + 1);
+      }}
+      className={`relative ${className ?? ""}`}
+      style={{ opacity: asido ? 0.55 : 1 }}
+    >
+      {borde ? (
+        <span
+          aria-hidden="true"
+          className="absolute left-0 right-0 h-[3px] bg-[var(--color-accent)] pointer-events-none z-10"
+          style={borde === "arriba" ? { top: -2 } : { bottom: -2 }}
+        />
+      ) : null}
+      {children(agarre)}
     </div>
   );
 }

@@ -62,10 +62,26 @@ export function telCompleto(v: string): boolean {
   return sinPrefijo.length === 8;
 }
 
-/** URL de Google Maps para el botón "Ruta" del detalle de la visita. */
-export function urlMapa(...partes: (string | null | undefined)[]): string {
-  const q = partes.filter(Boolean).join(" ");
-  return "https://www.google.com/maps/search/?api=1&query=" + encodeURIComponent(q);
+/**
+ * URL de Google Maps para el botón "Ruta" del detalle de la visita.
+ *
+ * Va SOLO la dirección que se cargó en la sucursal —calle, comuna y región—,
+ * nunca el nombre del local: "Falabella Costanera Av. Andrés Bello 2447" no es
+ * una dirección y Google devolvía «sin resultados» o un punto en otra ciudad.
+ * Con la dirección sola el mapa cae siempre donde tiene que caer.
+ */
+export function urlMapa(...partesDireccion: (string | null | undefined)[]): string {
+  const q = partesDireccion
+    .map((p) => String(p ?? "").trim())
+    .filter(Boolean)
+    .join(", ");
+  const consulta = q ? `${q}, Chile` : "";
+  return "https://www.google.com/maps/search/?api=1&query=" + encodeURIComponent(consulta);
+}
+
+/** true cuando la sucursal tiene dirección suficiente para abrir el mapa. */
+export function hayDireccion(...partesDireccion: (string | null | undefined)[]): boolean {
+  return partesDireccion.some((p) => String(p ?? "").trim().length > 0);
 }
 
 /** URL tel: para el botón "Llamar". */

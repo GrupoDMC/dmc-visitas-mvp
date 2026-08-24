@@ -11,6 +11,8 @@ interface NavItem {
   href: string;
   label: string;
   n: number | string;
+  /** Cuántas cosas están esperando dentro de esa sección. Se pinta en rojo. */
+  pendientes?: number;
 }
 
 export default function AdminSidebar({
@@ -46,7 +48,15 @@ export default function AdminSidebar({
           <span className="absolute left-0 top-0 bottom-0 w-1 bg-[var(--color-accent)]" />
         ) : null}
         <span>{item.label}</span>
-        <span className="ml-auto text-xs tabular-nums opacity-66">{item.n}</span>
+        {item.pendientes ? (
+          <span
+            className="ml-auto min-w-[20px] h-5 px-1.5 grid place-items-center bg-[var(--color-accent)] text-[var(--color-bg)] text-[11px] tabular-nums"
+            title={`${item.pendientes} sin atender`}
+          >
+            {item.pendientes}
+          </span>
+        ) : null}
+        <span className={`${item.pendientes ? "" : "ml-auto"} text-xs tabular-nums opacity-66`}>{item.n}</span>
       </Link>
     );
   }

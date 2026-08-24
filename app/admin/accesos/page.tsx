@@ -1,9 +1,8 @@
-import SolicitudesPasswordView from "@/components/admin/SolicitudesPasswordView";
-import { listarSolicitudesPassword } from "@/lib/data/solicitudes-password";
+import { redirect } from "next/navigation";
 
-export const dynamic = "force-dynamic";
-
-export default async function AccesosPage() {
-  const solicitudes = await listarSolicitudesPassword();
-  return <SolicitudesPasswordView solicitudes={solicitudes} />;
+// "Contraseñas pedidas" dejó de ser una sección aparte: ahora es una pestaña de
+// Usuarios, que es donde se administran las cuentas. Esta ruta queda solo para
+// que los enlaces y favoritos viejos sigan llegando a alguna parte.
+export default function AccesosPage() {
+  redirect("/admin/usuarios?vista=contrasenas");
 }
