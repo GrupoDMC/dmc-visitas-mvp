@@ -70,6 +70,8 @@ export interface CatalogoProblemaOpcion {
   problemaId: number;
   etiqueta: string;
   orden: number;
+  /** false = el técnico solo la marca; true = la marca y le pone cantidad. */
+  permiteCantidad: boolean;
   activo: boolean;
 }
 
@@ -90,6 +92,8 @@ export interface CatalogoTrabajoSubtrabajo {
   trabajoId: number;
   etiqueta: string;
   orden: number;
+  /** false = el técnico solo lo marca; true = lo marca y le pone cantidad. */
+  permiteCantidad: boolean;
   activo: boolean;
 }
 
@@ -149,6 +153,8 @@ export interface VisitaEjecucion {
   responsableRut: string | null;
   responsableTelefono: string | null;
   motivoRealCodigo: string | null;
+  /** Todos los motivos que el técnico confirmó en terreno, no solo el primero. */
+  motivosRealesCodigos: string[];
   observaciones: string | null;
   comentarioInterno: string | null;
   dispositivo: string | null;
@@ -195,6 +201,13 @@ export interface Visita {
   sucursalId: number;
   tecnicoId: number;
   motivoCodigo: string;
+  /**
+   * Todos los motivos agendados. `motivoCodigo` es el principal (el primero de
+   * esta lista): es el que tiene la FK y el CHECK de la hora en instalación.
+   */
+  motivosCodigos: string[];
+  /** Los mismos motivos, ya con su nombre del catálogo, para pintarlos. */
+  motivosNombres: string[];
   estado: EstadoVisita;
   fechaProgramada: string;
   horaProgramada: string | null;
@@ -219,4 +232,32 @@ export interface Visita {
   fotos?: VisitaFoto[];
   firmas?: VisitaFirma[];
   reagendamientos?: Reagendamiento[];
+}
+
+export type EstadoSolicitudPassword = "PENDIENTE" | "ATENDIDA" | "DESCARTADA";
+
+/** "Olvidé mi contraseña": lo pide el usuario, lo atiende el administrador. */
+export interface SolicitudPassword {
+  id: number;
+  email: string;
+  usuarioId: number | null;
+  mensaje: string | null;
+  estado: EstadoSolicitudPassword;
+  atendidoPor: number | null;
+  atendidoEn: string | null;
+  creadoEn: string;
+  /** Sale del join con dmc.usuario; null si el correo no está dado de alta. */
+  usuarioRol: RolUsuario | null;
+  usuarioActivo: boolean | null;
+}
+
+/** Foto de las tres listas del checklist, para el botón Reiniciar. */
+export interface ChecklistPlantilla {
+  id: number;
+  nombre: string;
+  creadoEn: string;
+  actualizadoEn: string;
+  motivos: number;
+  problemas: number;
+  trabajos: number;
 }

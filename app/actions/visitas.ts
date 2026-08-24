@@ -6,7 +6,9 @@ import {
   cambiarEstadoVisita,
   crearVisita,
   getVisitaCompletaPorFolio,
+  guardarActa,
   iniciarVisita,
+  type ActaEntrada,
 } from "@/lib/data/visitas";
 import { listarSucursales } from "@/lib/data/maestros";
 import type { EstadoVisita } from "@/lib/types";
@@ -16,6 +18,8 @@ export interface ResultadoAccion {
   error?: string;
   /** Folio de la visita recién creada en terreno. */
   folio?: string;
+  /** Hora con la que quedó sellado el cierre del acta. */
+  horaTermino?: string;
 }
 
 /** Solo el técnico dueño de la visita puede tocarla desde el móvil. */
@@ -56,6 +60,38 @@ export async function iniciarVisitaAction(folio: string): Promise<ResultadoAccio
   }
   revalidar(folio);
   return { ok: true };
+}
+
+/**
+ * "Guardar visita": cierra el acta.
+ *
+ * Es la única escritura que hace el formulario del técnico. Hasta que se
+ * aprieta este botón, lo que hay en pantalla no existe en ninguna parte; a
+ * partir de acá la visita queda COMPLETADA y coordinación la ve al instante.
+ */
+export async function guardarActaAction(entrada: ActaEntrada): Promise<ResultadoAccion> {
+  const sesion = await getSesion();
+  if (!sesion?.tecnico) return { ok: false, error: "Tu cuenta no tiene un técnico asociado." };
+
+  try {
+    const res = await guardarActa(entrada, {
+      usuarioId: sesion.usuario.id,
+      tecnicoId: sesion.tecnico.id,
+    });
+    if (!res.ok) return { ok: false, error: res.error };
+    revalidar(entrada.folio);
+    revalidatePath(`/admin/visitas/${entrada.folio}`);
+    return { ok: true, horaTermino: res.horaTermino };
+  } catch (err) {
+    const texto = err instanceof Error ? err.message : String(err);
+    if (/fk_vis_trab_catalogo|fk_problema_tipo|fk_ejecucion_motivo|fk_visita_motivo_catalogo/i.test(texto)) {
+      return {
+        ok: false,
+        error: "El checklist cambió mientras llenabas el acta. Vuelve a entrar al formulario y revisa lo marcado.",
+      };
+    }
+    return comoError(err, "guardarActa");
+  }
 }
 
 /** Reagendar, dejar pendiente o cancelar desde "Otras acciones de la visita". */
@@ -99,7 +135,10 @@ export async function cambiarEstadoVisitaAction(input: {
  */
 export async function crearVisitaTecnicoAction(input: {
   sucursalId: number;
+  /** El motivo principal: el primero que marcó el técnico. */
   motivoCodigo: string;
+  /** Todos los motivos marcados. */
+  motivosCodigos?: string[];
   fecha: string;
   hora: string | null;
   responsableNombre: string;
@@ -111,9 +150,11 @@ export async function crearVisitaTecnicoAction(input: {
 
   const sucursal = (await listarSucursales()).find((s) => s.id === input.sucursalId);
   if (!sucursal) return { ok: false, error: "Elige la sucursal donde estás." };
-  if (!input.motivoCodigo) return { ok: false, error: "Elige el motivo de la visita." };
+  if (!input.motivoCodigo) return { ok: false, error: "Marca al menos un motivo de la visita." };
   if (!input.fecha) return { ok: false, error: "Elige la fecha de la visita." };
-  if (input.motivoCodigo === "INSTALACION" && !input.hora) {
+  // Basta con que una instalación esté entre los motivos marcados.
+  const motivosVisita = input.motivosCodigos?.length ? input.motivosCodigos : [input.motivoCodigo];
+  if (motivosVisita.includes("INSTALACION") && !input.hora) {
     return { ok: false, error: "La hora es obligatoria para instalaciones." };
   }
 
@@ -124,6 +165,7 @@ export async function crearVisitaTecnicoAction(input: {
         sucursalId: sucursal.id,
         tecnicoId: sesion.tecnico.id,
         motivoCodigo: input.motivoCodigo,
+        motivosCodigos: input.motivosCodigos,
         fechaProgramada: input.fecha,
         horaProgramada: input.hora,
         trabajoSolicitado: input.trabajo.trim() || "Visita agregada por el técnico, fuera de la planificación.",

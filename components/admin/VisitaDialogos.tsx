@@ -1,7 +1,12 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import Dialogo, { type CampoDef, type FormValores } from "@/components/admin/Dialogo";
+import Dialogo, {
+  escribirChecks,
+  leerChecks,
+  type CampoDef,
+  type FormValores,
+} from "@/components/admin/Dialogo";
 import { useReferencias, type Referencias } from "@/lib/ui/referencias";
 import { crearVisitaAction, editarVisitaAction, reprogramarVisitaAction } from "@/app/actions/admin";
 import type { Visita } from "@/lib/types";
@@ -51,7 +56,9 @@ function valoresIniciales(opc: Opciones, visita?: Visita, origen?: OrigenProblem
       clienteId: String(visita.clienteId),
       sucursalId: String(visita.sucursalId),
       tecnicoId: String(visita.tecnicoId),
-      motivoCodigo: visita.motivoCodigo,
+      motivoCodigo: escribirChecks(
+        visita.motivosCodigos?.length ? visita.motivosCodigos : [visita.motivoCodigo]
+      ),
       fecha: visita.fechaProgramada,
       hora: visita.horaProgramada ?? "",
       responsable: visita.responsableNombre ?? "",
@@ -70,7 +77,9 @@ function valoresIniciales(opc: Opciones, visita?: Visita, origen?: OrigenProblem
       sucursalId: String(origen.sucursalId),
       tecnicoId: opc.tecnicos[0]?.v ?? "",
       // Si el motivo sugerido ya no está en el checklist, se cae al primero.
-      motivoCodigo: opc.motivos.some((m) => m.v === porFalla) ? porFalla : opc.motivos[0]?.v ?? "",
+      motivoCodigo: escribirChecks([
+        opc.motivos.some((m) => m.v === porFalla) ? porFalla : opc.motivos[0]?.v ?? "",
+      ]),
       fecha: "",
       hora: "",
       responsable: "",
@@ -84,7 +93,7 @@ function valoresIniciales(opc: Opciones, visita?: Visita, origen?: OrigenProblem
     clienteId,
     sucursalId: opc.sucursalesDe(clienteId)[0]?.v ?? "",
     tecnicoId: opc.tecnicos[0]?.v ?? "",
-    motivoCodigo: opc.motivos[0]?.v ?? "",
+    motivoCodigo: escribirChecks([opc.motivos[0]?.v ?? ""]),
     fecha: "",
     hora: "",
     responsable: "",
@@ -115,13 +124,24 @@ export default function VisitaDialogo({
   const [form, setForm] = useState<FormValores>(() => valoresIniciales(opc, visita, origen));
   const [guardando, setGuardando] = useState(false);
 
-  const esInstalacion = form.motivoCodigo === "INSTALACION";
+  // Una visita puede venir por varias cosas a la vez. El primero marcado es el
+  // principal: es el que va a dmc.visita.motivo_codigo y el que decide si la
+  // hora es obligatoria.
+  const motivosMarcados = leerChecks(form.motivoCodigo);
+  const esInstalacion = motivosMarcados.includes("INSTALACION");
 
   const campos: CampoDef[] = [
     { k: "clienteId", label: "Cliente", tipo: "select", opciones: opc.clientes },
     { k: "sucursalId", label: "Sucursal", tipo: "select", opciones: opc.sucursalesDe(String(form.clienteId)) },
     { k: "tecnicoId", label: "Técnico asignado", tipo: "select", opciones: opc.tecnicos },
-    { k: "motivoCodigo", label: "Motivo de la visita", tipo: "select", opciones: opc.motivos },
+    {
+      k: "motivoCodigo",
+      label: "Motivo de la visita",
+      span: 2,
+      tipo: "checks",
+      opciones: opc.motivos,
+      ayuda: "Marca todos los que correspondan. El primero es el que encabeza la ficha del técnico.",
+    },
     { k: "fecha", label: "Fecha programada", tipo: "date" },
     {
       k: "hora",
@@ -160,12 +180,17 @@ export default function VisitaDialogo({
   }
 
   async function guardar() {
+    if (motivosMarcados.length === 0) {
+      onHecho("Marca al menos un motivo de la visita.");
+      return;
+    }
     setGuardando(true);
     const datos = {
       clienteId: Number(form.clienteId),
       sucursalId: Number(form.sucursalId),
       tecnicoId: Number(form.tecnicoId),
-      motivoCodigo: String(form.motivoCodigo),
+      motivoCodigo: motivosMarcados[0],
+      motivosCodigos: motivosMarcados,
       fechaProgramada: String(form.fecha),
       horaProgramada: String(form.hora) || null,
       trabajoSolicitado: String(form.trabajo),

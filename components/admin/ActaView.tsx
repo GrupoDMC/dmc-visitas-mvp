@@ -8,12 +8,7 @@ import Dialogo, { type Adjunto } from "@/components/admin/Dialogo";
 import VisitaDialogo, { ReprogramarDialogo } from "@/components/admin/VisitaDialogos";
 import { Toast, useToast } from "@/components/ui/Toast";
 import { enviarActaAction } from "@/app/actions/admin";
-import {
-  ESTADO_VISITA_LABEL,
-  ESTADO_VISITA_TAG,
-  ESTADO_PROBLEMA_LABEL,
-  ESTADO_PROBLEMA_TAG,
-} from "@/lib/ui/estado";
+import { ESTADO_PROBLEMA_LABEL, ESTADO_PROBLEMA_TAG, ESTADO_VISITA_LABEL, ESTADO_VISITA_TAG, textoMotivos, textoMotivosReales } from "@/lib/ui/estado";
 import { nombreProblema, nombreTrabajo, useReferencias } from "@/lib/ui/referencias";
 import type { Visita } from "@/lib/types";
 
@@ -65,7 +60,7 @@ export default function ActaView({
     { k: "Hora de llegada", v: visita.horaProgramada ?? "Sin hora · durante el día" },
     { k: "Cliente", v: visita.cliente?.nombreFantasia ?? "—" },
     { k: "Sucursal", v: visita.sucursal?.nombre ?? "—" },
-    { k: "Motivo de la visita", v: visita.motivo?.nombre ?? visita.motivoCodigo },
+    { k: visita.motivosCodigos.length > 1 ? "Motivos de la visita" : "Motivo de la visita", v: textoMotivos(visita) },
     { k: "Técnico", v: visita.tecnico?.nombreCompleto ?? "—" },
     {
       k: "Responsable de tienda",
@@ -159,7 +154,7 @@ export default function ActaView({
           {visita.folio}
         </h1>
         <p className="m-0 mb-6 text-[15px] opacity-60">
-          {visita.cliente?.nombreFantasia} · {visita.sucursal?.nombre} · {visita.motivo?.nombre}
+          {visita.cliente?.nombreFantasia} · {visita.sucursal?.nombre} · {textoMotivos(visita)}
         </p>
 
         <div className="border border-[var(--color-divider)] bg-[var(--color-surface-3)]">
@@ -370,25 +365,28 @@ export default function ActaView({
               </div>
               <div className="grid grid-cols-4 gap-2.5">
                 {(visita.fotos ?? []).map((f) => (
-                  <div
+                  <a
                     key={f.id}
-                    className="border border-dashed border-black/[.45] bg-[var(--color-surface)] aspect-[4/3] flex flex-col justify-end p-2.5"
+                    href={f.archivoUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="border border-black/[.35] bg-[var(--color-surface)] aspect-[4/3] block relative overflow-hidden group"
+                    title="Abrir la foto en grande"
                   >
-                    <svg
-                      width="22"
-                      height="22"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="var(--color-text)"
-                      strokeWidth="1.6"
-                      className="opacity-52 mb-auto"
-                    >
-                      <path d="M3 8h3l1.5-2h9L18 8h3v11H3z" />
-                      <circle cx="12" cy="13" r="3.2" />
-                    </svg>
-                    <div className="font-extrabold text-xs">{f.etiqueta}</div>
-                    <div className="text-[11px] leading-[1.3] opacity-62 tabular-nums">{hhmm(f.tomadaEn)}</div>
-                  </div>
+                    {/* Las fotos van en color: los bytes vienen de
+                        dmc.visita_foto.contenido vía /api/visita/foto/<id>. */}
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={f.archivoUrl}
+                      alt={f.etiqueta ?? "Foto del trabajo"}
+                      className="w-full h-full object-cover"
+                      loading="lazy"
+                    />
+                    <div className="absolute left-0 right-0 bottom-0 px-2 py-1 bg-[rgba(32,30,29,.72)] text-[var(--color-bg)]">
+                      <div className="font-extrabold text-[11px] leading-[1.2] truncate">{f.etiqueta ?? "Foto"}</div>
+                      <div className="text-[10px] leading-[1.3] opacity-80 tabular-nums">{hhmm(f.tomadaEn)}</div>
+                    </div>
+                  </a>
                 ))}
                 {(visita.fotos ?? []).length === 0 ? (
                   <div className="col-span-4 text-[13px] opacity-66">Sin fotos registradas.</div>
@@ -397,9 +395,18 @@ export default function ActaView({
 
               <div className="flex gap-5 items-end mt-7.5 flex-wrap">
                 <div className="flex-[0_1_300px] min-w-0">
-                  <div className="h-[78px] border border-dashed border-[var(--color-divider)] bg-[var(--color-surface)] grid place-items-center text-[11px] leading-[1.3] tracking-[.06em] uppercase opacity-60">
-                    {cerrada ? "Firma capturada en terreno" : "Sin firma todavía"}
-                  </div>
+                  {firma?.imagenUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={firma.imagenUrl}
+                      alt={`Firma de ${firma.nombre}`}
+                      className="h-[78px] w-full object-contain object-left-bottom"
+                    />
+                  ) : (
+                    <div className="h-[78px] border border-dashed border-[var(--color-divider)] bg-[var(--color-surface)] grid place-items-center text-[11px] leading-[1.3] tracking-[.06em] uppercase opacity-60">
+                      {cerrada ? "Firma capturada en terreno" : "Sin firma todavía"}
+                    </div>
+                  )}
                   <div className="h-px bg-[var(--color-text)] mt-1.5" />
                   <div className="text-sm mt-1.5">{cerrada ? firma?.nombre ?? "—" : "—"}</div>
                   <div className="text-[10px] tracking-[.09em] uppercase opacity-62">
@@ -555,11 +562,11 @@ function CorreoDialogo({
   const [form, setForm] = useState<Record<string, string | boolean>>({
     para: "",
     cc: "coordinacion@grupodmc.cl",
-    asunto: `${visita.sucursal?.nombre} · ${visita.motivo?.nombre} · ${visita.fechaProgramada}`,
+    asunto: `${visita.sucursal?.nombre} · ${textoMotivos(visita)} · ${visita.fechaProgramada}`,
     cuerpo:
       `Estimados,\n\n` +
       `Informamos que la visita técnica en ${visita.sucursal?.nombre} (${visita.cliente?.nombreFantasia}) fue realizada el ${visita.fechaProgramada}.\n\n` +
-      `Motivo: ${visita.motivo?.nombre}\n` +
+      `Motivo: ${textoMotivosReales(visita)}\n` +
       `Técnico: ${visita.tecnico?.nombreCompleto}\n` +
       (ejec
         ? `Horario en tienda: ${hhmm(ejec.horaInicio)} a ${hhmm(ejec.horaTermino)}${duracion ? ` (${duracion} min)` : ""}\n\n`

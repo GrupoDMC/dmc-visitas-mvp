@@ -8,7 +8,7 @@ import FiltrosBar, { type ChipFiltro } from "@/components/admin/FiltrosBar";
 import VisitaDialogo, { type OrigenProblema } from "@/components/admin/VisitaDialogos";
 import { Toast, useToast } from "@/components/ui/Toast";
 import { actualizarProblemaAction } from "@/app/actions/admin";
-import { ESTADO_PROBLEMA_LABEL, ESTADO_PROBLEMA_TAG } from "@/lib/ui/estado";
+import { ESTADO_PROBLEMA_LABEL, ESTADO_PROBLEMA_TAG, textoMotivos } from "@/lib/ui/estado";
 import { useReferencias } from "@/lib/ui/referencias";
 import type { EstadoProblema } from "@/lib/types";
 
@@ -252,7 +252,7 @@ export default function ProblemasView({ grupos }: { grupos: GrupoProblemas[] }) 
                         </div>
 
                         <div className="text-xs opacity-62 mt-1.5 tabular-nums">
-                          {v.fechaProgramada} · {v.tecnico?.nombreCompleto} · {v.motivo?.nombre}
+                          {v.fechaProgramada} · {v.tecnico?.nombreCompleto} · {textoMotivos(v)}
                         </div>
 
                         {p.items.length > 0 ? (

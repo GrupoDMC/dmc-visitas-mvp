@@ -55,6 +55,59 @@ export async function ejecutar(texto: string, params: Parametro[] = []): Promise
   return r.rowsAffected?.[0] ?? 0;
 }
 
+/**
+ * Lo mínimo que necesita quien escribe: consultar y ejecutar. Existe para que
+ * una función pueda correr igual suelta o dentro de una transacción.
+ */
+export interface Ejecutor {
+  consulta<T>(texto: string, params?: Parametro[]): Promise<T[]>;
+  ejecutar(texto: string, params?: Parametro[]): Promise<number>;
+}
+
+/** El ejecutor por defecto: cada sentencia va sola contra el pool. */
+export const ejecutorSuelto: Ejecutor = {
+  consulta: (texto, params = []) => consultaCon(texto, params),
+  ejecutar: (texto, params = []) => ejecutar(texto, params),
+};
+
+/**
+ * Corre `fn` dentro de una transacción: o queda todo escrito, o no queda nada.
+ *
+ * Es lo que necesita el cierre del acta, que toca siete tablas de una sentada:
+ * si se cae a mitad de camino, una visita con la mitad de los trabajos y sin
+ * firma es peor que una visita sin guardar.
+ */
+export async function enTransaccion<T>(fn: (ej: Ejecutor) => Promise<T>): Promise<T> {
+  const pool = await getPool();
+  const tx = new sql.Transaction(pool);
+  await tx.begin();
+
+  const ejecutorTx: Ejecutor = {
+    async consulta<R>(texto: string, params: Parametro[] = []): Promise<R[]> {
+      const req = new sql.Request(tx);
+      for (const [nombre, tipo, valor] of params) req.input(nombre, tipo, valor);
+      const r = await req.query<R>(texto);
+      return r.recordset ?? [];
+    },
+    async ejecutar(texto: string, params: Parametro[] = []): Promise<number> {
+      const req = new sql.Request(tx);
+      for (const [nombre, tipo, valor] of params) req.input(nombre, tipo, valor);
+      const r = await req.query(texto);
+      return r.rowsAffected?.[0] ?? 0;
+    },
+  };
+
+  try {
+    const resultado = await fn(ejecutorTx);
+    await tx.commit();
+    return resultado;
+  } catch (err) {
+    // Un rollback fallido no debe tapar el error real que trajo hasta acá.
+    await tx.rollback().catch((e) => console.error("[dmc] rollback fallido:", e));
+    throw err;
+  }
+}
+
 /** Agrupa filas hijas por el id de su padre. */
 export function agrupar<T>(filas: T[], clave: (fila: T) => number): Map<number, T[]> {
   const mapa = new Map<number, T[]>();

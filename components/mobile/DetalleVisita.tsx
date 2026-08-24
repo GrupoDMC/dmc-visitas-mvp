@@ -6,7 +6,7 @@ import Sheet from "./Sheet";
 import Tag from "@/components/Tag";
 import { Toast, useToast } from "./toast";
 import { cambiarEstadoVisitaAction, iniciarVisitaAction } from "@/app/actions/visitas";
-import { ESTADO_VISITA_LABEL, ESTADO_VISITA_TAG } from "@/lib/ui/estado";
+import { ESTADO_VISITA_LABEL, ESTADO_VISITA_TAG, textoMotivos } from "@/lib/ui/estado";
 import { urlMapa, urlTel } from "@/lib/ui/formato";
 import type { HistorialVista } from "@/lib/data/historial";
 import type { EstadoVisita, Visita } from "@/lib/types";
@@ -67,7 +67,7 @@ export default function DetalleVisita({ visita, historial }: { visita: Visita; h
     { k: "Hora", v: visita.horaProgramada ?? "Sin hora" },
     { k: "Dirección", v: `${visita.sucursal?.direccion}, ${visita.sucursal?.comuna}` },
     { k: "Responsable", v: `${visita.responsableNombre ?? "—"} · ${visita.responsableTelefono ?? "—"}` },
-    { k: "Motivo", v: visita.motivo?.nombre ?? "—" },
+    { k: visita.motivosCodigos.length > 1 ? "Motivos" : "Motivo", v: textoMotivos(visita) },
     { k: "Estado", v: ESTADO_VISITA_LABEL[visita.estado] },
     { k: "Fecha", v: visita.fechaProgramada },
   ];
@@ -391,6 +391,7 @@ export default function DetalleVisita({ visita, historial }: { visita: Visita; h
                 {cfg.labelMotivo}
               </label>
               <textarea
+                      autoComplete="off"
                 id="rg-mot"
                 rows={3}
                 value={motivo}

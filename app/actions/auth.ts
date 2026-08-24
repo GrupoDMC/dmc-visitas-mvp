@@ -2,6 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { autenticar, cerrarSesion, crearSesion } from "@/lib/auth";
+import { crearSolicitudPassword } from "@/lib/data/solicitudes-password";
 
 export interface LoginState {
   error: string | null;
@@ -39,6 +40,40 @@ export async function loginAction(_prev: LoginState, formData: FormData): Promis
 
   // redirect() lanza por dentro: tiene que quedar fuera del try/catch.
   redirect(esTecnico ? "/tecnico" : "/admin");
+}
+
+export interface SolicitudState {
+  ok: boolean;
+  error: string | null;
+}
+
+/**
+ * "Olvidé mi contraseña". No manda ningún correo — no hay servidor de correo —:
+ * deja la solicitud registrada para que el administrador la vea en el panel y
+ * entregue una clave temporal.
+ *
+ * La respuesta es siempre la misma exista o no la cuenta: si dijera "ese correo
+ * no está registrado", cualquiera podría averiguar qué correos tienen acceso.
+ */
+export async function solicitarPasswordAction(
+  _prev: SolicitudState,
+  formData: FormData
+): Promise<SolicitudState> {
+  const email = String(formData.get("email") ?? "").trim();
+  const mensaje = String(formData.get("mensaje") ?? "").trim();
+
+  if (!email.includes("@") || email.length < 5) {
+    return { ok: false, error: "Escribe el correo con el que entras al sistema." };
+  }
+
+  try {
+    await crearSolicitudPassword(email, mensaje || null);
+  } catch (err) {
+    console.error("[dmc] no se pudo registrar la solicitud de contraseña:", err);
+    return { ok: false, error: "No se pudo registrar la solicitud. Inténtalo otra vez en un momento." };
+  }
+
+  return { ok: true, error: null };
 }
 
 export async function logoutAction() {

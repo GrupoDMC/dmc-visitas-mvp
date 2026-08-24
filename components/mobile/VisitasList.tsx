@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import Tag from "@/components/Tag";
 import NuevaVisitaSheet from "@/components/mobile/NuevaVisitaSheet";
 import { Toast, useToast } from "@/components/ui/Toast";
-import { ESTADO_VISITA_LABEL, ESTADO_VISITA_TAG, ESTADO_VISITA_BARRA } from "@/lib/ui/estado";
+import { ESTADO_VISITA_BARRA, ESTADO_VISITA_LABEL, ESTADO_VISITA_TAG, textoMotivos } from "@/lib/ui/estado";
 import type { EstadoVisita, Visita } from "@/lib/types";
 
 const ESTADOS: EstadoVisita[] = ["PROGRAMADA", "EN_CURSO", "COMPLETADA", "PENDIENTE", "REAGENDADA", "CANCELADA"];
@@ -108,7 +108,7 @@ export default function VisitasList({ visitas, hoy }: { visitas: Visita[]; hoy: 
                 <div className="text-[13px] opacity-60 mt-0.5">{v.cliente?.nombreFantasia}</div>
                 <div className="text-[13px] opacity-60">{v.sucursal?.direccion}</div>
                 <div className="flex flex-wrap gap-1.5 mt-2.5">
-                  <span className="tag tag-neutral border border-black/[.2]">{v.motivo?.nombre}</span>
+                  <span className="tag tag-neutral border border-black/[.2]">{textoMotivos(v)}</span>
                   {v.responsableNombre ? <span className="tag tag-neutral border border-black/[.2]">{v.responsableNombre}</span> : null}
                 </div>
               </button>

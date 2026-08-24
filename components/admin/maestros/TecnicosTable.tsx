@@ -3,6 +3,7 @@
 import MaestroTable from "@/components/admin/MaestroTable";
 import Tag from "@/components/Tag";
 import { guardarTecnicoAction } from "@/app/actions/maestros";
+import { mensajeRut } from "@/lib/ui/formato";
 import type { Tecnico } from "@/lib/types";
 
 export default function TecnicosTable({ tecnicos }: { tecnicos: Tecnico[] }) {
@@ -30,18 +31,20 @@ export default function TecnicosTable({ tecnicos }: { tecnicos: Tecnico[] }) {
       ]}
       fields={[
         { k: "nombres", label: "Nombres" },
-        { k: "rut", label: "RUT", ph: "11.111.111-1" },
+        { k: "rut", label: "RUT", tipo: "rut", ph: "11.111.111-1" },
         { k: "apellidoPaterno", label: "Apellido paterno" },
         { k: "apellidoMaterno", label: "Apellido materno" },
         { k: "email", label: "Correo", tipo: "email" },
         { k: "telefono", label: "Teléfono", tipo: "tel", ph: "+56 9" },
         { k: "activo", label: "Estado", span: 2, tipo: "toggle" },
       ]}
-      validar={(f) =>
-        !String(f.nombres).trim() || !String(f.rut).trim() || !String(f.email).trim()
-          ? "Nombre, RUT y correo son obligatorios"
-          : null
-      }
+      validar={(f) => {
+        if (!String(f.nombres).trim() || !String(f.rut).trim() || !String(f.email).trim()) {
+          return "Nombre, RUT y correo son obligatorios";
+        }
+        if (!String(f.email).includes("@")) return "Escribe un correo válido";
+        return mensajeRut(String(f.rut));
+      }}
       toFormValues={(t) => ({
         nombres: t.nombres,
         apellidoPaterno: t.apellidoPaterno,

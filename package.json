@@ -9,8 +9,6 @@
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "hash-password": "node scripts/hash-password.mjs",
-    "sembrar-catalogos": "node --env-file=.env.development scripts/sembrar-catalogos.mjs",
-    "sembrar-catalogos:prod": "node --env-file=.env.production scripts/sembrar-catalogos.mjs",
     "secreto": "node -e \"console.log(require('crypto').randomBytes(32).toString('hex'))\""
   },
   "dependencies": {

@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { getSesion } from "@/lib/auth";
 import { cargarReferencias } from "@/lib/data/referencias";
 import { contarProblemasAbiertos, contarReagendasPendientes, contarVisitas } from "@/lib/data/queries";
+import { contarSolicitudesPendientes } from "@/lib/data/solicitudes-password";
 import { listarUsuarios } from "@/lib/data/maestros";
 import { ReferenciasProvider } from "@/lib/ui/referencias";
 import AdminSidebar from "@/components/admin/AdminSidebar";
@@ -13,12 +14,13 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   if (!sesion) redirect("/login");
   if (sesion.usuario.rol === "TECNICO") redirect("/tecnico");
 
-  const [referencias, visitas, reagendas, problemasAbiertos, usuarios] = await Promise.all([
+  const [referencias, visitas, reagendas, problemasAbiertos, usuarios, accesos] = await Promise.all([
     cargarReferencias(),
     contarVisitas(),
     contarReagendasPendientes(),
     contarProblemasAbiertos(),
     listarUsuarios(),
+    contarSolicitudesPendientes(),
   ]);
 
   const nombreCoordinador = sesion.usuario.email
@@ -41,6 +43,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
             { href: "/admin/visitas", label: "Visitas", n: visitas },
             { href: "/admin/reagendas", label: "Reagendas y pendientes", n: reagendas },
             { href: "/admin/problemas", label: "Problemas", n: problemasAbiertos },
+            { href: "/admin/accesos", label: "Contraseñas pedidas", n: accesos },
           ]}
           maestros={[
             { href: "/admin/tecnicos", label: "Técnicos", n: referencias.tecnicos.length },

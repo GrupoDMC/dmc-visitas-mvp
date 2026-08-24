@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import Sheet from "./Sheet";
 import Tag from "@/components/Tag";
-import { ESTADO_PROBLEMA_LABEL, ESTADO_PROBLEMA_TAG, ESTADO_VISITA_LABEL, ESTADO_VISITA_TAG } from "@/lib/ui/estado";
+import { ESTADO_PROBLEMA_LABEL, ESTADO_PROBLEMA_TAG, ESTADO_VISITA_LABEL, ESTADO_VISITA_TAG, textoMotivos, textoMotivosReales } from "@/lib/ui/estado";
 import { nombreProblema, nombreTrabajo, useReferencias } from "@/lib/ui/referencias";
 import type { Visita } from "@/lib/types";
 
@@ -92,7 +92,7 @@ export default function PerfilHistorial({ visitas, hoy }: { visitas: Visita[]; h
               </div>
               <div className="font-extrabold text-[15px] leading-[1.25] mt-1.5">{v.sucursal?.nombre}</div>
               <div className="text-[13px] opacity-66 mt-1">
-                {v.cliente?.nombreFantasia} · {v.motivo?.nombre}
+                {v.cliente?.nombreFantasia} · {textoMotivos(v)}
               </div>
               {abiertos.length > 0 ? (
                 <div className="text-xs text-[var(--color-accent-800)] mt-2">
@@ -131,7 +131,7 @@ function ActaSheet({ visita, onCerrar }: { visita: Visita; onCerrar: () => void 
     { k: "Folio", v: visita.folio },
     { k: "Fecha", v: `${visita.fechaProgramada} · ${duracion}` },
     { k: "Cliente", v: visita.cliente?.nombreFantasia ?? "—" },
-    { k: "Motivo", v: visita.motivo?.nombre ?? "—" },
+    { k: "Motivo", v: textoMotivosReales(visita) },
     { k: "Quién recibió", v: ejec?.responsableNombre ?? visita.responsableNombre ?? "—" },
     { k: "Estado", v: ESTADO_VISITA_LABEL[visita.estado] },
   ];

@@ -3,6 +3,7 @@
 import MaestroTable from "@/components/admin/MaestroTable";
 import Tag from "@/components/Tag";
 import { guardarClienteAction } from "@/app/actions/maestros";
+import { mensajeRut } from "@/lib/ui/formato";
 import type { Cliente, Sucursal } from "@/lib/types";
 
 export default function ClientesTable({ clientes, sucursales }: { clientes: Cliente[]; sucursales: Sucursal[] }) {
@@ -32,13 +33,16 @@ export default function ClientesTable({ clientes, sucursales }: { clientes: Clie
       ]}
       fields={[
         { k: "razonSocial", label: "Razón social", span: 2 },
-        { k: "rut", label: "RUT", ph: "76.123.456-7" },
+        { k: "rut", label: "RUT", tipo: "rut", ph: "76.123.456-7" },
         { k: "nombreFantasia", label: "Nombre fantasía" },
         { k: "activo", label: "Estado", tipo: "toggle" },
       ]}
-      validar={(f) =>
-        !String(f.razonSocial).trim() || !String(f.rut).trim() ? "Razón social y RUT son obligatorios" : null
-      }
+      validar={(f) => {
+        if (!String(f.razonSocial).trim() || !String(f.rut).trim()) return "Razón social y RUT son obligatorios";
+        // El dígito verificador se valida al crear: un RUT mal tecleado deja al
+        // cliente duplicado y sin forma de cruzarlo con la facturación.
+        return mensajeRut(String(f.rut));
+      }}
       toFormValues={(c) => ({
         nombreFantasia: c.nombreFantasia,
         razonSocial: c.razonSocial,

@@ -7,7 +7,9 @@ import Confirmar, { type ConfirmarCfg } from "./Confirmar";
 import CamaraSheet from "./CamaraSheet";
 import FirmaSheet, { type FirmaGuardada } from "./FirmaSheet";
 import { Toast, useToast } from "./toast";
-import { fmtRut, fmtTel, rutCompleto, telCompleto } from "@/lib/ui/formato";
+import { fmtRut, fmtTel, mensajeRut, rutCompleto, rutDvCorrecto, telCompleto } from "@/lib/ui/formato";
+import { comprimirFoto } from "@/lib/ui/imagen";
+import { guardarActaAction } from "@/app/actions/visitas";
 import { ESTADO_PROBLEMA_LABEL } from "@/lib/ui/estado";
 import type {
   CatalogoMotivo,
@@ -17,10 +19,17 @@ import type {
   Visita,
 } from "@/lib/types";
 
+/** Un subtrabajo o subdetalle marcado. La cantidad solo se usa cuando el
+ *  checklist dice que esa opción la admite (permiteCantidad). */
+interface SubSeleccion {
+  etiqueta: string;
+  cantidad: number;
+}
+
 interface TrabajoForm {
   id: number;
   codigo: string;
-  subs: string[];
+  subs: SubSeleccion[];
   detalle: string;
 }
 interface ProblemaItemForm {
@@ -67,14 +76,19 @@ export default function FormularioVisita({
   const [confirmar, setConfirmar] = useState<ConfirmarCfg | null>(null);
   const [horaInicio, setHoraInicio] = useState("—");
   const [horaTermino, setHoraTermino] = useState("—");
+  const [guardando, setGuardando] = useState(false);
+  const [errorGuardado, setErrorGuardado] = useState<string | null>(null);
 
   // 1 · Sucursal y responsable
   const [respNombre, setRespNombre] = useState(visita.responsableNombre ?? "");
   const [respRut, setRespRut] = useState(fmtRut(visita.ejecucion?.responsableRut ?? ""));
   const [respTel, setRespTel] = useState(fmtTel(visita.responsableTelefono ?? ""));
 
-  // 2 · Motivo y trabajo realizado
-  const [motivoCodigo, setMotivoCodigo] = useState(visita.motivoCodigo);
+  // 2 · Motivo y trabajo realizado. Son varios: el técnico marca todos los que
+  // correspondan, no solo el que traía agendado la visita.
+  const [motivosCodigos, setMotivosCodigos] = useState<string[]>(
+    () => visita.ejecucion?.motivosRealesCodigos?.filter(Boolean) ?? visita.motivosCodigos ?? [visita.motivoCodigo]
+  );
   const [obs, setObs] = useState("");
   const [trabajos, setTrabajos] = useState<TrabajoForm[]>([]);
 
@@ -90,7 +104,11 @@ export default function FormularioVisita({
 
   // Hojas inferiores
   const [sheet, setSheet] = useState<"trabajo" | "problema" | "firma" | "camara" | null>(null);
-  const [nt, setNt] = useState<{ codigo: string; subs: string[]; detalle: string }>({ codigo: "", subs: [], detalle: "" });
+  const [nt, setNt] = useState<{ codigo: string; subs: SubSeleccion[]; detalle: string }>({
+    codigo: "",
+    subs: [],
+    detalle: "",
+  });
   const [np, setNp] = useState<{ codigo: string; items: ProblemaItemForm[]; desc: string; sol: string; estado: EstadoProblema }>({
     codigo: "",
     items: [],
@@ -105,7 +123,7 @@ export default function FormularioVisita({
 
   const nGuardadas = SECCIONES.filter((k) => guardadas[k]).length;
   const puedeRevisar = !!guardadas.sucursal && !!guardadas.motivo;
-  const puedeGuardar = puedeRevisar && !!firma;
+  const puedeGuardar = puedeRevisar && !!firma && !guardando;
 
   const falta = useMemo(() => {
     const f: string[] = [];
@@ -115,17 +133,88 @@ export default function FormularioVisita({
     return f;
   }, [guardadas.sucursal, guardadas.motivo, firma]);
 
+  const nombreMotivos = (codigos: string[]) =>
+    codigos.map((c) => motivos.find((m) => m.codigo === c)?.nombre ?? c).join(" · ") || "Sin motivo";
+
+  /**
+   * Manda el acta entera al servidor y cierra la visita.
+   *
+   * Hasta acá nada de lo que hay en pantalla existe en ninguna parte: las
+   * "secciones guardadas" solo marcan que el técnico las revisó. Este es el
+   * único punto donde se escribe, y cuando responde bien la visita ya está
+   * COMPLETADA para todos: al técnico deja de salirle en curso y coordinación
+   * la ve cerrada en el panel sin esperar nada.
+   */
+  async function guardarVisita() {
+    if (!firma) return aviso("Falta la firma de la tienda");
+    setGuardando(true);
+    setErrorGuardado(null);
+
+    try {
+      // Las fotos se reducen acá y no al tomarlas: si el técnico borra alguna,
+      // no se gastó batería comprimiéndola para nada.
+      const fotosListas = await Promise.all(fotos.map(async (f) => ({ dataUrl: await comprimirFoto(f.src), etiqueta: null })));
+
+      const res = await guardarActaAction({
+        folio: visita.folio,
+        responsableNombre: respNombre.trim(),
+        responsableRut: respRut.trim() || null,
+        responsableTelefono: respTel.trim() || null,
+        motivosCodigos,
+        observaciones: obs.trim() || null,
+        comentarioInterno: interno.trim() || null,
+        trabajos: trabajos.map((t) => ({
+          codigo: t.codigo,
+          detalle: t.detalle.trim() || null,
+          subtrabajos: t.subs.map((sx) => ({ etiqueta: sx.etiqueta, cantidad: sx.cantidad })),
+        })),
+        problemas: problemas.map((pr) => ({
+          tipoCodigo: pr.codigo,
+          estado: pr.estado,
+          descripcion: pr.desc.trim() || null,
+          solucion: pr.sol.trim() || null,
+          items: pr.items.map((it) => ({ etiqueta: it.etiqueta, cantidad: it.cantidad })),
+        })),
+        fotos: fotosListas,
+        firma: { nombre: firma.nombre, rut: firma.rut || null, dataUrl: firma.imagen },
+        dispositivo: typeof navigator === "undefined" ? null : navigator.userAgent.slice(0, 60),
+      });
+
+      if (!res.ok) {
+        setErrorGuardado(res.error ?? "No se pudo guardar la visita.");
+        aviso(res.error ?? "No se pudo guardar la visita");
+        return;
+      }
+
+      setHoraTermino(res.horaTermino || ahora());
+      setPaso("ok");
+      // El listado del técnico y el panel se recargan con la visita ya cerrada.
+      router.refresh();
+    } catch (err) {
+      console.error("[dmc] fallo al enviar el acta:", err);
+      setErrorGuardado(
+        "No se pudo enviar el acta. Revisa la señal y vuelve a apretar Guardar: lo que llenaste sigue en pantalla."
+      );
+      aviso("No se pudo enviar el acta");
+    } finally {
+      setGuardando(false);
+    }
+  }
+
+  /**
+   * Marca una sección como revisada. NO escribe nada: el acta entera se manda
+   * al final, en "Guardar visita". Antes esto decía "guardada" y no lo estaba.
+   */
   function guardarSeccion(clave: Seccion, etiqueta: string) {
     setGuardadas((g) => ({ ...g, [clave]: true }));
     setAbierta(null);
-    aviso(`${etiqueta} guardada`);
+    aviso(`${etiqueta} lista`);
   }
 
   function toggleSeccion(clave: Seccion) {
     setAbierta((a) => (a === clave ? null : clave));
   }
 
-  const nombreMotivo = (codigo: string) => motivos.find((m) => m.codigo === codigo)?.nombre ?? "Sin motivo";
   const nombreTrabajo = (codigo: string) => catalogoTrabajo.find((t) => t.codigo === codigo)?.nombre ?? "Trabajo";
   const nombreProblema = (codigo: string) => catalogoProblema.find((p) => p.codigo === codigo)?.nombre ?? "Problema";
 
@@ -148,7 +237,10 @@ export default function FormularioVisita({
         </div>
         <div className="h-0.5 bg-[var(--color-divider)] mt-5 mb-4" />
         <div className="flex gap-2.5 items-start px-3.5 py-3 bg-[var(--color-surface)] border-l-4 border-[var(--color-text)]">
-          <div className="text-[13px]">Enviada al servidor. Coordinación ya la ve en el panel.</div>
+          <div className="text-[13px]">
+            Guardada en el servidor y marcada como completada. Coordinación ya la ve así en el panel, y a ti deja de
+            aparecerte en curso.
+          </div>
         </div>
         <div className="mt-auto pt-6.5 flex flex-col gap-2.5">
           <button
@@ -176,7 +268,7 @@ export default function FormularioVisita({
     const resumen: { k: string; v: string }[] = [
       { k: "Cliente", v: visita.cliente?.nombreFantasia ?? "—" },
       { k: "Sucursal", v: `${visita.sucursal?.nombre} · ${visita.sucursal?.direccion}, ${visita.sucursal?.comuna}` },
-      { k: "Motivo de la visita", v: nombreMotivo(motivoCodigo) },
+      { k: motivosCodigos.length > 1 ? "Motivos de la visita" : "Motivo de la visita", v: nombreMotivos(motivosCodigos) },
       { k: "Nombre", v: respNombre || "—" },
       { k: "Rut", v: respRut || "Sin RUT" },
       { k: "Teléfono de contacto", v: respTel || "—" },
@@ -219,8 +311,12 @@ export default function FormularioVisita({
                       {t.subs.length > 0 ? (
                         <div className="flex flex-wrap gap-1.5 mt-1.5">
                           {t.subs.map((s) => (
-                            <span key={s} className="px-2 py-1 bg-[var(--color-text)] text-[var(--color-bg)] font-extrabold text-xs leading-[1.2]">
-                              {s}
+                            <span
+                              key={s.etiqueta}
+                              className="px-2 py-1 bg-[var(--color-text)] text-[var(--color-bg)] font-extrabold text-xs leading-[1.2] tabular-nums"
+                            >
+                              {s.etiqueta}
+                              {s.cantidad > 1 ? ` × ${s.cantidad}` : ""}
                             </span>
                           ))}
                         </div>
@@ -268,7 +364,7 @@ export default function FormularioVisita({
                       key={f.id}
                       src={f.src}
                       alt=""
-                      className="w-full aspect-square object-cover grayscale contrast-125 border border-black/[.3]"
+                      className="w-full aspect-square object-cover border border-black/[.3]"
                     />
                   ))}
                 </div>
@@ -298,29 +394,42 @@ export default function FormularioVisita({
               Falta {falta.join(", ")}.
             </div>
           ) : null}
+          {errorGuardado ? (
+            <div
+              role="alert"
+              className="px-3.5 py-3 mb-3 bg-[#f7ded9] border-l-4 border-[var(--color-accent)] text-[13px] leading-[1.45] text-[#8f1400]"
+            >
+              {errorGuardado}
+            </div>
+          ) : null}
           <button
             onClick={() => {
+              if (guardando) return;
               if (!puedeGuardar) return aviso(`Falta ${falta.join(", ")}`);
-              setHoraTermino(ahora());
-              setPaso("ok");
+              void guardarVisita();
             }}
+            disabled={guardando}
             className="w-full min-h-[62px] flex items-center justify-between px-4.5 border-0 font-extrabold text-[17px] cursor-pointer text-left hover:brightness-95"
             style={{
               background: puedeGuardar ? "var(--color-accent)" : "#8f8b8b",
               color: puedeGuardar ? "var(--color-bg)" : "var(--color-surface-3)",
             }}
           >
-            <span>Guardar visita</span>
+            <span>{guardando ? "Guardando…" : "Guardar visita"}</span>
             <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4">
               <path d="M4 12l5 5L20 6" />
             </svg>
           </button>
           <button
             onClick={() => setPaso("form")}
-            className="w-full min-h-[50px] mt-2.5 px-4 bg-transparent border border-[var(--color-divider)] text-[var(--color-text)] font-extrabold text-sm cursor-pointer text-left hover:bg-black/[.07]"
+            disabled={guardando}
+            className="w-full min-h-[50px] mt-2.5 px-4 bg-transparent border border-[var(--color-divider)] text-[var(--color-text)] font-extrabold text-sm cursor-pointer text-left hover:bg-black/[.07] disabled:opacity-60"
           >
             Volver a corregir
           </button>
+          <p className="mt-2.5 mb-0 text-xs opacity-66">
+            Al confirmar, la visita queda cerrada y coordinación la ve completada al instante.
+          </p>
         </div>
         <Toast texto={toast} />
       </div>
@@ -332,7 +441,8 @@ export default function FormularioVisita({
   const probSel = catalogoProblema.find((p) => p.codigo === np.codigo) ?? null;
   const probTieneOpciones = !!probSel && probSel.opciones.length > 0;
   const probListo = !!np.codigo && (probTieneOpciones ? np.items.length > 0 : !!np.desc.trim());
-  const sucursalCompleta = !!respNombre.trim() && rutCompleto(respRut) && telCompleto(respTel);
+  const errorRut = mensajeRut(respRut);
+  const sucursalCompleta = !!respNombre.trim() && rutCompleto(respRut) && !errorRut && telCompleto(respTel);
 
   return (
     <div className="animate-fade-in">
@@ -343,7 +453,7 @@ export default function FormularioVisita({
         </div>
         <h1 className="font-extrabold text-2xl leading-[1.1] tracking-[-.025em] mt-2.5 mb-0.5">{visita.sucursal?.nombre}</h1>
         <div className="text-[13px] opacity-66">
-          {visita.cliente?.nombreFantasia} · {nombreMotivo(visita.motivoCodigo)}
+          {visita.cliente?.nombreFantasia} · {nombreMotivos(visita.motivosCodigos ?? [visita.motivoCodigo])}
         </div>
         <div className="flex gap-1.5 mt-4">
           {SECCIONES.map((k) => (
@@ -351,8 +461,8 @@ export default function FormularioVisita({
           ))}
         </div>
         <div className="flex justify-between mt-1.5 text-[10px] tracking-[.09em] uppercase opacity-62">
-          <span>{nGuardadas} de 5 secciones guardadas</span>
-          <span>Cada una se guarda sola</span>
+          <span>{nGuardadas} de 5 secciones listas</span>
+          <span>Se guarda todo al final</span>
         </div>
       </div>
 
@@ -373,6 +483,9 @@ export default function FormularioVisita({
                 value={respNombre}
                 onChange={(e) => setRespNombre(e.target.value)}
                 placeholder="Nombre y apellido"
+                autoComplete="off"
+                autoCorrect="off"
+                spellCheck={false}
                 className={entrada}
               />
             </Campo>
@@ -384,8 +497,10 @@ export default function FormularioVisita({
                   value={respRut}
                   onChange={(e) => setRespRut(fmtRut(e.target.value))}
                   placeholder="11.111.111-1"
+                  autoComplete="off"
                   className={`${entrada} tabular-nums`}
                 />
+                {errorRut ? <div className="mt-1 text-xs text-[var(--color-accent-800)]">{errorRut}</div> : null}
               </Campo>
               <Campo label="Teléfono" htmlFor="f-tel" className="flex-1 min-w-0">
                 <input
@@ -397,6 +512,7 @@ export default function FormularioVisita({
                     if (!respTel) setRespTel("+56 9 ");
                   }}
                   placeholder="+56 9 1234 5678"
+                  autoComplete="off"
                   className={`${entrada} tabular-nums`}
                 />
               </Campo>
@@ -412,6 +528,7 @@ export default function FormularioVisita({
               onClick={() => {
                 if (!respNombre.trim()) return aviso("Falta el nombre del responsable de tienda");
                 if (!rutCompleto(respRut)) return aviso("El RUT del responsable está incompleto");
+                if (!rutDvCorrecto(respRut)) return aviso("Ese RUT no es válido: revisa el dígito verificador");
                 if (!telCompleto(respTel)) return aviso("El teléfono del responsable está incompleto");
                 guardarSeccion("sucursal", "Sección responsable");
               }}
@@ -433,32 +550,49 @@ export default function FormularioVisita({
         />
         {abierta === "motivo" ? (
           <Cuerpo>
-            <Campo label="Motivo de la visita" htmlFor="f-mot">
-              <div className="relative">
-                <select
-                  id="f-mot"
-                  value={motivoCodigo}
-                  onChange={(e) => setMotivoCodigo(e.target.value)}
-                  className="w-full min-h-[54px] pl-3.5 pr-11 py-3 text-base bg-[var(--color-surface-3)] border border-[var(--color-divider)] text-[var(--color-text)] rounded-none appearance-none focus-visible:border-[var(--color-accent)] focus-visible:outline-none"
-                >
-                  <option value="">Elegir motivo…</option>
-                  {motivos.map((m) => (
-                    <option key={m.codigo} value={m.codigo}>
-                      {m.nombre}
-                    </option>
-                  ))}
-                </select>
-                <svg
-                  width="18"
-                  height="18"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2.2"
-                  className="absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none"
-                >
-                  <path d="M6 9l6 6 6-6" />
-                </svg>
+            {/* Una visita puede venir por más de una cosa: se marcan todas las
+                que correspondan, no una sola de una lista desplegable. */}
+            <Campo label="Motivo de la visita" extra="(marca todos los que correspondan)">
+              <div className="flex flex-col gap-1.5">
+                {motivos.map((m) => {
+                  const activo = motivosCodigos.includes(m.codigo);
+                  return (
+                    <button
+                      key={m.codigo}
+                      type="button"
+                      role="checkbox"
+                      aria-checked={activo}
+                      onClick={() =>
+                        setMotivosCodigos((prev) =>
+                          activo ? prev.filter((c) => c !== m.codigo) : [...prev, m.codigo]
+                        )
+                      }
+                      className="w-full min-h-[54px] flex items-center gap-3 px-3.5 text-[15px] leading-[1.25] text-[var(--color-text)] cursor-pointer text-left hover:brightness-95"
+                      style={{
+                        background: activo ? "var(--color-accent-100)" : "var(--color-surface-3)",
+                        border: `1px solid ${activo ? "var(--color-accent)" : "rgba(32,30,29,.35)"}`,
+                        fontWeight: activo ? 800 : 400,
+                      }}
+                    >
+                      <span
+                        className="w-[22px] h-[22px] flex-none border-2 border-[var(--color-text)] grid place-items-center"
+                        style={{ background: activo ? "var(--color-accent)" : "transparent" }}
+                      >
+                        {activo ? (
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#f3f2f2" strokeWidth="3.4">
+                            <path d="M4 12l5 5L20 6" />
+                          </svg>
+                        ) : null}
+                      </span>
+                      <span className="flex-1 min-w-0">{m.nombre}</span>
+                    </button>
+                  );
+                })}
+                {motivos.length === 0 ? (
+                  <div className="px-3.5 py-3 border border-dashed border-black/[.4] text-[13px] opacity-70">
+                    No hay motivos en el checklist. Avisa a coordinación: sin motivos no se puede cerrar el acta.
+                  </div>
+                ) : null}
               </div>
             </Campo>
 
@@ -475,8 +609,12 @@ export default function FormularioVisita({
                     {t.subs.length > 0 ? (
                       <div className="flex flex-wrap gap-1.5 mt-2">
                         {t.subs.map((s) => (
-                          <span key={s} className="px-2.5 py-1 bg-[var(--color-text)] text-[var(--color-bg)] font-extrabold text-xs leading-[1.2]">
-                            {s}
+                          <span
+                            key={s.etiqueta}
+                            className="px-2.5 py-1 bg-[var(--color-text)] text-[var(--color-bg)] font-extrabold text-xs leading-[1.2] tabular-nums"
+                          >
+                            {s.etiqueta}
+                            {s.cantidad > 1 ? ` × ${s.cantidad}` : ""}
                           </span>
                         ))}
                       </div>
@@ -522,6 +660,7 @@ export default function FormularioVisita({
                 rows={3}
                 value={obs}
                 onChange={(e) => setObs(e.target.value)}
+                autoComplete="off"
                 placeholder="Algo que no calce con la lista: detalles del local, del acceso o del equipo"
                 className={`${entrada} min-h-[96px] leading-[1.4] resize-y`}
               />
@@ -529,9 +668,9 @@ export default function FormularioVisita({
 
             <BotonGuardar
               texto={trabajos.length ? `Guardar ${trabajos.length} trabajo${trabajos.length > 1 ? "s" : ""}` : "Guardar esta sección"}
-              habilitado={!!motivoCodigo && trabajos.length > 0}
+              habilitado={motivosCodigos.length > 0 && trabajos.length > 0}
               onClick={() => {
-                if (!motivoCodigo) return aviso("Elige el motivo de la visita");
+                if (motivosCodigos.length === 0) return aviso("Marca al menos un motivo de la visita");
                 if (!trabajos.length) return aviso("Agrega al menos un trabajo realizado");
                 guardarSeccion("motivo", "Sección trabajo realizado");
               }}
@@ -606,6 +745,7 @@ export default function FormularioVisita({
                   rows={2}
                   value={interno}
                   onChange={(e) => setInterno(e.target.value)}
+                  autoComplete="off"
                   placeholder="Solo para coordinación: algo que deba saber del local, del acceso o del equipo"
                   className={`${entrada} min-h-[80px] leading-[1.4] resize-y`}
                 />
@@ -651,7 +791,7 @@ export default function FormularioVisita({
               {fotos.map((f) => (
                 <div key={f.id} className="relative aspect-square border border-[var(--color-divider)] overflow-hidden bg-[var(--color-neutral-300)]">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={f.src} alt="" className="w-full h-full object-cover grayscale contrast-125" />
+                  <img src={f.src} alt="" className="w-full h-full object-cover" />
                   <button
                     onClick={() =>
                       setConfirmar({
@@ -814,35 +954,56 @@ export default function FormularioVisita({
                 <PasoTitulo n="2" texto={trbSel.grupoLabel ?? "Subtrabajos"} />
                 <div className="flex flex-col gap-1.5">
                   {trbSel.subtrabajos.map((s) => {
-                    const activo = nt.subs.includes(s.etiqueta);
+                    const marcado = nt.subs.find((x) => x.etiqueta === s.etiqueta);
+                    const activo = !!marcado;
                     return (
-                      <button
-                        key={s.id}
-                        onClick={() =>
-                          setNt((p) => ({
-                            ...p,
-                            subs: activo ? p.subs.filter((x) => x !== s.etiqueta) : [...p.subs, s.etiqueta],
-                          }))
-                        }
-                        className="w-full min-h-[52px] flex items-center gap-3 px-3.5 text-[15px] leading-[1.2] text-[var(--color-text)] cursor-pointer text-left hover:brightness-95"
-                        style={{
-                          background: activo ? "var(--color-accent-100)" : "var(--color-surface-3)",
-                          border: `1px solid ${activo ? "var(--color-accent)" : "rgba(32,30,29,.35)"}`,
-                          fontWeight: activo ? 800 : 400,
-                        }}
-                      >
-                        <span
-                          className="w-[18px] h-[18px] flex-none border-2 border-[var(--color-text)] grid place-items-center"
-                          style={{ background: activo ? "var(--color-text)" : "transparent" }}
+                      <div key={s.id} className="flex items-stretch gap-2">
+                        <button
+                          onClick={() =>
+                            setNt((p) => ({
+                              ...p,
+                              subs: activo
+                                ? p.subs.filter((x) => x.etiqueta !== s.etiqueta)
+                                : [...p.subs, { etiqueta: s.etiqueta, cantidad: 1 }],
+                            }))
+                          }
+                          className="flex-1 min-w-0 min-h-[54px] flex items-center gap-3 px-3.5 text-[15px] leading-[1.2] text-[var(--color-text)] cursor-pointer text-left hover:brightness-95"
+                          style={{
+                            background: activo ? "var(--color-accent-100)" : "var(--color-surface-3)",
+                            border: `1px solid ${activo ? "var(--color-accent)" : "rgba(32,30,29,.35)"}`,
+                            fontWeight: activo ? 800 : 400,
+                          }}
                         >
-                          {activo ? (
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#f3f2f2" strokeWidth="3.2">
-                              <path d="M4 12l5 5L20 6" />
-                            </svg>
-                          ) : null}
-                        </span>
-                        <span>{s.etiqueta}</span>
-                      </button>
+                          <span
+                            className="w-[18px] h-[18px] flex-none border-2 border-[var(--color-text)] grid place-items-center"
+                            style={{ background: activo ? "var(--color-text)" : "transparent" }}
+                          >
+                            {activo ? (
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#f3f2f2" strokeWidth="3.2">
+                                <path d="M4 12l5 5L20 6" />
+                              </svg>
+                            ) : null}
+                          </span>
+                          <span className="flex-1 min-w-0">{s.etiqueta}</span>
+                        </button>
+                        {/* El contador solo aparece si el checklist dice que esta
+                            opción lleva cantidad; si no, se marca y punto. */}
+                        {activo && s.permiteCantidad ? (
+                          <Contador
+                            valor={marcado.cantidad}
+                            onCambiar={(d) =>
+                              setNt((p) => ({
+                                ...p,
+                                subs: p.subs.map((x) =>
+                                  x.etiqueta === s.etiqueta
+                                    ? { ...x, cantidad: Math.min(99, Math.max(1, x.cantidad + d)) }
+                                    : x
+                                ),
+                              }))
+                            }
+                          />
+                        ) : null}
+                      </div>
                     );
                   })}
                 </div>
@@ -855,6 +1016,7 @@ export default function FormularioVisita({
                 rows={2}
                 value={nt.detalle}
                 onChange={(e) => setNt((p) => ({ ...p, detalle: e.target.value }))}
+                autoComplete="off"
                 placeholder="Pórtico 2: se calibró y quedó midiendo 1,1 m"
                 className={`${entradaSheet} min-h-[78px] leading-[1.4] resize-y`}
               />
@@ -866,7 +1028,10 @@ export default function FormularioVisita({
                 if (trbSel && trbSel.subtrabajos.length > 0 && nt.subs.length === 0) {
                   return aviso(`Marca al menos un ${trbSel.singular ?? "subtrabajo"}`);
                 }
-                setTrabajos((prev) => [...prev, { id: autoId++, codigo: nt.codigo, subs: [...nt.subs], detalle: nt.detalle.trim() }]);
+                setTrabajos((prev) => [
+                  ...prev,
+                  { id: autoId++, codigo: nt.codigo, subs: nt.subs.map((x) => ({ ...x })), detalle: nt.detalle.trim() },
+                ]);
                 setGuardadas((g) => ({ ...g, motivo: false }));
                 setSheet(null);
                 aviso("Trabajo agregado");
@@ -956,30 +1121,16 @@ export default function FormularioVisita({
                           </span>
                           <span className="flex-1 min-w-0">{o.etiqueta}</span>
                         </button>
-                        {activo ? (
-                          <div className="flex-none flex items-center border border-[var(--color-divider)] bg-[var(--color-surface-3)]">
-                            <button
-                              onClick={() => cambiarCantidad(o.etiqueta, -1)}
-                              aria-label="Quitar uno"
-                              className="w-[46px] min-h-[58px] bg-transparent border-0 cursor-pointer text-[var(--color-text)] font-extrabold text-[22px] leading-none"
-                            >
-                              −
-                            </button>
-                            <div className="min-w-[30px] text-center font-extrabold text-[19px] leading-none tabular-nums">{item!.cantidad}</div>
-                            <button
-                              onClick={() => cambiarCantidad(o.etiqueta, 1)}
-                              aria-label="Agregar uno"
-                              className="w-[46px] min-h-[58px] bg-transparent border-0 cursor-pointer text-[var(--color-text)] font-extrabold text-[22px] leading-none"
-                            >
-                              +
-                            </button>
-                          </div>
+                        {activo && o.permiteCantidad ? (
+                          <Contador valor={item!.cantidad} onCambiar={(d) => cambiarCantidad(o.etiqueta, d)} alto />
                         ) : null}
                       </div>
                     );
                   })}
                 </div>
-                <p className="mt-3 mb-0 text-xs opacity-62">Toca para marcar; con − y + ajustas la cantidad.</p>
+                <p className="mt-3 mb-0 text-xs opacity-62">
+                  Toca para marcar. Las opciones que llevan cantidad muestran − y + al marcarlas.
+                </p>
               </div>
             ) : null}
 
@@ -1014,6 +1165,7 @@ export default function FormularioVisita({
                 rows={2}
                 value={np.desc}
                 onChange={(e) => setNp((p) => ({ ...p, desc: e.target.value }))}
+                autoComplete="off"
                 placeholder="Ej: las placas del pórtico 1 están quemadas"
                 className={`${entradaSheet} min-h-[96px] leading-[1.4] resize-y`}
               />
@@ -1025,6 +1177,7 @@ export default function FormularioVisita({
                 rows={2}
                 value={np.sol}
                 onChange={(e) => setNp((p) => ({ ...p, sol: e.target.value }))}
+                autoComplete="off"
                 placeholder="Cambiar tarjeta electrónica; queda cotizado"
                 className={`${entradaSheet} min-h-[78px] leading-[1.4] resize-y`}
               />
@@ -1200,6 +1353,40 @@ function PasoTitulo({ n, texto }: { n: string; texto: string }) {
         {n}
       </span>
       <span className="font-extrabold text-base leading-[1.2]">{texto}</span>
+    </div>
+  );
+}
+
+/** − / + para las opciones del checklist que llevan cantidad. */
+function Contador({
+  valor,
+  onCambiar,
+  alto,
+}: {
+  valor: number;
+  onCambiar: (delta: number) => void;
+  alto?: boolean;
+}) {
+  const altura = alto ? "min-h-[58px]" : "min-h-[54px]";
+  return (
+    <div className="flex-none flex items-center border border-[var(--color-divider)] bg-[var(--color-surface-3)]">
+      <button
+        type="button"
+        onClick={() => onCambiar(-1)}
+        aria-label="Quitar uno"
+        className={`w-[44px] ${altura} bg-transparent border-0 cursor-pointer text-[var(--color-text)] font-extrabold text-[22px] leading-none`}
+      >
+        −
+      </button>
+      <div className="min-w-[28px] text-center font-extrabold text-[19px] leading-none tabular-nums">{valor}</div>
+      <button
+        type="button"
+        onClick={() => onCambiar(1)}
+        aria-label="Agregar uno"
+        className={`w-[44px] ${altura} bg-transparent border-0 cursor-pointer text-[var(--color-text)] font-extrabold text-[22px] leading-none`}
+      >
+        +
+      </button>
     </div>
   );
 }

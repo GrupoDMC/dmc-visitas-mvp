@@ -31,6 +31,23 @@ export function sumarDias(fecha: string, dias: number): string {
   return d.toISOString().slice(0, 10);
 }
 
+/**
+ * 'YYYY-MM-DDTHH:mm:ss' → "24 ago 2026 · 14:35".
+ *
+ * La marca viene sin zona desde SQL Server (ya es hora de Chile), así que se
+ * formatea a mano: dársela a Date la haría interpretar como UTC y correría las
+ * horas según dónde esté corriendo el servidor.
+ */
+const MESES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
+
+export function fechaHoraLegible(marca: string | null | undefined): string {
+  if (!marca) return "—";
+  const m = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})/.exec(marca);
+  if (!m) return marca;
+  const [, anio, mes, dia, hh, mm] = m;
+  return `${Number(dia)} ${MESES[Number(mes) - 1] ?? mes} ${anio} · ${hh}:${mm}`;
+}
+
 /** Primer día del mes de `fecha`. */
 export function inicioMes(fecha: string): string {
   return `${fecha.slice(0, 7)}-01`;

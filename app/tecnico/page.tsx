@@ -5,7 +5,7 @@ import { getVisitasPorTecnico } from "@/lib/data/visitas";
 import { hoyISO } from "@/lib/ui/fecha";
 import MobileShell from "@/components/mobile/MobileShell";
 import Tag from "@/components/Tag";
-import { ESTADO_VISITA_LABEL, ESTADO_VISITA_TAG } from "@/lib/ui/estado";
+import { ESTADO_VISITA_LABEL, ESTADO_VISITA_TAG, textoMotivos } from "@/lib/ui/estado";
 
 export const dynamic = "force-dynamic";
 
@@ -79,7 +79,7 @@ export default async function InicioPage() {
               <div className="flex flex-col gap-1.5 text-[13px]">
                 <div className="flex gap-2">
                   <span className="text-[10px] tracking-[.08em] uppercase opacity-60 min-w-[78px]">Motivo</span>
-                  <span>{proxima.motivo?.nombre}</span>
+                  <span>{textoMotivos(proxima)}</span>
                 </div>
                 <div className="flex gap-2">
                   <span className="text-[10px] tracking-[.08em] uppercase opacity-60 min-w-[78px]">Responsable</span>

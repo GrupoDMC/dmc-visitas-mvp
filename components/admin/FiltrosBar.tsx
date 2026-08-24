@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import SelectBuscable from "@/components/ui/SelectBuscable";
 
 export interface CampoFiltro {
   id: string;
@@ -59,6 +60,9 @@ export default function FiltrosBar({
               onChange={(e) => onBusqueda(e.target.value)}
               placeholder={phBusqueda}
               aria-label={phBusqueda}
+              autoComplete="off"
+              autoCorrect="off"
+              spellCheck={false}
               className="input pl-9.5"
             />
             <svg
@@ -128,31 +132,44 @@ export default function FiltrosBar({
             {campos.map((c) => (
               <div key={c.id} className="field m-0 min-w-0">
                 <label htmlFor={c.id}>{c.label}</label>
-                <div className="relative">
-                  <select
+                {/* Con muchas opciones (sucursales, tecnicos) se escribe y
+                    la lista filtra al momento; con pocas basta el nativo. */}
+                {c.opciones.length >= 7 ? (
+                  <SelectBuscable
                     id={c.id}
-                    value={c.valor}
-                    onChange={(e) => c.onChange(e.target.value)}
-                    className="input pr-9.5 appearance-none"
-                  >
-                    {c.opciones.map((o) => (
-                      <option key={o.v} value={o.v}>
-                        {o.t}
-                      </option>
-                    ))}
-                  </select>
-                  <svg
-                    width="16"
-                    height="16"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="var(--color-text)"
-                    strokeWidth="2.2"
-                    className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none"
-                  >
-                    <path d="M6 9l6 6 6-6" />
-                  </svg>
-                </div>
+                    valor={c.valor}
+                    opciones={c.opciones}
+                    onChange={c.onChange}
+                    ariaLabel={c.label}
+                    placeholder="Escribe para filtrar..."
+                  />
+                ) : (
+                  <div className="relative">
+                    <select
+                      id={c.id}
+                      value={c.valor}
+                      onChange={(e) => c.onChange(e.target.value)}
+                      className="input pr-9.5 appearance-none"
+                    >
+                      {c.opciones.map((o) => (
+                        <option key={o.v} value={o.v}>
+                          {o.t}
+                        </option>
+                      ))}
+                    </select>
+                    <svg
+                      width="16"
+                      height="16"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="var(--color-text)"
+                      strokeWidth="2.2"
+                      className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none"
+                    >
+                      <path d="M6 9l6 6 6-6" />
+                    </svg>
+                  </div>
+                )}
               </div>
             ))}
           </div>

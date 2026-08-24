@@ -37,7 +37,11 @@ export default function NuevaVisitaSheet({
   const [sucursalId, setSucursalId] = useState(
     String(sucursales.find((s) => String(s.clienteId) === String(clientes[0]?.id))?.id ?? "")
   );
-  const [motivo, setMotivo] = useState(catalogoMotivo[0]?.codigo ?? "");
+  // El motivo dejo de ser uno solo: se marcan todos los que correspondan.
+  // El primero marcado es el principal (el que va a dmc.visita.motivo_codigo).
+  const [motivos, setMotivos] = useState<string[]>(() =>
+    catalogoMotivo[0] ? [catalogoMotivo[0].codigo] : []
+  );
   const [fecha, setFecha] = useState(hoy);
   const [hora, setHora] = useState("");
   const [encargado, setEncargado] = useState("");
@@ -46,18 +50,25 @@ export default function NuevaVisitaSheet({
   const [guardando, setGuardando] = useState(false);
 
   const propias = sucursales.filter((s) => String(s.clienteId) === clienteId);
-  const esInstalacion = motivo === "INSTALACION";
-  const listo = Boolean(clienteId && sucursalId && motivo && (!esInstalacion || hora));
+  const esInstalacion = motivos.includes("INSTALACION");
+  const listo = Boolean(clienteId && sucursalId && motivos.length > 0 && (!esInstalacion || hora));
 
   async function confirmar() {
     if (!listo) {
-      onError(esInstalacion && !hora ? "La hora es obligatoria para instalaciones" : "Falta cliente, sucursal y motivo");
+      onError(
+        esInstalacion && !hora
+          ? "La hora es obligatoria para instalaciones"
+          : motivos.length === 0
+            ? "Marca al menos un motivo de la visita"
+            : "Falta cliente y sucursal"
+      );
       return;
     }
     setGuardando(true);
     const res = await crearVisitaTecnicoAction({
       sucursalId: Number(sucursalId),
-      motivoCodigo: motivo,
+      motivoCodigo: motivos[0],
+      motivosCodigos: motivos,
       fecha,
       hora: hora || null,
       responsableNombre: encargado,
@@ -120,16 +131,48 @@ export default function NuevaVisitaSheet({
         </div>
 
         <div>
-          <label htmlFor="nv-mot" className={LABEL}>
-            Motivo de la visita
-          </label>
-          <select id="nv-mot" value={motivo} onChange={(e) => setMotivo(e.target.value)} className={CAMPO}>
-            {catalogoMotivo.map((m) => (
-              <option key={m.codigo} value={m.codigo}>
-                {m.nombre}
-              </option>
-            ))}
-          </select>
+          <div className={LABEL}>
+            Motivo de la visita <span className="opacity-70 normal-case tracking-normal">(marca todos los que correspondan)</span>
+          </div>
+          <div className="flex flex-col gap-1.5">
+            {catalogoMotivo.map((m) => {
+              const activo = motivos.includes(m.codigo);
+              return (
+                <button
+                  key={m.codigo}
+                  type="button"
+                  role="checkbox"
+                  aria-checked={activo}
+                  onClick={() =>
+                    setMotivos((prev) => (activo ? prev.filter((c) => c !== m.codigo) : [...prev, m.codigo]))
+                  }
+                  className="w-full min-h-[52px] flex items-center gap-3 px-3.5 text-[15px] leading-[1.25] text-[var(--color-text)] cursor-pointer text-left"
+                  style={{
+                    background: activo ? "var(--color-accent-100)" : "var(--color-surface)",
+                    border: `1px solid ${activo ? "var(--color-accent)" : "var(--color-divider)"}`,
+                    fontWeight: activo ? 800 : 400,
+                  }}
+                >
+                  <span
+                    className="w-[20px] h-[20px] flex-none border-2 border-[var(--color-text)] grid place-items-center"
+                    style={{ background: activo ? "var(--color-accent)" : "transparent" }}
+                  >
+                    {activo ? (
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#f3f2f2" strokeWidth="3.4">
+                        <path d="M4 12l5 5L20 6" />
+                      </svg>
+                    ) : null}
+                  </span>
+                  <span className="flex-1 min-w-0">{m.nombre}</span>
+                </button>
+              );
+            })}
+            {catalogoMotivo.length === 0 ? (
+              <div className="px-3.5 py-3 border border-dashed border-black/[.4] text-[13px] opacity-70">
+                No hay motivos en el checklist: avisa a coordinacion.
+              </div>
+            ) : null}
+          </div>
         </div>
 
         <div className="flex gap-3">
@@ -169,6 +212,9 @@ export default function NuevaVisitaSheet({
               value={encargado}
               onChange={(e) => setEncargado(e.target.value)}
               placeholder="Quién recibe"
+              autoComplete="off"
+              autoCorrect="off"
+              spellCheck={false}
               className={CAMPO}
             />
           </div>
@@ -185,7 +231,8 @@ export default function NuevaVisitaSheet({
                 if (!telefono) setTelefono("+56 9 ");
               }}
               placeholder="+56 9 1234 5678"
-              className={CAMPO}
+              autoComplete="off"
+              className={`${CAMPO} tabular-nums`}
             />
           </div>
         </div>
@@ -199,6 +246,7 @@ export default function NuevaVisitaSheet({
             rows={3}
             value={trabajo}
             onChange={(e) => setTrabajo(e.target.value)}
+            autoComplete="off"
             placeholder="Ej: calibrar las 3 antenas EAS del pórtico principal"
             className={`${CAMPO} min-h-[90px] resize-y leading-[1.4]`}
           />

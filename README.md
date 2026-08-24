@@ -47,7 +47,6 @@ npm install
 cp .env.example .env.development
 npm run secreto            # genera SESSION_SECRET; pégalo en .env.development
 # rellena DB_SERVER, DB_NAME, DB_USER y DB_PASSWORD en .env.development
-npm run sembrar-catalogos  # solo la primera vez, contra una base recién creada
 npm run dev
 ```
 
@@ -55,10 +54,16 @@ No hay modo sin base de datos: la app siempre habla con SQL Server. `.env.develo
 sesión local a la base que quieras (la de producción incluida — lo que guardes ahí se guarda de
 verdad).
 
-`npm run sembrar-catalogos` repone las tres listas de fábrica (motivos, tipos de problema y trabajos
-con sus subdetalles). **Es obligatorio en una base nueva**: sin motivos no se puede programar una
-visita, porque `dmc.visita` tiene una FK contra `dmc.catalogo_motivo`. Es idempotente y también se
-puede hacer desde el panel, en *Maestros › Checklist › Restaurar catálogo por defecto*.
+> [!WARNING]
+> Antes de levantar esta versión hay que aplicar
+> [`sql/migracion-002-mejoras.sql`](sql/migracion-002-mejoras.sql). Sin ella la app **no arranca**:
+> todas las consultas de visitas leen `dmc.visita_motivo`, que la migración crea. Ver
+> [Migraciones](#migraciones).
+
+Las tres listas del checklist **arrancan vacías**. Se arman en *Maestros › Checklist* y, cuando
+queden como se quieren, se aprieta *Fijar como mi plantilla*: desde ahí el botón *Reiniciar* siempre
+las devuelve a esa copia. Sin al menos un motivo no se puede programar ninguna visita, porque
+`dmc.visita` tiene una FK contra `dmc.catalogo_motivo`.
 
 Abrir <http://localhost:3000>. La raíz redirige según el rol de la sesión:
 
@@ -81,8 +86,6 @@ Abrir <http://localhost:3000>. La raíz redirige según el rol de la sesión:
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm run secreto` | Genera un valor apto para `SESSION_SECRET` o `HEALTHCHECK_TOKEN` |
 | `npm run hash-password [correo]` | Pide una contraseña por consola y devuelve su bcrypt (y el `UPDATE` si le pasas el correo) |
-| `npm run sembrar-catalogos` | Repone las tres listas de fábrica en la base de `.env.development` |
-| `npm run sembrar-catalogos:prod` | Lo mismo, contra la base de `.env.production` |
 
 ---
 
@@ -212,8 +215,29 @@ El esquema completo vive en [`sql/dmc_contingencia_sqlserver.sql`](sql/dmc_conti
 | Visitas | `visita`, `visita_ejecucion`, `visita_estado_historial`, `reagendamiento`, `visita_trabajo` (+ `_subtrabajo`), `visita_foto`, `visita_firma` |
 | Problemas | `problema`, `problema_item`, `problema_historial`, `problema_visita_resolucion` |
 | Acta y sincronización | `acta_envio` (+ `_adjunto`), `visita_borrador`, `sincronizacion_cola` |
+| Accesos | `checklist_plantilla`, `solicitud_password` |
+| Motivos por visita | `visita_motivo` |
 
 Aplicarlo con `sqlcmd -S <host>,<puerto> -i sql/dmc_contingencia_sqlserver.sql`.
+
+### Migraciones
+
+Sobre una base ya creada, los cambios van en archivos aparte y numerados:
+
+| Archivo | Qué hace |
+| --- | --- |
+| [`sql/migracion-002-mejoras.sql`](sql/migracion-002-mejoras.sql) | Motivos múltiples por visita, `permite_cantidad` en los subdetalles del checklist, bytes de fotos y firmas, plantilla del checklist, solicitudes de contraseña y `activo` en `visita_trabajo` / `visita_foto` |
+
+```bash
+sqlcmd -S <host>,<puerto> -d DMC_Contingencia -i sql/migracion-002-mejoras.sql
+```
+
+Es idempotente: se puede correr varias veces.
+
+> [!IMPORTANT]
+> **Hay que correrla con una cuenta que tenga permisos de DDL** (`db_owner` o equivalente). El
+> usuario de la aplicación no los tiene: intentar aplicarla con él falla con
+> *«CREATE TABLE permission denied»*. Ese usuario solo necesita leer y escribir datos.
 
 Los tipos de `lib/types.ts` están hechos 1:1 con ese esquema; `lib/data/*` los devuelve ya con los
 nombres en camelCase y las fechas como texto ISO. Las fechas y horas se convierten **en SQL**
@@ -231,10 +255,11 @@ siguiente intento reconecte.
 > `npm run hash-password`. La app acepta esos hashes heredados para no dejar fuera a una base ya
 > sembrada, pero los reescribe a bcrypt en el primer inicio de sesión correcto de cada usuario.
 
-> [!IMPORTANT]
-> La **sección 11 sí hay que aplicarla**: son los catálogos de fábrica, no datos de demo. Si la base
-> se creó sin ella, `npm run sembrar-catalogos` los repone (misma lista, en
-> `lib/data/catalogo-fabrica.json`) sin tocar nada más.
+> [!NOTE]
+> La **sección 11 (catálogos de ejemplo) ya no la usa la aplicación**. Las tres listas del checklist
+> arrancan vacías y se arman desde *Maestros › Checklist*; lo que reponen *Fijar como mi plantilla*
+> y *Reiniciar* es la copia que guarde el propio panel en `dmc.checklist_plantilla`. Puedes aplicar
+> la sección 11 si quieres una base de partida, o saltártela.
 
 ---
 
@@ -325,8 +350,22 @@ Hecho:
 - **Escritura** — visitas, problemas, maestros y checklist persisten en la base a través de las
   Server Actions de `app/actions/*`. Nada vive en memoria del proceso, así que funciona en
   serverless, donde cada instancia tendría su propia copia.
-- **Catálogos de fábrica** — `npm run sembrar-catalogos` y el botón *Restaurar catálogo por defecto*
-  del panel reponen las tres listas de forma idempotente.
+- **El acta del técnico se guarda** — `guardarActaAction` escribe ejecución, motivos reales,
+  trabajos con sus subtrabajos, problemas con sus items, fotos y firma **dentro de una única
+  transacción**, y deja la visita `COMPLETADA`. O queda todo o no queda nada: una visita con la
+  mitad de los trabajos y sin firma es peor que una visita sin guardar.
+- **Fotos y firmas** — los bytes viven en `dmc.visita_foto.contenido` y `dmc.visita_firma.contenido`
+  (`varbinary(max)`) y se sirven por `/api/visita/foto/[id]` y `/api/visita/firma/[id]`, con sesión y
+  limitadas al técnico dueño de la visita. El cliente reduce cada foto antes de mandarla
+  (`lib/ui/imagen.ts`) porque el acta entera viaja en una sola Server Action.
+- **Checklist** — el editor trabaja sobre un borrador local y solo escribe al confirmar *Guardar
+  cambios*. Se puede reordenar, clonar una entrada con sus subdetalles y decidir por subdetalle si
+  lleva cantidad o solo se marca. **Nada se borra**: quitar una entrada la deja `activo = 0`.
+- **Motivos múltiples** — una visita puede venir por varias cosas a la vez (`dmc.visita_motivo`).
+  `dmc.visita.motivo_codigo` sigue siendo el principal: de él cuelgan la FK y el CHECK de la hora en
+  instalación.
+- **Recuperación de contraseña** — sin servidor de correo: la solicitud queda en
+  `dmc.solicitud_password` y el administrador la atiende en *Accesos › Contraseñas pedidas*.
 
 Lo que falta:
 
@@ -335,13 +374,13 @@ Lo que falta:
 2. **Contraseñas reales** — los usuarios sembrados traen el hash `sha512$` sin sal del DDL. La app lo
    acepta y lo reescribe a bcrypt en el primer acceso correcto de cada uno, pero conviene fijarlas
    con `npm run hash-password <correo>`.
-3. **El formulario móvil todavía no guarda** — `components/mobile/FormularioVisita.tsx` arma el acta
-   (trabajos, problemas, fotos, firma) en estado local; falta la Server Action que la escriba en
-   `visita_ejecucion`, `visita_trabajo`, `problema`, `visita_foto` y `visita_firma`.
-4. **Almacenamiento de fotos y firmas** — hoy son `dataUrl` en memoria (`CamaraSheet`) y no se
-   guardan en ninguna parte. Definir destino (blob storage o columna `varbinary`) y su respaldo. El
-   `.gitignore` ya reserva `/public/uploads` por si se opta por disco local, opción que **no sirve
-   en serverless**: el sistema de archivos es efímero.
+3. **Fotos en la base** — guardarlas como `varbinary(max)` es lo que había disponible (no hay blob
+   storage contratado) y funciona, pero engorda la base y el respaldo. Si el volumen crece, mover el
+   contenido a almacenamiento externo dejando la ruta en `archivo_url` es un cambio acotado: las
+   rutas `/api/visita/foto/[id]` y `/api/visita/firma/[id]` ya son el único punto de lectura.
+4. **Trabajo sin señal** — `dmc.visita_borrador` y `dmc.sincronizacion_cola` existen en el esquema
+   pero la app todavía no las usa: si el celular se queda sin señal al apretar *Guardar visita*, el
+   acta sigue en pantalla y hay que reintentar con cobertura.
 5. **Envío del acta por correo** — `enviarActaAction` registra la fila en `dmc.acta_envio` con estado
    `ENCOLADO`; falta el SMTP que la despache y la marque `ENVIADO`.
 6. **Certificado del SQL Server** — la instancia presenta uno autofirmado, así que en producción hay

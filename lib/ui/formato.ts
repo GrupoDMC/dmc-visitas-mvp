@@ -72,3 +72,14 @@ export function urlMapa(...partes: (string | null | undefined)[]): string {
 export function urlTel(telefono: string | null | undefined): string {
   return "tel:" + String(telefono ?? "").replace(/[^+0-9]/g, "");
 }
+
+/**
+ * Por qué un RUT no sirve, o null si está bien. Vacío se considera válido:
+ * quien decide si el campo es obligatorio es el formulario, no esta función.
+ */
+export function mensajeRut(v: string): string | null {
+  if (!String(v ?? "").trim()) return null;
+  if (!rutCompleto(v)) return "El RUT está incompleto.";
+  if (!rutDvCorrecto(v)) return "Ese RUT no es válido: revisa el dígito verificador.";
+  return null;
+}

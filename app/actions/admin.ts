@@ -11,24 +11,19 @@ import {
   type DatosVisita,
 } from "@/lib/data/visitas";
 import {
-  actualizarProblemaCatalogo,
-  actualizarTrabajoCatalogo,
-  crearMotivo,
-  crearOpcionProblema,
-  crearProblema,
-  crearSubtrabajo,
-  crearTrabajo,
-  eliminarMotivo,
-  eliminarOpcionProblema,
-  eliminarProblema,
-  eliminarSubtrabajo,
-  eliminarTrabajo,
-  renombrarMotivo,
-  renombrarOpcionProblema,
-  renombrarSubtrabajo,
-  restaurarCatalogoFabrica,
+  aplicarPlantilla,
+  getPlantilla,
+  guardarChecklist,
+  guardarPlantilla,
+  PLANTILLA_PROPIA,
+  type BorradorChecklist,
+  type ResumenChecklist,
 } from "@/lib/data/catalogos";
-import type { CatalogoMotivo, CatalogoProblema, CatalogoTrabajo, EstadoProblema } from "@/lib/types";
+import {
+  atenderSolicitudPassword,
+  descartarSolicitudPassword,
+} from "@/lib/data/solicitudes-password";
+import type { ChecklistPlantilla, EstadoProblema } from "@/lib/types";
 
 export interface ResultadoAdmin {
   ok: boolean;
@@ -64,6 +59,12 @@ function comoError(err: unknown, contexto: string): ResultadoAdmin {
 
 // ── Visitas ─────────────────────────────────────────────────────────────────
 
+/** Basta con que una instalación esté entre los motivos marcados. */
+function incluyeInstalacion(datos: DatosVisita): boolean {
+  const marcados = datos.motivosCodigos?.length ? datos.motivosCodigos : [datos.motivoCodigo];
+  return marcados.includes("INSTALACION");
+}
+
 export async function crearVisitaAction(datos: DatosVisita): Promise<ResultadoAdmin> {
   const sesion = await sesionPanel();
   if (!sesion) return { ok: false, error: "No tienes permiso para crear visitas." };
@@ -74,7 +75,7 @@ export async function crearVisitaAction(datos: DatosVisita): Promise<ResultadoAd
     return { ok: false, error: "Escribe qué se necesita hacer en la tienda." };
   }
   if (!datos.fechaProgramada) return { ok: false, error: "Elige la fecha programada." };
-  if (datos.motivoCodigo === "INSTALACION" && !datos.horaProgramada) {
+  if (incluyeInstalacion(datos) && !datos.horaProgramada) {
     return { ok: false, error: "En instalación la hora es obligatoria." };
   }
 
@@ -96,7 +97,7 @@ export async function editarVisitaAction(folio: string, datos: DatosVisita): Pro
   if (!datos.trabajoSolicitado.trim()) {
     return { ok: false, error: "Escribe qué se necesita hacer en la tienda." };
   }
-  if (datos.motivoCodigo === "INSTALACION" && !datos.horaProgramada) {
+  if (incluyeInstalacion(datos) && !datos.horaProgramada) {
     return { ok: false, error: "En instalación la hora es obligatoria." };
   }
 
@@ -192,11 +193,16 @@ export async function enviarActaAction(input: {
 }
 
 // ── Checklist ───────────────────────────────────────────────────────────────
+//
+// El editor ya no guarda letra por letra: junta todo en un borrador y lo manda
+// de una vez cuando el coordinador confirma. Así el orden, los renombres, las
+// altas y las bajas quedan consistentes entre sí.
 
-export interface ResultadoChecklist<T> {
+export interface ResultadoChecklist {
   ok: boolean;
   error?: string;
-  fila?: T;
+  resumen?: ResumenChecklist;
+  plantilla?: ChecklistPlantilla | null;
 }
 
 function revalidarChecklist() {
@@ -204,88 +210,119 @@ function revalidarChecklist() {
   revalidatePath("/tecnico", "layout");
 }
 
-async function conPermiso<T>(accion: () => Promise<T>, contexto: string): Promise<ResultadoChecklist<T>> {
+function errorChecklist(err: unknown, contexto: string): ResultadoChecklist {
+  const texto = err instanceof Error ? err.message : String(err);
+  if (/uq_\w*nombre/i.test(texto)) return { ok: false, error: "Hay dos entradas con el mismo nombre en la misma lista." };
+  if (/uq_\w*opcion|uq_\w*subtrabajo/i.test(texto)) {
+    return { ok: false, error: "Hay dos subdetalles con la misma etiqueta dentro de la misma entrada." };
+  }
+  console.error(`[dmc] ${contexto}:`, err);
+  return { ok: false, error: "No se pudo guardar el checklist. Inténtalo otra vez." };
+}
+
+/** Detecta nombres repetidos antes de que SQL Server los rechace. */
+function repetidos(nombres: string[]): string | null {
+  const vistos = new Set<string>();
+  for (const n of nombres) {
+    const clave = n.trim().toLowerCase();
+    if (!clave) continue;
+    if (vistos.has(clave)) return n.trim();
+    vistos.add(clave);
+  }
+  return null;
+}
+
+export async function guardarChecklistAction(borrador: BorradorChecklist): Promise<ResultadoChecklist> {
   const sesion = await sesionPanel();
   if (!sesion) return { ok: false, error: "No tienes permiso para editar el checklist." };
+
+  const choque =
+    repetidos(borrador.motivos.map((m) => m.nombre)) ??
+    repetidos(borrador.problemas.map((x) => x.nombre)) ??
+    repetidos(borrador.trabajos.map((x) => x.nombre));
+  if (choque) return { ok: false, error: `«${choque}» está dos veces en la misma lista.` };
+
+  for (const pr of borrador.problemas) {
+    const dup = repetidos(pr.opciones.map((o) => o.etiqueta));
+    if (dup) return { ok: false, error: `«${dup}» está dos veces dentro de «${pr.nombre}».` };
+  }
+  for (const t of borrador.trabajos) {
+    const dup = repetidos(t.subtrabajos.map((o) => o.etiqueta));
+    if (dup) return { ok: false, error: `«${dup}» está dos veces dentro de «${t.nombre}».` };
+  }
+
   try {
-    const fila = await accion();
+    const resumen = await guardarChecklist(borrador);
     revalidarChecklist();
-    return { ok: true, fila };
+    return { ok: true, resumen };
   } catch (err) {
-    const texto = err instanceof Error ? err.message : String(err);
-    if (/uq_\w*nombre/i.test(texto)) return { ok: false, error: "Ya existe otra entrada con ese nombre." };
-    if (/uq_\w*opcion|uq_\w*subtrabajo/i.test(texto)) return { ok: false, error: "Ese subdetalle ya está en la lista." };
-    console.error(`[dmc] ${contexto}:`, err);
-    return { ok: false, error: "No se pudo guardar el cambio." };
+    return errorChecklist(err, "guardarChecklist");
   }
 }
 
-// Todas van declaradas como `async function`: Next exige que una Server Action
-// exportada lo sea, aunque el cuerpo delegue en otra promesa.
-
-export async function crearMotivoAction(nombre: string): Promise<ResultadoChecklist<CatalogoMotivo>> {
-  return conPermiso(() => crearMotivo(nombre.trim() || "Nuevo motivo"), "crearMotivo");
+/** Guarda la lista actual como la plantilla propia del panel. */
+export async function guardarPlantillaChecklistAction(): Promise<ResultadoChecklist> {
+  const sesion = await sesionPanel();
+  if (!sesion) return { ok: false, error: "No tienes permiso para editar el checklist." };
+  try {
+    const plantilla = await guardarPlantilla(PLANTILLA_PROPIA, sesion.usuario.id);
+    return { ok: true, plantilla };
+  } catch (err) {
+    return errorChecklist(err, "guardarPlantilla");
+  }
 }
 
-export async function renombrarMotivoAction(id: number, nombre: string) {
-  return conPermiso(() => renombrarMotivo(id, nombre.trim()), "renombrarMotivo");
+/** Deja las tres listas exactamente como quedaron en la plantilla propia. */
+export async function reiniciarChecklistAction(): Promise<ResultadoChecklist> {
+  const sesion = await sesionPanel();
+  if (!sesion) return { ok: false, error: "No tienes permiso para editar el checklist." };
+  try {
+    const resumen = await aplicarPlantilla(PLANTILLA_PROPIA);
+    revalidarChecklist();
+    return { ok: true, resumen, plantilla: await getPlantilla(PLANTILLA_PROPIA) };
+  } catch (err) {
+    const texto = err instanceof Error ? err.message : String(err);
+    if (/plantilla/i.test(texto)) return { ok: false, error: texto };
+    return errorChecklist(err, "reiniciarChecklist");
+  }
 }
 
-export async function eliminarMotivoAction(id: number) {
-  return conPermiso(() => eliminarMotivo(id), "eliminarMotivo");
-}
+// ── Recuperación de contraseña ──────────────────────────────────────────────
 
-export async function crearTipoProblemaAction(nombre: string): Promise<ResultadoChecklist<CatalogoProblema>> {
-  return conPermiso(() => crearProblema(nombre.trim() || "Nuevo tipo de problema"), "crearProblema");
-}
-
-export async function actualizarTipoProblemaAction(
+export async function atenderSolicitudPasswordAction(
   id: number,
-  campos: { nombre?: string; grupoLabel?: string | null }
-) {
-  return conPermiso(() => actualizarProblemaCatalogo(id, campos), "actualizarProblemaCatalogo");
+  passwordTemporal: string
+): Promise<ResultadoAdmin> {
+  const sesion = await sesionPanel();
+  if (!sesion) return { ok: false, error: "No tienes permiso para asignar contraseñas." };
+  if (passwordTemporal.trim().length < 8) {
+    return { ok: false, error: "La contraseña temporal debe tener al menos 8 caracteres." };
+  }
+
+  try {
+    if (!(await atenderSolicitudPassword(id, passwordTemporal.trim(), sesion.usuario.id))) {
+      return {
+        ok: false,
+        error: "Ese correo no tiene ninguna cuenta. Créala en Maestros › Usuarios antes de asignarle una clave.",
+      };
+    }
+  } catch (err) {
+    return comoError(err, "atenderSolicitudPassword");
+  }
+  revalidarPanel();
+  return { ok: true };
 }
 
-export async function eliminarTipoProblemaAction(id: number) {
-  return conPermiso(() => eliminarProblema(id), "eliminarProblema");
-}
-
-export async function crearOpcionProblemaAction(problemaId: number, etiqueta: string) {
-  return conPermiso(() => crearOpcionProblema(problemaId, etiqueta.trim()), "crearOpcionProblema");
-}
-
-export async function renombrarOpcionProblemaAction(id: number, etiqueta: string) {
-  return conPermiso(() => renombrarOpcionProblema(id, etiqueta.trim()), "renombrarOpcionProblema");
-}
-
-export async function eliminarOpcionProblemaAction(id: number) {
-  return conPermiso(() => eliminarOpcionProblema(id), "eliminarOpcionProblema");
-}
-
-export async function crearTrabajoAction(nombre: string): Promise<ResultadoChecklist<CatalogoTrabajo>> {
-  return conPermiso(() => crearTrabajo(nombre.trim() || "Nuevo trabajo"), "crearTrabajo");
-}
-
-export async function actualizarTrabajoAction(id: number, campos: { nombre?: string; grupoLabel?: string | null }) {
-  return conPermiso(() => actualizarTrabajoCatalogo(id, campos), "actualizarTrabajoCatalogo");
-}
-
-export async function eliminarTrabajoAction(id: number) {
-  return conPermiso(() => eliminarTrabajo(id), "eliminarTrabajo");
-}
-
-export async function crearSubtrabajoAction(trabajoId: number, etiqueta: string) {
-  return conPermiso(() => crearSubtrabajo(trabajoId, etiqueta.trim()), "crearSubtrabajo");
-}
-
-export async function renombrarSubtrabajoAction(id: number, etiqueta: string) {
-  return conPermiso(() => renombrarSubtrabajo(id, etiqueta.trim()), "renombrarSubtrabajo");
-}
-
-export async function eliminarSubtrabajoAction(id: number) {
-  return conPermiso(() => eliminarSubtrabajo(id), "eliminarSubtrabajo");
-}
-
-export async function restaurarCatalogoAction() {
-  return conPermiso(() => restaurarCatalogoFabrica(), "restaurarCatalogo");
+export async function descartarSolicitudPasswordAction(id: number): Promise<ResultadoAdmin> {
+  const sesion = await sesionPanel();
+  if (!sesion) return { ok: false, error: "No tienes permiso para cerrar solicitudes." };
+  try {
+    if (!(await descartarSolicitudPassword(id, sesion.usuario.id))) {
+      return { ok: false, error: "Esa solicitud ya estaba cerrada." };
+    }
+  } catch (err) {
+    return comoError(err, "descartarSolicitudPassword");
+  }
+  revalidarPanel();
+  return { ok: true };
 }

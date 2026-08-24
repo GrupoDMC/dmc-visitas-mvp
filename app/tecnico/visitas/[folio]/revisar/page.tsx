@@ -4,7 +4,7 @@ import { getVisitaCompletaPorFolio } from "@/lib/data/visitas";
 import { listarProblemas, listarTrabajos } from "@/lib/data/catalogos";
 import MobileShell from "@/components/mobile/MobileShell";
 import Tag from "@/components/Tag";
-import { ESTADO_PROBLEMA_LABEL, ESTADO_PROBLEMA_TAG } from "@/lib/ui/estado";
+import { ESTADO_PROBLEMA_LABEL, ESTADO_PROBLEMA_TAG, textoMotivos } from "@/lib/ui/estado";
 import { nombreProblema, nombreTrabajo } from "@/lib/ui/referencias";
 
 export const dynamic = "force-dynamic";
@@ -30,7 +30,7 @@ export default async function RevisarActaPage({ params }: { params: Promise<{ fo
         </div>
 
         <div className="mx-4 mt-4 border border-[var(--color-divider)] bg-[var(--color-surface-3)] px-4 pt-1 pb-4">
-          <Fila k="Motivo" v={visita.motivo?.nombre} />
+          <Fila k="Motivo" v={textoMotivos(visita)} />
           <Fila k="Técnico" v={visita.tecnico?.nombreCompleto} />
           <Fila k="Fecha" v={visita.fechaProgramada} />
           {visita.ejecucion?.observaciones ? <Fila k="Observación" v={visita.ejecucion.observaciones} /> : null}

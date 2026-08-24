@@ -163,6 +163,8 @@ CREATE TABLE dmc.catalogo_problema_opcion (
     problema_id  bigint       NOT NULL,
     etiqueta     nvarchar(80) NOT NULL,        -- "Pórtico 1", "Master 9000"…
     orden        smallint     NOT NULL CONSTRAINT df_cat_prob_op_orden DEFAULT (0),
+    -- 0 = el técnico solo la marca; 1 = la marca y le pone cantidad.
+    permite_cantidad bit      NOT NULL CONSTRAINT df_cat_prob_op_cantidad DEFAULT (0),
     activo       bit          NOT NULL CONSTRAINT df_cat_prob_op_activo DEFAULT (1),
     CONSTRAINT pk_catalogo_problema_opcion PRIMARY KEY (id),
     CONSTRAINT uq_catalogo_problema_opcion UNIQUE (problema_id, etiqueta),
@@ -193,6 +195,8 @@ CREATE TABLE dmc.catalogo_trabajo_subtrabajo (
     trabajo_id  bigint       NOT NULL,
     etiqueta    nvarchar(80) NOT NULL,          -- "Pórtico 1", "Fuente de poder"…
     orden       smallint     NOT NULL CONSTRAINT df_cat_sub_orden DEFAULT (0),
+    -- 0 = el técnico solo lo marca; 1 = lo marca y le pone cantidad.
+    permite_cantidad bit     NOT NULL CONSTRAINT df_cat_sub_cantidad DEFAULT (0),
     activo      bit          NOT NULL CONSTRAINT df_cat_sub_activo DEFAULT (1),
     CONSTRAINT pk_catalogo_trabajo_subtrabajo PRIMARY KEY (id),
     CONSTRAINT uq_catalogo_trabajo_subtrabajo UNIQUE (trabajo_id, etiqueta),
@@ -244,6 +248,28 @@ CREATE INDEX ix_visita_fecha    ON dmc.visita (fecha_programada DESC);
 CREATE INDEX ix_visita_tecnico  ON dmc.visita (tecnico_id, fecha_programada DESC) INCLUDE (estado, sucursal_id);
 CREATE INDEX ix_visita_sucursal ON dmc.visita (sucursal_id, fecha_programada DESC);
 CREATE INDEX ix_visita_estado   ON dmc.visita (estado, fecha_programada DESC);
+GO
+
+-- Una visita puede tener varios motivos: motivo_codigo de arriba es el
+-- principal (el primero marcado, del que cuelgan la FK y el CHECK de la hora
+-- en instalación) y acá va la selección completa.
+--   ambito = PLAN  -> lo que marcó coordinación al agendar
+--   ambito = REAL  -> lo que confirmó el técnico en terreno
+CREATE TABLE dmc.visita_motivo (
+    id             bigint       IDENTITY(1,1) NOT NULL,
+    visita_id      bigint       NOT NULL,
+    motivo_codigo  varchar(40)  NOT NULL,
+    ambito         varchar(4)   NOT NULL CONSTRAINT df_visita_motivo_ambito DEFAULT ('PLAN'),
+    orden          smallint     NOT NULL CONSTRAINT df_visita_motivo_orden  DEFAULT (0),
+    creado_en      datetime2(0) NOT NULL CONSTRAINT df_visita_motivo_creado DEFAULT (SYSDATETIME()),
+    CONSTRAINT pk_visita_motivo PRIMARY KEY (id),
+    CONSTRAINT uq_visita_motivo UNIQUE (visita_id, ambito, motivo_codigo),
+    CONSTRAINT fk_visita_motivo_visita   FOREIGN KEY (visita_id)     REFERENCES dmc.visita (id) ON DELETE CASCADE,
+    CONSTRAINT fk_visita_motivo_catalogo FOREIGN KEY (motivo_codigo) REFERENCES dmc.catalogo_motivo (codigo),
+    CONSTRAINT ck_visita_motivo_ambito   CHECK (ambito IN ('PLAN','REAL'))
+);
+GO
+CREATE INDEX ix_visita_motivo ON dmc.visita_motivo (visita_id, ambito, orden);
 GO
 
 CREATE TABLE dmc.visita_ejecucion (
@@ -321,6 +347,8 @@ CREATE TABLE dmc.visita_trabajo (
     trabajo_codigo  varchar(40)   NOT NULL,      -- FK al catálogo editable (Lista 3)
     detalle         nvarchar(max) NULL,          -- texto libre opcional del técnico
     orden           smallint      NOT NULL CONSTRAINT df_vis_trab_orden DEFAULT (1),
+    -- Nada se borra: quitar un trabajo del acta lo deja inactivo.
+    activo          bit           NOT NULL CONSTRAINT df_vis_trab_activo DEFAULT (1),
     creado_en       datetime2(0)  NOT NULL CONSTRAINT df_vis_trab_creado DEFAULT (SYSDATETIME()),
     CONSTRAINT pk_visita_trabajo PRIMARY KEY (id),
     CONSTRAINT fk_vis_trab_visita  FOREIGN KEY (visita_id)      REFERENCES dmc.visita (id) ON DELETE CASCADE,
@@ -431,10 +459,12 @@ CREATE TABLE dmc.visita_foto (
     visita_id    bigint        NOT NULL,
     problema_id  bigint        NULL,
     etiqueta     nvarchar(40)  NULL,            -- "Antes", "Durante", "Después"…
-    archivo_url  nvarchar(400) NOT NULL,
+    archivo_url  nvarchar(400) NOT NULL,      -- ruta interna: /api/visita/foto/<id>
+    contenido    varbinary(max) NULL,         -- los bytes del JPEG, en color
     mime         varchar(40)   NOT NULL CONSTRAINT df_foto_mime DEFAULT ('image/jpeg'),
     bytes        int           NULL,
     orden        smallint      NOT NULL CONSTRAINT df_foto_orden DEFAULT (0),
+    activo       bit           NOT NULL CONSTRAINT df_foto_activo DEFAULT (1),
     tomada_en    datetime2(0)  NULL,
     subida_en    datetime2(0)  NOT NULL CONSTRAINT df_foto_subida DEFAULT (SYSDATETIME()),
     CONSTRAINT pk_visita_foto   PRIMARY KEY (id),
@@ -451,8 +481,10 @@ CREATE TABLE dmc.visita_firma (
     rol         varchar(8)    NOT NULL CONSTRAINT df_firma_rol DEFAULT ('TIENDA'),
     nombre      nvarchar(120) NOT NULL,
     rut         varchar(12)   NULL,
-    imagen_url  nvarchar(400) NOT NULL,         -- PNG capturado en el canvas
+    imagen_url  nvarchar(400) NOT NULL,         -- ruta interna: /api/visita/firma/<id>
+    contenido   varbinary(max) NULL,            -- el PNG capturado en el canvas
     firmado_en  datetime2(0)  NOT NULL CONSTRAINT df_firma_firmado DEFAULT (SYSDATETIME()),
+    actualizado_en datetime2(0) NOT NULL CONSTRAINT df_firma_actualizado DEFAULT (SYSDATETIME()),
     CONSTRAINT pk_visita_firma     PRIMARY KEY (id),
     CONSTRAINT uq_firma_visita_rol UNIQUE (visita_id, rol),
     CONSTRAINT fk_firma_visita FOREIGN KEY (visita_id) REFERENCES dmc.visita (id) ON DELETE CASCADE,
@@ -544,6 +576,48 @@ CREATE TABLE dmc.sincronizacion_cola (
 );
 GO
 CREATE INDEX ix_cola_pendiente ON dmc.sincronizacion_cola (usuario_id, creado_en) WHERE estado = 'PENDIENTE';
+GO
+
+/* =====================================================================
+   8b. PLANTILLA DEL CHECKLIST Y RECUPERACIÓN DE CONTRASEÑA
+   ===================================================================== */
+
+-- Las tres listas del checklist arrancan vacías. El panel guarda una foto de
+-- cómo quedaron armadas y el botón Reiniciar vuelve a esa foto.
+CREATE TABLE dmc.checklist_plantilla (
+    id              bigint        IDENTITY(1,1) NOT NULL,
+    nombre          nvarchar(80)  NOT NULL,
+    payload         nvarchar(max) NOT NULL,     -- JSON con las tres listas
+    creado_por      bigint        NULL,
+    creado_en       datetime2(0)  NOT NULL CONSTRAINT df_plantilla_creado DEFAULT (SYSDATETIME()),
+    actualizado_en  datetime2(0)  NOT NULL CONSTRAINT df_plantilla_actualizado DEFAULT (SYSDATETIME()),
+    CONSTRAINT pk_checklist_plantilla PRIMARY KEY (id),
+    CONSTRAINT uq_checklist_plantilla UNIQUE (nombre),
+    CONSTRAINT fk_plantilla_usuario   FOREIGN KEY (creado_por) REFERENCES dmc.usuario (id),
+    CONSTRAINT ck_plantilla_json      CHECK (ISJSON(payload) = 1)
+);
+GO
+
+-- No hay servidor de correo: la solicitud queda registrada y el administrador
+-- la atiende desde el panel. Se guarda el correo tal cual se escribió aunque no
+-- exista ningún usuario con él, para que el login no delate qué correos están
+-- dados de alta.
+CREATE TABLE dmc.solicitud_password (
+    id            bigint        IDENTITY(1,1) NOT NULL,
+    email         nvarchar(160) NOT NULL,
+    usuario_id    bigint        NULL,
+    mensaje       nvarchar(400) NULL,
+    estado        varchar(10)   NOT NULL CONSTRAINT df_solpass_estado DEFAULT ('PENDIENTE'),
+    atendido_por  bigint        NULL,
+    atendido_en   datetime2(0)  NULL,
+    creado_en     datetime2(0)  NOT NULL CONSTRAINT df_solpass_creado DEFAULT (SYSDATETIME()),
+    CONSTRAINT pk_solicitud_password PRIMARY KEY (id),
+    CONSTRAINT fk_solpass_usuario    FOREIGN KEY (usuario_id)   REFERENCES dmc.usuario (id),
+    CONSTRAINT fk_solpass_atendido   FOREIGN KEY (atendido_por) REFERENCES dmc.usuario (id),
+    CONSTRAINT ck_solpass_estado     CHECK (estado IN ('PENDIENTE','ATENDIDA','DESCARTADA'))
+);
+GO
+CREATE INDEX ix_solpass_pendiente ON dmc.solicitud_password (creado_en DESC) WHERE estado = 'PENDIENTE';
 GO
 
 /* =====================================================================

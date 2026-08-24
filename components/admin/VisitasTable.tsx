@@ -7,7 +7,7 @@ import AdminHeader from "@/components/admin/AdminHeader";
 import FiltrosBar, { type ChipFiltro } from "@/components/admin/FiltrosBar";
 import VisitaDialogo from "@/components/admin/VisitaDialogos";
 import { Toast, useToast } from "@/components/ui/Toast";
-import { ESTADO_VISITA_LABEL, ESTADO_VISITA_TAG } from "@/lib/ui/estado";
+import { ESTADO_VISITA_LABEL, ESTADO_VISITA_TAG, textoMotivos } from "@/lib/ui/estado";
 import { useReferencias } from "@/lib/ui/referencias";
 import type { Visita, EstadoVisita } from "@/lib/types";
 
@@ -70,7 +70,7 @@ export default function VisitasTable({
       if (f.tecnicoId && String(v.tecnicoId) !== f.tecnicoId) return false;
       if (f.tipo && !(v.problemas ?? []).some((p) => p.tipoCodigo === f.tipo)) return false;
       if (!q) return true;
-      const hay = `${v.folio} ${v.sucursal?.nombre ?? ""} ${v.cliente?.nombreFantasia ?? ""} ${v.tecnico?.nombreCompleto ?? ""} ${v.motivo?.nombre ?? ""}`;
+      const hay = `${v.folio} ${v.sucursal?.nombre ?? ""} ${v.cliente?.nombreFantasia ?? ""} ${v.tecnico?.nombreCompleto ?? ""} ${v.motivosNombres.join(" ")}`;
       return hay.toLowerCase().includes(q);
     });
   }, [visitas, busqueda, f]);
@@ -189,7 +189,7 @@ export default function VisitasTable({
                   <td className="whitespace-nowrap">{v.cliente?.nombreFantasia}</td>
                   <td className="opacity-70 whitespace-nowrap">{v.sucursal?.nombre}</td>
                   <td className="opacity-70 whitespace-nowrap">{v.tecnico?.nombreCompleto}</td>
-                  <td className="opacity-70 whitespace-nowrap">{v.motivo?.nombre}</td>
+                  <td className="opacity-70">{textoMotivos(v)}</td>
                   <td>
                     <Tag variant={ESTADO_VISITA_TAG[v.estado]}>{ESTADO_VISITA_LABEL[v.estado]}</Tag>
                   </td>

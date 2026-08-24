@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import SelectBuscable from "@/components/ui/SelectBuscable";
+import { fmtRut, fmtTel, mensajeRut } from "@/lib/ui/formato";
 
 export type CampoTipo =
   | "text"
@@ -8,11 +10,30 @@ export type CampoTipo =
   | "date"
   | "time"
   | "tel"
+  | "rut"
   | "select"
+  /** Varias opciones a la vez. El valor es un string con los códigos separados
+   *  por coma, para que siga entrando en FormValores sin cambiar el resto. */
+  | "checks"
   | "password"
   | "area"
   | "cuerpo"
   | "toggle";
+
+/** Desde cuántas opciones conviene el selector con búsqueda en vez del nativo. */
+const MINIMO_PARA_BUSCAR = 7;
+
+/** "A,B" ⇄ ["A","B"] — el ida y vuelta del tipo "checks". */
+export function leerChecks(valor: string | boolean | undefined): string[] {
+  return String(valor ?? "")
+    .split(",")
+    .map((x) => x.trim())
+    .filter(Boolean);
+}
+
+export function escribirChecks(codigos: string[]): string {
+  return [...new Set(codigos.filter(Boolean))].join(",");
+}
 
 export interface CampoDef {
   k: string;
@@ -120,31 +141,48 @@ export default function Dialogo({
                   <label htmlFor={`dlg-${c.k}`}>{c.label}</label>
 
                   {c.tipo === "select" ? (
-                    <div className="relative">
-                      <select
+                    (c.opciones?.length ?? 0) >= MINIMO_PARA_BUSCAR ? (
+                      // Lista larga: se escribe y filtra al momento.
+                      <SelectBuscable
                         id={`dlg-${c.k}`}
-                        value={texto}
-                        onChange={(e) => onCampo(c.k, e.target.value)}
-                        className="input pr-9.5 appearance-none"
-                      >
-                        {c.opciones?.map((o) => (
-                          <option key={o.v} value={o.v}>
-                            {o.t}
-                          </option>
-                        ))}
-                      </select>
-                      <svg
-                        width="16"
-                        height="16"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="var(--color-text)"
-                        strokeWidth="2.2"
-                        className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none"
-                      >
-                        <path d="M6 9l6 6 6-6" />
-                      </svg>
-                    </div>
+                        valor={texto}
+                        opciones={c.opciones ?? []}
+                        onChange={(v) => onCampo(c.k, v)}
+                        ariaLabel={c.label}
+                      />
+                    ) : (
+                      <div className="relative">
+                        <select
+                          id={`dlg-${c.k}`}
+                          value={texto}
+                          onChange={(e) => onCampo(c.k, e.target.value)}
+                          className="input pr-9.5 appearance-none"
+                        >
+                          {c.opciones?.map((o) => (
+                            <option key={o.v} value={o.v}>
+                              {o.t}
+                            </option>
+                          ))}
+                        </select>
+                        <svg
+                          width="16"
+                          height="16"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="var(--color-text)"
+                          strokeWidth="2.2"
+                          className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none"
+                        >
+                          <path d="M6 9l6 6 6-6" />
+                        </svg>
+                      </div>
+                    )
+                  ) : c.tipo === "checks" ? (
+                    <CasillasMultiples
+                      valor={texto}
+                      opciones={c.opciones ?? []}
+                      onCambiar={(v) => onCampo(c.k, v)}
+                    />
                   ) : c.tipo === "password" ? (
                     <div className="flex gap-2">
                       <input
@@ -153,6 +191,8 @@ export default function Dialogo({
                         value={texto}
                         onChange={(e) => onCampo(c.k, e.target.value)}
                         placeholder={c.ph}
+                        autoComplete="off"
+                        spellCheck={false}
                         className="input flex-1 min-w-0 tracking-[.08em]"
                       />
                       <button
@@ -198,6 +238,7 @@ export default function Dialogo({
                       value={texto}
                       onChange={(e) => onCampo(c.k, e.target.value)}
                       placeholder={c.ph}
+                      autoComplete="off"
                       className="input min-h-[84px] px-3.5 py-3 resize-y leading-[1.5]"
                     />
                   ) : c.tipo === "cuerpo" ? (
@@ -207,19 +248,43 @@ export default function Dialogo({
                       value={texto}
                       onChange={(e) => onCampo(c.k, e.target.value)}
                       placeholder={c.ph}
+                      autoComplete="off"
                       className="input min-h-[260px] p-3.5 resize-y text-sm leading-[1.6] bg-[var(--color-surface-3)]"
                     />
                   ) : (
                     <input
                       id={`dlg-${c.k}`}
-                      type={c.tipo ?? "text"}
+                      type={c.tipo === "rut" ? "text" : c.tipo ?? "text"}
+                      inputMode={c.tipo === "rut" ? "numeric" : c.tipo === "tel" ? "tel" : undefined}
                       value={texto}
-                      onChange={(e) => onCampo(c.k, e.target.value)}
+                      // RUT y teléfono se formatean en cada pulsación: nadie tiene
+                      // que escribir los puntos, el guion ni el +56 9.
+                      onChange={(e) =>
+                        onCampo(
+                          c.k,
+                          c.tipo === "rut"
+                            ? fmtRut(e.target.value)
+                            : c.tipo === "tel"
+                              ? fmtTel(e.target.value)
+                              : e.target.value
+                        )
+                      }
+                      onFocus={() => {
+                        if (c.tipo === "tel" && !texto) onCampo(c.k, "+56 9 ");
+                      }}
                       placeholder={c.ph}
-                      className="input"
+                      autoComplete="off"
+                      autoCorrect="off"
+                      spellCheck={false}
+                      className={`input ${c.tipo === "rut" || c.tipo === "tel" ? "tabular-nums" : ""}`}
                     />
                   )}
 
+                  {c.tipo === "rut" && mensajeRut(texto) ? (
+                    <div className="text-[11px] leading-[1.4] mt-1.5 text-[var(--color-accent-800)]">
+                      {mensajeRut(texto)}
+                    </div>
+                  ) : null}
                   {c.ayuda ? <div className="text-[11px] leading-[1.4] opacity-66 mt-1.5">{c.ayuda}</div> : null}
                 </div>
               );
@@ -274,6 +339,82 @@ export default function Dialogo({
             </button>
           </div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Varias opciones marcables a la vez, con filtro al escribir cuando la lista es
+ * larga. Es lo que usa "Motivo de la visita": una visita puede venir por más de
+ * una cosa y antes obligaba a elegir una sola.
+ */
+function CasillasMultiples({
+  valor,
+  opciones,
+  onCambiar,
+}: {
+  valor: string;
+  opciones: { v: string; t: string }[];
+  onCambiar: (v: string) => void;
+}) {
+  const [busqueda, setBusqueda] = useState("");
+  const marcados = leerChecks(valor);
+  const q = busqueda.trim().toLowerCase();
+  const visibles = q ? opciones.filter((o) => o.t.toLowerCase().includes(q)) : opciones;
+
+  function alternar(codigo: string) {
+    onCambiar(
+      escribirChecks(marcados.includes(codigo) ? marcados.filter((c) => c !== codigo) : [...marcados, codigo])
+    );
+  }
+
+  return (
+    <div className="border border-[var(--color-divider)] bg-[var(--color-surface-3)]">
+      {opciones.length >= MINIMO_PARA_BUSCAR ? (
+        <input
+          value={busqueda}
+          onChange={(e) => setBusqueda(e.target.value)}
+          placeholder="Filtrar…"
+          aria-label="Filtrar opciones"
+          autoComplete="off"
+          className="w-full min-h-9 px-3 text-[13px] bg-[var(--color-bg)] border-0 border-b border-[var(--color-divider)] text-[var(--color-text)] focus-visible:outline-none"
+        />
+      ) : null}
+      <div className="max-h-[190px] overflow-y-auto p-2 flex flex-wrap gap-1.5">
+        {visibles.map((o) => {
+          const activo = marcados.includes(o.v);
+          return (
+            <button
+              key={o.v}
+              type="button"
+              role="checkbox"
+              aria-checked={activo}
+              onClick={() => alternar(o.v)}
+              className="flex items-center gap-2 min-h-9 px-2.5 border border-black/[.35] text-[13px] leading-[1.2] cursor-pointer text-left"
+              style={{
+                background: activo ? "var(--color-text)" : "var(--color-bg)",
+                color: activo ? "var(--color-bg)" : "var(--color-text)",
+                fontWeight: activo ? 800 : 400,
+              }}
+            >
+              <span className="w-3.5 h-3.5 flex-none border-2 border-current grid place-items-center">
+                {activo ? (
+                  <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="4">
+                    <path d="M4 12l5 5L20 6" />
+                  </svg>
+                ) : null}
+              </span>
+              <span>{o.t}</span>
+            </button>
+          );
+        })}
+        {visibles.length === 0 ? (
+          <div className="px-1 py-1.5 text-[13px] opacity-66">Nada coincide con «{busqueda}».</div>
+        ) : null}
+      </div>
+      <div className="px-3 py-1.5 border-t border-[var(--color-divider)] text-[11px] tracking-[.06em] uppercase opacity-62 tabular-nums">
+        {marcados.length} {marcados.length === 1 ? "marcado" : "marcados"}
       </div>
     </div>
   );
