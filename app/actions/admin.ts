@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { getSesion } from "@/lib/auth";
 import {
   actualizarProblema,
+  cancelarVisitaPorAdmin,
   crearVisita,
   editarVisita,
   registrarEnvioActa,
@@ -36,6 +37,19 @@ export interface ResultadoAdmin {
 async function sesionPanel() {
   const sesion = await getSesion();
   if (!sesion || sesion.usuario.rol === "TECNICO") return null;
+  return sesion;
+}
+
+/**
+ * Cerrar una visita por las malas es solo del administrador.
+ *
+ * Coordinación agenda, corrige y reprograma; dar por terminada una visita que
+ * nunca se hizo es una decisión de otro orden y queda con nombre y apellido en
+ * la bitácora.
+ */
+async function sesionAdmin() {
+  const sesion = await getSesion();
+  if (!sesion || sesion.usuario.rol !== "ADMIN") return null;
   return sesion;
 }
 
@@ -140,6 +154,42 @@ export async function reprogramarVisitaAction(input: {
     if (!ok) return { ok: false, error: "No encontramos esa visita." };
   } catch (err) {
     return comoError(err, "reprogramarVisita");
+  }
+  revalidarPanel(input.folio);
+  return { ok: true, folio: input.folio };
+}
+
+/**
+ * "Cancelar por admin" — el cierre administrativo de una visita vieja o que ya
+ * no sirve.
+ *
+ * Vale para las que están EN CURSO y para las que no se han iniciado. Una
+ * visita COMPLETADA ya tiene acta firmada y no se toca: eso lo vuelve a
+ * comprobar la capa de datos con la fila bloqueada, por si el técnico alcanza a
+ * cerrarla mientras el administrador confirma el diálogo.
+ */
+export async function cancelarVisitaAdminAction(input: {
+  folio: string;
+  motivo: string;
+}): Promise<ResultadoAdmin> {
+  const sesion = await sesionAdmin();
+  if (!sesion) {
+    return { ok: false, error: "Solo un administrador puede cerrar una visita por su cuenta." };
+  }
+  const motivo = input.motivo.trim();
+  if (motivo.length < 10) {
+    return { ok: false, error: "Escribe por qué se cierra la visita: queda en la bitácora." };
+  }
+
+  try {
+    const fallo = await cancelarVisitaPorAdmin({
+      folio: input.folio,
+      motivo,
+      usuarioId: sesion.usuario.id,
+    });
+    if (fallo) return { ok: false, error: fallo.error };
+  } catch (err) {
+    return comoError(err, "cancelarVisitaPorAdmin");
   }
   revalidarPanel(input.folio);
   return { ok: true, folio: input.folio };

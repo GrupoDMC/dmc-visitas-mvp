@@ -1041,14 +1041,20 @@ function Arrastrable({
         if (!asido || bloqueado) return e.preventDefault();
         e.dataTransfer.setData(tipo, String(indice));
         e.dataTransfer.effectAllowed = "move";
+        // Las filas de subdetalle viven dentro de la fila de su grupo: sin esto
+        // el arrastre del sub burbujea al Arrastrable de afuera, que —al no
+        // estar asido— lo cancela con preventDefault y nada se mueve.
+        e.stopPropagation();
       }}
-      onDragEnd={() => {
+      onDragEnd={(e) => {
         setAsido(false);
         setBorde(null);
+        e.stopPropagation();
       }}
       onDragOver={(e) => {
         if (bloqueado || !e.dataTransfer.types.includes(tipo)) return;
         e.preventDefault();
+        e.stopPropagation();
         e.dataTransfer.dropEffect = "move";
         setBorde(mitadDeArriba(e) ? "arriba" : "abajo");
       }}
@@ -1057,6 +1063,7 @@ function Arrastrable({
         setBorde(null);
         if (bloqueado || !e.dataTransfer.types.includes(tipo)) return;
         e.preventDefault();
+        e.stopPropagation();
         const desde = Number(e.dataTransfer.getData(tipo));
         if (!Number.isInteger(desde)) return;
         onReordenar(desde, mitadDeArriba(e) ? indice : indice + 1);

@@ -1,0 +1,405 @@
+"use client";
+
+import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  VIDEO_BITRATE,
+  VIDEO_LADO_MAYOR,
+  VIDEO_LADO_MENOR,
+  VIDEO_MAX_SEG,
+  medirVideo,
+  mb,
+  mimeBase,
+  motivoRechazo,
+  reloj,
+  tipoGrabacion,
+  type MedidaVideo,
+} from "@/lib/ui/video";
+
+type Estado = "pidiendo" | "lista" | "grabando" | "revisando" | "denegada" | "sin-camara";
+
+export interface ClipGrabado {
+  blob: Blob;
+  mime: string;
+  medida: MedidaVideo;
+}
+
+/**
+ * Grabación del video del trabajo: 720p y hasta 1 minuto.
+ *
+ * A la cámara se le piden 1280x720 y el contador corta la grabación solo al
+ * llegar al segundo 60, así que el clip nace dentro de lo que la base acepta
+ * (ck_video_duracion y ck_video_resolucion en dmc.visita_video). Antes de
+ * devolverlo se mide el archivo de verdad —lo que la cámara promete y lo que
+ * entrega no siempre coincide— y si se pasó de alguno de los límites se dice
+ * por qué en vez de subir algo que la base va a botar.
+ *
+ * Antes de aceptarlo el técnico lo ve reproducido: en terreno se graba el
+ * pórtico equivocado más seguido de lo que uno cree, y descubrirlo en la
+ * oficina ya no sirve de nada.
+ */
+export default function VideoSheet({
+  onGrabado,
+  onCerrar,
+}: {
+  onGrabado: (clip: ClipGrabado) => void;
+  onCerrar: () => void;
+}) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const grabadorRef = useRef<MediaRecorder | null>(null);
+  const trozosRef = useRef<Blob[]>([]);
+  const relojRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const [estado, setEstado] = useState<Estado>("pidiendo");
+  const [error, setError] = useState("");
+  const [segundos, setSegundos] = useState(0);
+  const [clip, setClip] = useState<{ url: string; blob: Blob; mime: string; medida: MedidaVideo } | null>(null);
+
+  const detener = useCallback(() => {
+    if (relojRef.current) {
+      clearInterval(relojRef.current);
+      relojRef.current = null;
+    }
+    const grabador = grabadorRef.current;
+    if (grabador && grabador.state !== "inactive") grabador.stop();
+    grabadorRef.current = null;
+    streamRef.current?.getTracks().forEach((t) => t.stop());
+    streamRef.current = null;
+  }, []);
+
+  useEffect(() => {
+    let cancelado = false;
+
+    async function pedir() {
+      if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) {
+        setEstado("sin-camara");
+        setError("Este navegador no permite abrir la cámara.");
+        return;
+      }
+      if (!tipoGrabacion()) {
+        setEstado("sin-camara");
+        setError("Este navegador no sabe grabar video. Usa la galería para adjuntar el clip.");
+        return;
+      }
+      try {
+        // 720p con el micrófono abierto: en terreno lo que se explica hablando
+        // vale tanto como lo que se ve.
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: { ideal: "environment" },
+            width: { ideal: VIDEO_LADO_MAYOR, max: VIDEO_LADO_MAYOR },
+            height: { ideal: VIDEO_LADO_MENOR, max: VIDEO_LADO_MENOR },
+            frameRate: { ideal: 30, max: 30 },
+          },
+          audio: true,
+        });
+        if (cancelado) {
+          stream.getTracks().forEach((t) => t.stop());
+          return;
+        }
+        streamRef.current = stream;
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          videoRef.current.muted = true;
+          await videoRef.current.play().catch(() => {});
+        }
+        setEstado("lista");
+      } catch (e) {
+        if (cancelado) return;
+        const nombre = e instanceof DOMException ? e.name : "";
+        if (nombre === "NotAllowedError" || nombre === "SecurityError") {
+          setEstado("denegada");
+          setError(
+            "Diste “Bloquear” al permiso de cámara o micrófono. Habilítalo en el candado de la barra de direcciones, o sube el clip desde la galería."
+          );
+        } else if (nombre === "NotFoundError" || nombre === "OverconstrainedError") {
+          setEstado("sin-camara");
+          setError("No se detectó una cámara que grabe en 720p en este equipo.");
+        } else {
+          setEstado("sin-camara");
+          setError("No se pudo abrir la cámara. Usa la galería para adjuntar el clip.");
+        }
+      }
+    }
+
+    pedir();
+    return () => {
+      cancelado = true;
+      detener();
+    };
+  }, [detener]);
+
+  useEffect(() => {
+    const previo = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previo;
+    };
+  }, []);
+
+  // La previsualización del clip vive en un object URL: si no se suelta, el
+  // celular se queda con el archivo en memoria hasta recargar la página.
+  useEffect(() => {
+    return () => {
+      if (clip) URL.revokeObjectURL(clip.url);
+    };
+  }, [clip]);
+
+  function cerrar() {
+    detener();
+    if (clip) URL.revokeObjectURL(clip.url);
+    onCerrar();
+  }
+
+  function grabar() {
+    const stream = streamRef.current;
+    const tipo = tipoGrabacion();
+    if (!stream || !tipo) return;
+
+    trozosRef.current = [];
+    const grabador = new MediaRecorder(stream, { mimeType: tipo, videoBitsPerSecond: VIDEO_BITRATE });
+    grabadorRef.current = grabador;
+
+    grabador.ondataavailable = (e) => {
+      if (e.data.size) trozosRef.current.push(e.data);
+    };
+    grabador.onstop = () => {
+      if (relojRef.current) {
+        clearInterval(relojRef.current);
+        relojRef.current = null;
+      }
+      void revisar(new Blob(trozosRef.current, { type: mimeBase(tipo) }), mimeBase(tipo));
+    };
+
+    grabador.start(1000);
+    setSegundos(0);
+    setEstado("grabando");
+
+    relojRef.current = setInterval(() => setSegundos((s) => s + 1), 1000);
+  }
+
+  const parar = useCallback(() => {
+    const grabador = grabadorRef.current;
+    if (grabador && grabador.state !== "inactive") grabador.stop();
+  }, []);
+
+  // El minuto se corta solo: es el tope que acepta dmc.visita_video. Va en un
+  // efecto y no dentro del setInterval para no disparar el corte desde el
+  // actualizador de estado, que React puede volver a ejecutar.
+  useEffect(() => {
+    if (estado === "grabando" && segundos >= VIDEO_MAX_SEG) parar();
+  }, [estado, segundos, parar]);
+
+  /** Mide el clip recién grabado y lo deja listo para aceptar o repetir. */
+  async function revisar(blob: Blob, mime: string) {
+    try {
+      const medida = await medirVideo(blob);
+      const rechazo = motivoRechazo(blob, medida);
+      if (rechazo) {
+        setError(rechazo);
+        setEstado("lista");
+        return;
+      }
+      setError("");
+      setClip({ url: URL.createObjectURL(blob), blob, mime, medida });
+      setEstado("revisando");
+    } catch {
+      setError("No se pudo leer el video grabado. Inténtalo otra vez.");
+      setEstado("lista");
+    }
+  }
+
+  function repetir() {
+    if (clip) URL.revokeObjectURL(clip.url);
+    setClip(null);
+    setSegundos(0);
+    setEstado("lista");
+  }
+
+  function aceptar() {
+    if (!clip) return;
+    detener();
+    URL.revokeObjectURL(clip.url);
+    onGrabado({ blob: clip.blob, mime: clip.mime, medida: clip.medida });
+  }
+
+  /** El clip traído desde la galería pasa por la misma medición. */
+  async function desdeArchivo(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setError("");
+    try {
+      const medida = await medirVideo(file);
+      const rechazo = motivoRechazo(file, medida);
+      if (rechazo) {
+        setError(rechazo);
+        return;
+      }
+      detener();
+      onGrabado({ blob: file, mime: mimeBase(file.type), medida });
+    } catch {
+      setError("No se pudo leer ese archivo de video.");
+    }
+  }
+
+  const restantes = VIDEO_MAX_SEG - segundos;
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Grabar video"
+      className="fixed inset-0 z-50 bg-[rgba(45,43,43,.7)] flex flex-col justify-end items-center"
+    >
+      <div className="w-full max-w-[460px] max-h-[94vh] overflow-y-auto bg-[var(--color-bg)] border-t-2 border-[var(--color-text)] animate-up-sheet">
+        <div className="flex items-center gap-2.5 px-4 py-3.5 border-b-2 border-[var(--color-divider)]">
+          <div className="font-extrabold text-[17px] leading-[1.2]">
+            {estado === "revisando" ? "Revisa el video" : "Grabar video"}
+          </div>
+          <button
+            type="button"
+            onClick={cerrar}
+            aria-label="Cerrar"
+            className="ml-auto w-[38px] h-[38px] grid place-items-center bg-transparent border-0 cursor-pointer text-[var(--color-text)] hover:bg-black/[.08]"
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4">
+              <path d="M6 6l12 12M18 6L6 18" />
+            </svg>
+          </button>
+        </div>
+
+        <div className="p-4">
+          <div className="relative w-full aspect-[16/9] bg-[var(--color-text)] overflow-hidden border border-[var(--color-divider)]">
+            {clip ? (
+              <video src={clip.url} controls playsInline className="w-full h-full object-contain bg-black" />
+            ) : (
+              <video ref={videoRef} playsInline muted className="w-full h-full object-cover" />
+            )}
+
+            {estado === "pidiendo" ? (
+              <div className="absolute inset-0 grid place-items-center px-6 text-center text-[13px] text-[var(--color-bg)]">
+                Esperando que autorices la cámara y el micrófono…
+              </div>
+            ) : null}
+            {estado === "denegada" || estado === "sin-camara" ? (
+              <div className="absolute inset-0 grid place-items-center px-6 text-center text-[13px] text-[var(--color-bg)]">
+                {error}
+              </div>
+            ) : null}
+
+            {estado === "grabando" ? (
+              <div className="absolute top-2 left-2 flex items-center gap-2 px-2.5 py-1.5 bg-[rgba(32,30,29,.78)] text-[var(--color-bg)]">
+                <span className="w-2.5 h-2.5 rounded-full bg-[#e5484d] animate-pulse" />
+                <span className="font-extrabold text-[13px] tabular-nums">{reloj(segundos)}</span>
+                <span className="text-[11px] opacity-80 tabular-nums">
+                  quedan {reloj(restantes)}
+                </span>
+              </div>
+            ) : null}
+          </div>
+
+          {/* La barra del minuto: se ve de un vistazo cuánto queda. */}
+          {estado === "grabando" ? (
+            <div className="h-1 mt-2 bg-[var(--color-divider)] overflow-hidden">
+              <div
+                className="h-full bg-[var(--color-accent)] transition-[width] duration-1000 ease-linear"
+                style={{ width: `${(segundos / VIDEO_MAX_SEG) * 100}%` }}
+              />
+            </div>
+          ) : null}
+
+          {estado === "lista" ? (
+            <>
+              <button
+                type="button"
+                onClick={grabar}
+                className="w-full min-h-[58px] flex items-center justify-between px-4.5 mt-3.5 bg-[var(--color-accent)] text-[var(--color-bg)] border-0 font-extrabold text-base cursor-pointer text-left hover:bg-[var(--color-accent-hover)]"
+              >
+                <span>Empezar a grabar</span>
+                <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9">
+                  <path d="M3 7h11v10H3z" />
+                  <path d="M14 11l7-4v10l-7-4z" />
+                </svg>
+              </button>
+              <p className="mt-2.5 mb-0 text-xs opacity-66">
+                720p y hasta 1 minuto. Al llegar al minuto la grabación se corta sola.
+              </p>
+            </>
+          ) : null}
+
+          {estado === "grabando" ? (
+            <button
+              type="button"
+              onClick={parar}
+              className="w-full min-h-[58px] flex items-center justify-between px-4.5 mt-3.5 bg-[var(--color-text)] text-[var(--color-bg)] border-0 font-extrabold text-base cursor-pointer text-left hover:bg-[var(--color-neutral-900)]"
+            >
+              <span>Detener y revisar</span>
+              <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9">
+                <rect x="6" y="6" width="12" height="12" />
+              </svg>
+            </button>
+          ) : null}
+
+          {estado === "revisando" && clip ? (
+            <>
+              <div className="mt-3 flex items-center gap-2 text-xs opacity-66 tabular-nums">
+                <span>
+                  {reloj(clip.medida.duracionSeg)} · {clip.medida.ancho}x{clip.medida.alto}
+                </span>
+                <span className="ml-auto">{mb(clip.blob.size)}</span>
+              </div>
+              <button
+                type="button"
+                onClick={aceptar}
+                className="w-full min-h-[58px] flex items-center justify-between px-4.5 mt-2.5 bg-[var(--color-accent)] text-[var(--color-bg)] border-0 font-extrabold text-base cursor-pointer text-left hover:bg-[var(--color-accent-hover)]"
+              >
+                <span>Usar este video</span>
+                <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                  <path d="M4 12l5 5L20 6" />
+                </svg>
+              </button>
+              <button
+                type="button"
+                onClick={repetir}
+                className="w-full min-h-[50px] mt-2.5 px-4 bg-transparent border border-[var(--color-divider)] text-[var(--color-text)] font-extrabold text-sm cursor-pointer text-left hover:bg-black/[.07]"
+              >
+                Grabar otro
+              </button>
+            </>
+          ) : null}
+
+          {error && estado !== "denegada" && estado !== "sin-camara" ? (
+            <p className="mt-2.5 mb-0 text-xs text-[var(--color-accent-active)]">{error}</p>
+          ) : null}
+
+          {estado !== "grabando" && estado !== "revisando" ? (
+            <label className="w-full min-h-[52px] flex items-center gap-2.5 px-4 mt-2.5 bg-transparent border border-dashed border-black/[.5] text-[var(--color-text)] font-extrabold text-sm cursor-pointer hover:bg-black/[.06]">
+              <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+                <path d="M4 5h16v14H4z" />
+                <path d="M10 9l5 3-5 3z" />
+              </svg>
+              <span>Subir un video desde la galería</span>
+              <input
+                type="file"
+                accept="video/mp4,video/webm,video/quicktime"
+                onChange={desdeArchivo}
+                className="absolute w-px h-px opacity-0 pointer-events-none"
+              />
+            </label>
+          ) : null}
+
+          {estado !== "grabando" ? (
+            <button
+              type="button"
+              onClick={cerrar}
+              className="w-full min-h-[50px] mt-2.5 px-4 bg-transparent border border-[var(--color-divider)] text-[var(--color-text)] font-extrabold text-sm cursor-pointer text-left hover:bg-black/[.07]"
+            >
+              Cancelar
+            </button>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+}

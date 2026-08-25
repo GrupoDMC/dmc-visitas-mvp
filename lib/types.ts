@@ -10,7 +10,14 @@ export type EstadoVisita =
   | "COMPLETADA"
   | "PENDIENTE"
   | "REAGENDADA"
-  | "CANCELADA";
+  | "CANCELADA"
+  /**
+   * La cierra administración desde el panel: una visita que quedó vieja o que
+   * ya no sirve. CANCELADA, en cambio, la deja el técnico parado en la tienda.
+   * Solo se puede aplicar sobre PROGRAMADA o EN_CURSO; una COMPLETADA ya tiene
+   * acta firmada y no se toca.
+   */
+  | "CANCELADA_ADMIN";
 
 export type EstadoProblema = "ABIERTO" | "PENDIENTE" | "RESUELTO";
 
@@ -173,6 +180,23 @@ export interface VisitaFoto {
   tomadaEn: string | null;
 }
 
+/** Clip del trabajo: 720p y hasta 1 minuto, servido desde la base. */
+export interface VisitaVideo {
+  id: number;
+  visitaId: number;
+  problemaId: number | null;
+  etiqueta: string | null;
+  /** Ruta interna: /api/visita/video/<id>. */
+  archivoUrl: string;
+  mime: string;
+  bytes: number | null;
+  duracionSeg: number | null;
+  ancho: number | null;
+  alto: number | null;
+  orden: number;
+  grabadoEn: string | null;
+}
+
 export interface VisitaFirma {
   id: number;
   visitaId: number;
@@ -230,6 +254,7 @@ export interface Visita {
   trabajos?: VisitaTrabajo[];
   problemas?: Problema[];
   fotos?: VisitaFoto[];
+  videos?: VisitaVideo[];
   firmas?: VisitaFirma[];
   reagendamientos?: Reagendamiento[];
 }

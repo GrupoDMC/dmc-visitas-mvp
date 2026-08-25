@@ -6,6 +6,7 @@ import type {
   CatalogoProblema,
   CatalogoTrabajo,
   Cliente,
+  RolUsuario,
   Sucursal,
   Tecnico,
 } from "@/lib/types";
@@ -18,6 +19,12 @@ import type {
 // petición y los bajan por contexto, en vez de que cada diálogo los pida.
 
 export interface Referencias {
+  /**
+   * Con qué rol entró quien está mirando. Lo necesitan las acciones que no son
+   * de cualquiera —cerrar una visita por administración, por ejemplo— para no
+   * ofrecer un botón que el servidor va a rechazar igual.
+   */
+  rol: RolUsuario;
   clientes: Cliente[];
   sucursales: Sucursal[];
   tecnicos: Tecnico[];
@@ -27,6 +34,7 @@ export interface Referencias {
 }
 
 export const REFERENCIAS_VACIAS: Referencias = {
+  rol: "TECNICO",
   clientes: [],
   sucursales: [],
   tecnicos: [],
@@ -43,6 +51,11 @@ export function ReferenciasProvider({ valor, children }: { valor: Referencias; c
 
 export function useReferencias(): Referencias {
   return useContext(Contexto);
+}
+
+/** ¿Quien está mirando es administrador? */
+export function esAdmin(ref: Referencias): boolean {
+  return ref.rol === "ADMIN";
 }
 
 /** Nombre legible de un tipo de problema; si ya no está en el catálogo, su código. */

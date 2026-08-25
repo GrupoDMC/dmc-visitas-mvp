@@ -184,51 +184,40 @@ export default function Dialogo({
                       onCambiar={(v) => onCampo(c.k, v)}
                     />
                   ) : c.tipo === "password" ? (
-                    // El ojo va dentro del campo y la casilla justo debajo: un
-                    // solo control, sin la caja suelta al lado del input.
-                    <>
-                      <div className="relative">
-                        <input
-                          id={`dlg-${c.k}`}
-                          type={verPass ? "text" : "password"}
-                          value={texto}
-                          onChange={(e) => onCampo(c.k, e.target.value)}
-                          placeholder={c.ph}
-                          autoComplete="off"
-                          spellCheck={false}
-                          className="input pr-11 tracking-[.08em]"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => setVerPass((v) => !v)}
-                          aria-label={verPass ? "Ocultar contraseña" : "Ver contraseña"}
-                          aria-pressed={verPass}
-                          title={verPass ? "Ocultar contraseña" : "Ver contraseña"}
-                          className="absolute right-0 top-0 bottom-0 w-10 grid place-items-center bg-transparent border-0 cursor-pointer text-[var(--color-text)] opacity-60 hover:opacity-100"
-                        >
-                          {verPass ? (
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                              <path d="M2 12s3.5-6.5 10-6.5S22 12 22 12s-3.5 6.5-10 6.5S2 12 2 12z" />
-                              <path d="M4 4l16 16" />
-                            </svg>
-                          ) : (
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                              <path d="M2 12s3.5-6.5 10-6.5S22 12 22 12s-3.5 6.5-10 6.5S2 12 2 12z" />
-                              <circle cx="12" cy="12" r="2.6" />
-                            </svg>
-                          )}
-                        </button>
-                      </div>
-                      <label className="flex items-center gap-2 mt-1.5 w-fit text-[13px] cursor-pointer select-none">
-                        <input
-                          type="checkbox"
-                          checked={verPass}
-                          onChange={(e) => setVerPass(e.target.checked)}
-                          className="w-4 h-4 accent-[var(--color-accent)] cursor-pointer"
-                        />
-                        <span className="opacity-75">Ver contraseña</span>
-                      </label>
-                    </>
+                    // El ojo va dentro del campo: un solo control, sin casilla
+                    // ni caja suelta al lado del input.
+                    <div className="relative">
+                      <input
+                        id={`dlg-${c.k}`}
+                        type={verPass ? "text" : "password"}
+                        value={texto}
+                        onChange={(e) => onCampo(c.k, e.target.value)}
+                        placeholder={c.ph}
+                        autoComplete="off"
+                        spellCheck={false}
+                        className="input pr-11 tracking-[.08em]"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setVerPass((v) => !v)}
+                        aria-label={verPass ? "Ocultar contraseña" : "Ver contraseña"}
+                        aria-pressed={verPass}
+                        title={verPass ? "Ocultar contraseña" : "Ver contraseña"}
+                        className="absolute right-0 top-0 bottom-0 w-10 grid place-items-center bg-transparent border-0 cursor-pointer text-[var(--color-text)] opacity-60 hover:opacity-100"
+                      >
+                        {verPass ? (
+                          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <path d="M2 12s3.5-6.5 10-6.5S22 12 22 12s-3.5 6.5-10 6.5S2 12 2 12z" />
+                            <path d="M4 4l16 16" />
+                          </svg>
+                        ) : (
+                          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <path d="M2 12s3.5-6.5 10-6.5S22 12 22 12s-3.5 6.5-10 6.5S2 12 2 12z" />
+                            <circle cx="12" cy="12" r="2.6" />
+                          </svg>
+                        )}
+                      </button>
+                    </div>
                   ) : c.tipo === "toggle" ? (
                     <div className="flex gap-2">
                       <button

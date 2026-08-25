@@ -15,7 +15,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   if (sesion.usuario.rol === "TECNICO") redirect("/tecnico");
 
   const [referencias, visitas, reagendas, problemasAbiertos, usuarios, accesos] = await Promise.all([
-    cargarReferencias(),
+    cargarReferencias(sesion.usuario.rol),
     contarVisitas(),
     contarReagendasPendientes(),
     contarProblemasAbiertos(),

@@ -7,9 +7,18 @@ import NuevaVisitaSheet from "@/components/mobile/NuevaVisitaSheet";
 import { Toast, useToast } from "@/components/ui/Toast";
 import { ESTADO_VISITA_BARRA, ESTADO_VISITA_LABEL, ESTADO_VISITA_TAG, textoMotivos } from "@/lib/ui/estado";
 import { actasEnCola, haceCuanto, sacarDeCola, type ActaEnCola } from "@/lib/ui/borrador";
+import { estaCancelada } from "@/lib/ui/estado";
 import type { EstadoVisita, Visita } from "@/lib/types";
 
-const ESTADOS: EstadoVisita[] = ["PROGRAMADA", "EN_CURSO", "COMPLETADA", "PENDIENTE", "REAGENDADA", "CANCELADA"];
+const ESTADOS: EstadoVisita[] = [
+  "PROGRAMADA",
+  "EN_CURSO",
+  "COMPLETADA",
+  "PENDIENTE",
+  "REAGENDADA",
+  "CANCELADA",
+  "CANCELADA_ADMIN",
+];
 
 export default function VisitasList({ visitas, hoy }: { visitas: Visita[]; hoy: string }) {
   const router = useRouter();
@@ -27,7 +36,10 @@ export default function VisitasList({ visitas, hoy }: { visitas: Visita[]; hoy: 
   // esto el aviso quedaría para siempre pidiendo enviar algo ya enviado.
   useEffect(() => {
     const cerradas = new Set(
-      visitas.filter((v) => v.estado === "COMPLETADA" || v.estado === "CANCELADA").map((v) => v.folio)
+      // Una visita que administración cerró desde el panel también da por
+      // cerrada el acta que este celular tenía en cola: ya no hay dónde
+      // guardarla y el aviso quedaría pidiendo enviar algo que no se acepta.
+      visitas.filter((v) => v.estado === "COMPLETADA" || estaCancelada(v.estado)).map((v) => v.folio)
     );
     const cola = actasEnCola();
     for (const acta of cola) {

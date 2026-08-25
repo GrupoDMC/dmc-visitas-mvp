@@ -7,7 +7,15 @@ export const ESTADO_VISITA_LABEL: Record<EstadoVisita, string> = {
   PENDIENTE: "Pendiente",
   REAGENDADA: "Reagendada",
   CANCELADA: "Cancelada",
+  CANCELADA_ADMIN: "Cancelada por admin",
 };
+
+/** Los dos estados que dejan la visita cerrada sin acta. */
+export const ESTADOS_CANCELADOS: EstadoVisita[] = ["CANCELADA", "CANCELADA_ADMIN"];
+
+export function estaCancelada(estado: EstadoVisita): boolean {
+  return estado === "CANCELADA" || estado === "CANCELADA_ADMIN";
+}
 
 export type TagVariant = "accent" | "neutral" | "outline" | "dark";
 
@@ -18,6 +26,7 @@ export const ESTADO_VISITA_TAG: Record<EstadoVisita, TagVariant> = {
   PENDIENTE: "outline",
   REAGENDADA: "outline",
   CANCELADA: "neutral",
+  CANCELADA_ADMIN: "neutral",
 };
 
 export const ESTADO_VISITA_COLOR: Record<EstadoVisita, string> = {
@@ -27,6 +36,7 @@ export const ESTADO_VISITA_COLOR: Record<EstadoVisita, string> = {
   PENDIENTE: "var(--color-accent-400)",
   REAGENDADA: "var(--color-accent-400)",
   CANCELADA: "var(--color-neutral-400)",
+  CANCELADA_ADMIN: "var(--color-neutral-500)",
 };
 
 // Barra izquierda de las tarjetas de visita (móvil): el estado más urgente resalta.
@@ -37,6 +47,7 @@ export const ESTADO_VISITA_BARRA: Record<EstadoVisita, string> = {
   PENDIENTE: "var(--color-accent-400)",
   REAGENDADA: "var(--color-accent-400)",
   CANCELADA: "var(--color-neutral-400)",
+  CANCELADA_ADMIN: "var(--color-neutral-500)",
 };
 
 export const ESTADO_PROBLEMA_LABEL: Record<EstadoProblema, string> = {

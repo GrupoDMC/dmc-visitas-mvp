@@ -57,6 +57,29 @@ export interface FotoForm {
   src: string;
 }
 
+/**
+ * Un clip del trabajo, tal como lo lleva el formulario.
+ *
+ * No entra en el borrador y por una razón de fondo: el video no es algo que el
+ * técnico tenga "a medio escribir". Se sube a dmc.visita_video en cuanto se
+ * termina de grabar y se desactiva allá mismo en cuanto se borra, así que la
+ * base ya sabe cuáles hay. El formulario los vuelve a leer de la visita al
+ * entrar, y no de una copia en el celular que podría contradecirla.
+ */
+export interface VideoForm {
+  /** Id en dmc.visita_video. 0 mientras todavía se está subiendo. */
+  id: number;
+  /** /api/visita/video/<id> una vez subido; object URL mientras sube. */
+  src: string;
+  duracionSeg: number;
+  ancho: number;
+  alto: number;
+  bytes: number;
+  /** 0 a 100 mientras sube; null cuando ya está guardado en la base. */
+  progreso: number | null;
+  error: string | null;
+}
+
 export interface FirmaForm {
   imagen: string;
   nombre: string;

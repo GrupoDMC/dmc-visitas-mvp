@@ -5,13 +5,26 @@ import { useRouter } from "next/navigation";
 import Tag from "@/components/Tag";
 import AdminHeader from "@/components/admin/AdminHeader";
 import FiltrosBar, { type ChipFiltro } from "@/components/admin/FiltrosBar";
-import VisitaDialogo from "@/components/admin/VisitaDialogos";
+import VisitaDialogo, { CancelarAdminDialogo } from "@/components/admin/VisitaDialogos";
 import { Toast, useToast } from "@/components/ui/Toast";
 import { ESTADO_VISITA_LABEL, ESTADO_VISITA_TAG, textoMotivos } from "@/lib/ui/estado";
-import { useReferencias } from "@/lib/ui/referencias";
+import { esAdmin, useReferencias } from "@/lib/ui/referencias";
 import type { Visita, EstadoVisita } from "@/lib/types";
 
-const ESTADOS: EstadoVisita[] = ["PROGRAMADA", "EN_CURSO", "COMPLETADA", "PENDIENTE", "REAGENDADA", "CANCELADA"];
+const ESTADOS: EstadoVisita[] = [
+  "PROGRAMADA",
+  "EN_CURSO",
+  "COMPLETADA",
+  "PENDIENTE",
+  "REAGENDADA",
+  "CANCELADA",
+  "CANCELADA_ADMIN",
+];
+
+/** Las que el administrador todavía puede cerrar por su cuenta. */
+function cerrablePorAdmin(v: Visita): boolean {
+  return v.estado === "PROGRAMADA" || v.estado === "EN_CURSO";
+}
 
 interface Filtros {
   estado: string;
@@ -46,7 +59,9 @@ export default function VisitasTable({
   permiteCrear?: boolean;
 }) {
   const router = useRouter();
-  const { tecnicos, problemas: catalogoProblema } = useReferencias();
+  const ref = useReferencias();
+  const { tecnicos, problemas: catalogoProblema } = ref;
+  const admin = esAdmin(ref);
   const { toast, aviso } = useToast();
   const [busqueda, setBusqueda] = useState("");
   const [f, setF] = useState<Filtros>({
@@ -56,6 +71,8 @@ export default function VisitasTable({
     tipo: tipoInicial ?? "",
   });
   const [nueva, setNueva] = useState(false);
+  /** La visita que el administrador está por cerrar desde el listado. */
+  const [cancelando, setCancelando] = useState<Visita | null>(null);
 
   const fechas = useMemo(
     () => [...new Set(visitas.map((v) => v.fechaProgramada))].sort().reverse(),
@@ -171,7 +188,7 @@ export default function VisitasTable({
                 <th>Motivo</th>
                 <th>Estado</th>
                 {mostrarMotivo ? <th>Motivo del técnico</th> : null}
-                <th style={{ width: 44 }} />
+                <th style={{ width: admin ? 84 : 44 }} />
               </tr>
             </thead>
             <tbody>
@@ -198,7 +215,25 @@ export default function VisitasTable({
                       {v.motivoPendiente ?? v.reagendamientos?.[0]?.motivo ?? "Sin motivo registrado"}
                     </td>
                   ) : null}
-                  <td className="text-right">
+                  <td className="text-right whitespace-nowrap">
+                    {/* Cerrar la visita vieja desde el propio listado: es donde
+                        se la encuentra, no entrando una por una al acta. */}
+                    {admin && cerrablePorAdmin(v) ? (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setCancelando(v);
+                        }}
+                        className="btn btn-icon w-8 h-8 border border-black/[.3] mr-1.5"
+                        aria-label={`Cancelar por admin ${v.folio}`}
+                        title="Cancelar por admin"
+                      >
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <circle cx="12" cy="12" r="8.5" />
+                          <path d="M6 6l12 12" />
+                        </svg>
+                      </button>
+                    ) : null}
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
@@ -233,6 +268,17 @@ export default function VisitasTable({
           onHecho={(mensaje, folio) => {
             aviso(mensaje);
             if (folio) router.refresh();
+          }}
+        />
+      ) : null}
+
+      {cancelando ? (
+        <CancelarAdminDialogo
+          visita={cancelando}
+          onCerrar={() => setCancelando(null)}
+          onHecho={(mensaje) => {
+            aviso(mensaje);
+            router.refresh();
           }}
         />
       ) : null}

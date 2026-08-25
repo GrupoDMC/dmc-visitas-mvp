@@ -3,8 +3,10 @@
    Esquema + catálogos editables + datos de ejemplo que reproducen lo que
    muestran las dos vistas del prototipo:
      · app móvil del técnico  (agenda, ficha, motivo, trabajos realizados,
-                               problemas, fotos, firma, mis visitas realizadas)
-     · panel de coordinación  (visitas, reagendas, problemas, checklist, actas)
+                               problemas, fotos, video, firma, mis visitas
+                               realizadas)
+     · panel de coordinación  (visitas, reagendas, problemas, checklist, actas,
+                               cierre administrativo de visitas viejas)
 
    Uso:   sqlcmd -S servidor -d DMC_Contingencia -i dmc_contingencia_sqlserver.sql
    Notas: singular, snake_case, uq_/ck_/fk_/ix_/df_, esquema dmc,
@@ -39,8 +41,12 @@ SELECT @sql += N'DROP TABLE ' + QUOTENAME(SCHEMA_NAME(schema_id)) + N'.' + QUOTE
 FROM sys.tables WHERE SCHEMA_NAME(schema_id) = 'dmc';
 SELECT @sql += N'DROP SEQUENCE ' + QUOTENAME(SCHEMA_NAME(schema_id)) + N'.' + QUOTENAME(name) + N';'
 FROM sys.sequences WHERE SCHEMA_NAME(schema_id) = 'dmc';
-EXEC sp_executesql @sql;
-GO
+EXEC sp_executesql @sql;   -- y a continuacion, un GO
+
+   Ojo: al descomentar, el GO va escrito solo en su linea. Aca no puede
+   estar asi porque sqlcmd corta el lote en cualquier GO que ocupe la
+   linea entera, aunque este dentro de un comentario, y partia este
+   bloque en dos dando dos errores de sintaxis en cada corrida.
 */
 
 /* =====================================================================
@@ -220,7 +226,7 @@ CREATE TABLE dmc.visita (
     sucursal_id           bigint        NOT NULL,
     tecnico_id            bigint        NOT NULL,
     motivo_codigo         varchar(40)   NOT NULL,   -- FK al catálogo editable (Lista 1)
-    estado                varchar(12)   NOT NULL CONSTRAINT df_visita_estado DEFAULT ('PROGRAMADA'),
+    estado                varchar(16)   NOT NULL CONSTRAINT df_visita_estado DEFAULT ('PROGRAMADA'),
     fecha_programada      date          NOT NULL,
     hora_programada       time(0)       NULL,       -- opcional salvo instalación
     trabajo_solicitado    nvarchar(max) NOT NULL,
@@ -239,8 +245,10 @@ CREATE TABLE dmc.visita (
     CONSTRAINT fk_visita_tecnico    FOREIGN KEY (tecnico_id)    REFERENCES dmc.tecnico  (id),
     CONSTRAINT fk_visita_motivo     FOREIGN KEY (motivo_codigo) REFERENCES dmc.catalogo_motivo (codigo),
     CONSTRAINT fk_visita_creada_por FOREIGN KEY (creada_por)    REFERENCES dmc.usuario  (id),
+    -- CANCELADA_ADMIN la pone administracion desde el panel sobre una visita
+    -- vieja o que ya no sirve; CANCELADA la deja el tecnico parado en la tienda.
     CONSTRAINT ck_visita_estado CHECK (estado IN
-        ('PROGRAMADA','EN_CURSO','COMPLETADA','PENDIENTE','REAGENDADA','CANCELADA')),
+        ('PROGRAMADA','EN_CURSO','COMPLETADA','PENDIENTE','REAGENDADA','CANCELADA','CANCELADA_ADMIN')),
     CONSTRAINT ck_visita_hora_instalacion CHECK (motivo_codigo <> 'INSTALACION' OR hora_programada IS NOT NULL)
 );
 GO
@@ -298,7 +306,7 @@ GO
 CREATE TABLE dmc.visita_estado_historial (
     id           bigint       IDENTITY(1,1) NOT NULL,
     visita_id    bigint       NOT NULL,
-    estado       varchar(12)  NOT NULL,
+    estado       varchar(16)  NOT NULL,
     motivo       nvarchar(max) NULL,
     origen       varchar(6)   NOT NULL CONSTRAINT df_hist_origen DEFAULT ('WEB'),
     usuario_id   bigint       NULL,
@@ -310,7 +318,7 @@ CREATE TABLE dmc.visita_estado_historial (
     CONSTRAINT fk_hist_tecnico FOREIGN KEY (tecnico_id) REFERENCES dmc.tecnico (id),
     CONSTRAINT ck_hist_origen  CHECK (origen IN ('MOVIL','WEB')),
     CONSTRAINT ck_hist_estado  CHECK (estado IN
-        ('PROGRAMADA','EN_CURSO','COMPLETADA','PENDIENTE','REAGENDADA','CANCELADA'))
+        ('PROGRAMADA','EN_CURSO','COMPLETADA','PENDIENTE','REAGENDADA','CANCELADA','CANCELADA_ADMIN'))
 );
 GO
 CREATE INDEX ix_hist_visita ON dmc.visita_estado_historial (visita_id, ocurrido_en);
@@ -475,6 +483,56 @@ GO
 CREATE INDEX ix_foto_visita ON dmc.visita_foto (visita_id, orden);
 GO
 
+-- El video del trabajo. Mismo trato que la foto: los bytes viven en la fila y
+-- archivo_url es la ruta interna con la que la app lo sirve. Los tres limites
+-- del formulario quedan escritos aca y no solo en el celular:
+--   duracion 60 s  ·  resolucion 720p  ·  25 MB por clip
+--
+-- El clip no cabe en un solo request (el cuerpo de una Server Action se corta
+-- en 4,5 MB en produccion), asi que la fila nace vacia y se le van pegando
+-- trozos. subida_completa separa el clip utilizable del que se quedo a medias
+-- porque se corto la senal: hasta que no llega el ultimo trozo, la fila existe
+-- pero el acta no la muestra.
+CREATE TABLE dmc.visita_video (
+    id              bigint         IDENTITY(1,1) NOT NULL,
+    visita_id       bigint         NOT NULL,
+    problema_id     bigint         NULL,
+    etiqueta        nvarchar(40)   NULL,
+    archivo_url     nvarchar(400)  NOT NULL CONSTRAINT df_video_url DEFAULT (''),  -- /api/visita/video/<id>
+    contenido       varbinary(max) NULL,           -- los bytes del clip
+    mime            varchar(40)    NOT NULL CONSTRAINT df_video_mime DEFAULT ('video/mp4'),
+    bytes           int            NULL,           -- lo que declaro el celular
+    bytes_recibidos int            NOT NULL CONSTRAINT df_video_recibidos DEFAULT (0),
+    duracion_seg    smallint       NULL,
+    ancho           smallint       NULL,
+    alto            smallint       NULL,
+    orden           smallint       NOT NULL CONSTRAINT df_video_orden DEFAULT (0),
+    subida_completa bit            NOT NULL CONSTRAINT df_video_completa DEFAULT (0),
+    activo          bit            NOT NULL CONSTRAINT df_video_activo DEFAULT (1),
+    grabado_en      datetime2(0)   NULL,
+    subido_en       datetime2(0)   NOT NULL CONSTRAINT df_video_subido DEFAULT (SYSDATETIME()),
+    CONSTRAINT pk_visita_video   PRIMARY KEY (id),
+    CONSTRAINT fk_video_visita   FOREIGN KEY (visita_id)   REFERENCES dmc.visita   (id) ON DELETE CASCADE,
+    CONSTRAINT fk_video_problema FOREIGN KEY (problema_id) REFERENCES dmc.problema (id),
+    CONSTRAINT ck_video_mime     CHECK (mime IN ('video/mp4','video/webm','video/quicktime')),
+    CONSTRAINT ck_video_duracion CHECK (duracion_seg IS NULL OR (duracion_seg > 0 AND duracion_seg <= 60)),
+    -- 720p: el lado mayor no pasa de 1280 y el menor no pasa de 720, en
+    -- horizontal (1280x720) o en vertical (720x1280).
+    CONSTRAINT ck_video_resolucion CHECK (
+        (ancho IS NULL AND alto IS NULL) OR
+        (ancho BETWEEN 1 AND 1280 AND alto BETWEEN 1 AND 1280 AND (ancho <= 720 OR alto <= 720))),
+    CONSTRAINT ck_video_bytes     CHECK (bytes IS NULL OR (bytes > 0 AND bytes <= 26214400)),
+    CONSTRAINT ck_video_recibidos CHECK (bytes_recibidos >= 0 AND bytes_recibidos <= 26214400),
+    CONSTRAINT ck_video_completa  CHECK (
+        subida_completa = 0 OR (bytes IS NOT NULL AND bytes_recibidos = bytes))
+);
+GO
+CREATE INDEX ix_video_visita ON dmc.visita_video (visita_id, orden)
+    WHERE activo = 1 AND subida_completa = 1;
+-- Los clips que nunca terminaron de subir: se limpian aparte.
+CREATE INDEX ix_video_incompleto ON dmc.visita_video (subido_en) WHERE subida_completa = 0;
+GO
+
 CREATE TABLE dmc.visita_firma (
     id          bigint        IDENTITY(1,1) NOT NULL,
     visita_id   bigint        NOT NULL,
@@ -524,16 +582,19 @@ CREATE TABLE dmc.acta_envio_adjunto (
     tipo             varchar(9)    NOT NULL,
     visita_foto_id   bigint        NULL,
     visita_firma_id  bigint        NULL,
+    visita_video_id  bigint        NULL,
     nombre_archivo   nvarchar(160) NOT NULL,
     archivo_url      nvarchar(400) NULL,
     CONSTRAINT pk_acta_envio_adjunto PRIMARY KEY (id),
     CONSTRAINT fk_adj_envio FOREIGN KEY (envio_id)        REFERENCES dmc.acta_envio   (id) ON DELETE CASCADE,
     CONSTRAINT fk_adj_foto  FOREIGN KEY (visita_foto_id)  REFERENCES dmc.visita_foto  (id),
     CONSTRAINT fk_adj_firma FOREIGN KEY (visita_firma_id) REFERENCES dmc.visita_firma (id),
-    CONSTRAINT ck_adj_tipo   CHECK (tipo IN ('FOTO','FIRMA','PDF_ACTA')),
+    CONSTRAINT fk_adj_video FOREIGN KEY (visita_video_id) REFERENCES dmc.visita_video (id),
+    CONSTRAINT ck_adj_tipo   CHECK (tipo IN ('FOTO','FIRMA','VIDEO','PDF_ACTA')),
     CONSTRAINT ck_adj_origen CHECK (
         (tipo = 'FOTO'  AND visita_foto_id  IS NOT NULL) OR
         (tipo = 'FIRMA' AND visita_firma_id IS NOT NULL) OR
+        (tipo = 'VIDEO' AND visita_video_id IS NOT NULL) OR
         (tipo = 'PDF_ACTA'))
 );
 GO
@@ -727,7 +788,8 @@ CREATE OR ALTER VIEW dmc.v_carga_tecnico AS
 SELECT t.id AS tecnico_id, t.nombre_completo AS tecnico, v.fecha_programada,
        COUNT(*) AS programadas,
        SUM(CASE WHEN v.estado = 'COMPLETADA' THEN 1 ELSE 0 END) AS realizadas,
-       SUM(CASE WHEN v.estado IN ('REAGENDADA','PENDIENTE','CANCELADA') THEN 1 ELSE 0 END) AS no_realizadas
+       SUM(CASE WHEN v.estado IN ('REAGENDADA','PENDIENTE','CANCELADA','CANCELADA_ADMIN')
+                THEN 1 ELSE 0 END) AS no_realizadas
 FROM dmc.visita v
 JOIN dmc.tecnico t ON t.id = v.tecnico_id
 GROUP BY t.id, t.nombre_completo, v.fecha_programada;
@@ -771,6 +833,27 @@ JOIN dmc.cliente  c ON c.id = v.cliente_id
 JOIN dmc.catalogo_motivo cm ON cm.codigo = v.motivo_codigo
 LEFT JOIN dmc.visita_ejecucion e ON e.visita_id = v.id
 WHERE v.estado IN ('COMPLETADA','PENDIENTE');
+GO
+
+-- Quien cerro la visita desde el panel, cuando y con que explicacion. El motivo
+-- no vive en dmc.visita: lo deja la bitacora, igual que el de una visita
+-- PENDIENTE o CANCELADA.
+CREATE OR ALTER VIEW dmc.v_visita_cancelada_admin AS
+SELECT v.id AS visita_id, v.folio, v.fecha_programada, v.tecnico_id,
+       t.nombre_completo AS tecnico,
+       s.nombre AS sucursal, c.nombre_fantasia AS cliente,
+       h.motivo, h.ocurrido_en AS cancelada_en,
+       h.usuario_id AS cancelada_por, u.email AS cancelada_por_email
+FROM dmc.visita v
+JOIN dmc.tecnico  t ON t.id = v.tecnico_id
+JOIN dmc.sucursal s ON s.id = v.sucursal_id
+JOIN dmc.cliente  c ON c.id = v.cliente_id
+CROSS APPLY (SELECT TOP 1 x.motivo, x.ocurrido_en, x.usuario_id
+               FROM dmc.visita_estado_historial x
+              WHERE x.visita_id = v.id AND x.estado = 'CANCELADA_ADMIN'
+              ORDER BY x.ocurrido_en DESC, x.id DESC) h
+LEFT JOIN dmc.usuario u ON u.id = h.usuario_id
+WHERE v.estado = 'CANCELADA_ADMIN';
 GO
 
 /* =====================================================================

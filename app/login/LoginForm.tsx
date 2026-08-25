@@ -46,8 +46,7 @@ export default function LoginForm() {
         <label htmlFor="lg-pass" className="block text-[11px] tracking-[.09em] uppercase opacity-60 mb-1.5">
           Contraseña
         </label>
-        {/* El ojo va dentro del campo, no en una caja aparte: es un solo
-            control y no parte en dos la fila de la contraseña. */}
+        {/* El ojo va dentro del campo: un solo control, sin casilla aparte. */}
         <div className="relative">
           <input
             id="lg-pass"
@@ -72,15 +71,6 @@ export default function LoginForm() {
             {verPass ? <IconoOjoTachado /> : <IconoOjo />}
           </button>
         </div>
-        <label className="flex items-center gap-2 mt-2 w-fit text-[13px] cursor-pointer select-none">
-          <input
-            type="checkbox"
-            checked={verPass}
-            onChange={(e) => setVerPass(e.target.checked)}
-            className="w-4 h-4 accent-[var(--color-accent)] cursor-pointer"
-          />
-          <span className="opacity-75">Ver contraseña</span>
-        </label>
       </div>
 
       {state.error ? <Alerta>{state.error}</Alerta> : null}

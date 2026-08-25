@@ -5,12 +5,13 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import Tag from "@/components/Tag";
 import Dialogo, { type Adjunto } from "@/components/admin/Dialogo";
-import VisitaDialogo, { ReprogramarDialogo } from "@/components/admin/VisitaDialogos";
+import VisitaDialogo, { CancelarAdminDialogo, ReprogramarDialogo } from "@/components/admin/VisitaDialogos";
 import VisorFotos, { useVisorFotos } from "@/components/ui/VisorFotos";
 import { Toast, useToast } from "@/components/ui/Toast";
 import { enviarActaAction } from "@/app/actions/admin";
 import { ESTADO_PROBLEMA_LABEL, ESTADO_PROBLEMA_TAG, ESTADO_VISITA_LABEL, ESTADO_VISITA_TAG, textoMotivos, textoMotivosReales } from "@/lib/ui/estado";
-import { nombreProblema, nombreTrabajo, useReferencias } from "@/lib/ui/referencias";
+import { esAdmin, nombreProblema, nombreTrabajo, useReferencias } from "@/lib/ui/referencias";
+import { reloj } from "@/lib/ui/video";
 import type { Visita } from "@/lib/types";
 
 const AVISO_ESTADO: Record<string, string> = {
@@ -18,6 +19,8 @@ const AVISO_ESTADO: Record<string, string> = {
   EN_CURSO: "El técnico está en terreno: lo que ves puede cambiar hasta que cierre el acta.",
   PENDIENTE: "La visita quedó pendiente: el técnico no pudo cerrarla en terreno.",
   REAGENDADA: "La visita se reagendó antes de cerrarse; el motivo del técnico está en el detalle.",
+  CANCELADA_ADMIN:
+    "Administración cerró esta visita sin que llegara a hacerse. El motivo está en el detalle y en la trazabilidad.",
 };
 
 /** "2026-08-13T08:30:00" → "08:30". */
@@ -38,11 +41,12 @@ export default function ActaView({
   enviada: { para: string; cc: string; adjuntos: number } | null;
 }) {
   const router = useRouter();
-  const { problemas: catalogoProblema, trabajos: catalogoTrabajo } = useReferencias();
+  const ref = useReferencias();
+  const { problemas: catalogoProblema, trabajos: catalogoTrabajo } = ref;
   const { toast, aviso } = useToast();
   const [resumenAbierto, setResumenAbierto] = useState(false);
   const [trazaAbierta, setTrazaAbierta] = useState(false);
-  const [dialogo, setDialogo] = useState<"correo" | "editar" | "reprogramar" | null>(null);
+  const [dialogo, setDialogo] = useState<"correo" | "editar" | "reprogramar" | "cancelarAdmin" | null>(null);
   const visor = useVisorFotos();
 
   const ejec = visita.ejecucion;
@@ -50,6 +54,11 @@ export default function ActaView({
   const cerrada = visita.estado === "COMPLETADA";
   const reprogramable = ["REAGENDADA", "PENDIENTE", "CANCELADA"].includes(visita.estado);
   const sinCerrar = !cerrada && visita.estado !== "CANCELADA";
+  // El cierre administrativo: solo el administrador, y solo sobre una visita
+  // que está en curso o que todavía no se inicia. Una completada ya tiene acta
+  // firmada y una cancelada no hay nada que cerrar.
+  const cerrablePorAdmin =
+    esAdmin(ref) && (visita.estado === "PROGRAMADA" || visita.estado === "EN_CURSO");
   const duracion = ejec ? minutosEntre(ejec.horaInicio, ejec.horaTermino) : null;
   const firma = visita.firmas?.[0];
 
@@ -121,6 +130,19 @@ export default function ActaView({
                 <path d="M8 3v4M16 3v4M3 11h18M12 15l2 2-2 2" />
               </svg>
               <span>Cambiar fecha y técnico</span>
+            </button>
+          ) : null}
+          {cerrablePorAdmin ? (
+            <button
+              onClick={() => setDialogo("cancelarAdmin")}
+              className="btn btn-secondary min-h-[38px] px-3.5"
+              title="Cerrar esta visita sin que llegue a hacerse"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                <circle cx="12" cy="12" r="8.5" />
+                <path d="M6 6l12 12" />
+              </svg>
+              <span>Cancelar por admin</span>
             </button>
           ) : null}
           <button onClick={() => setTrazaAbierta(true)} className="btn btn-secondary min-h-[38px] px-3.5">
@@ -395,6 +417,36 @@ export default function ActaView({
                 ) : null}
               </div>
 
+              {/* Los clips salen de dmc.visita_video vía /api/visita/video/<id>,
+                  que responde por rangos: por eso se pueden adelantar sin que
+                  el navegador se baje los 11 MB completos. */}
+              <div className="text-[11px] tracking-[.11em] uppercase opacity-66 mt-6.5 mb-3">
+                Videos del trabajo ({visita.videos?.length ?? 0})
+              </div>
+              <div className="grid grid-cols-2 gap-2.5">
+                {(visita.videos ?? []).map((v) => (
+                  <figure key={v.id} className="m-0 border border-black/[.35] bg-[var(--color-surface)]">
+                    <video
+                      src={v.archivoUrl}
+                      controls
+                      preload="metadata"
+                      playsInline
+                      className="w-full aspect-video bg-black object-contain"
+                    />
+                    <figcaption className="flex items-center gap-2 px-2.5 py-1.5 text-[11px] tabular-nums opacity-70">
+                      <span className="font-extrabold truncate">{v.etiqueta ?? "Video del trabajo"}</span>
+                      <span className="ml-auto flex-none">
+                        {v.duracionSeg ? reloj(v.duracionSeg) : "—"}
+                        {v.ancho && v.alto ? ` · ${v.ancho}x${v.alto}` : ""}
+                      </span>
+                    </figcaption>
+                  </figure>
+                ))}
+                {(visita.videos ?? []).length === 0 ? (
+                  <div className="col-span-2 text-[13px] opacity-66">Sin videos registrados.</div>
+                ) : null}
+              </div>
+
               <div className="flex gap-5 items-end mt-7.5 flex-wrap">
                 <div className="flex-[0_1_300px] min-w-0">
                   {firma?.imagenUrl ? (
@@ -545,6 +597,17 @@ export default function ActaView({
         />
       ) : null}
 
+      {dialogo === "cancelarAdmin" ? (
+        <CancelarAdminDialogo
+          visita={visita}
+          onCerrar={() => setDialogo(null)}
+          onHecho={(m) => {
+            aviso(m);
+            router.refresh();
+          }}
+        />
+      ) : null}
+
       {visor.abierto ? (
         <VisorFotos
           fotos={(visita.fotos ?? []).map((f) => ({
@@ -600,6 +663,10 @@ function CorreoDialogo({
   const [adjuntos, setAdjuntos] = useState<Adjunto[]>(() => [
     ...(visita.fotos ?? []).map((f) => ({
       label: `Foto ${(f.etiqueta ?? "").toLowerCase()} · ${hhmm(f.tomadaEn)}.jpg`,
+      incluido: true,
+    })),
+    ...(visita.videos ?? []).map((v) => ({
+      label: `Video · ${reloj(v.duracionSeg ?? 0)}.${v.mime.split("/")[1] ?? "mp4"}`,
       incluido: true,
     })),
     ...(visita.firmas ?? []).map((f) => ({ label: `Firma · ${f.nombre}.png`, incluido: true })),

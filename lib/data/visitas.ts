@@ -24,6 +24,7 @@ import type {
   VisitaEjecucion,
   VisitaFirma,
   VisitaFoto,
+  VisitaVideo,
   VisitaTrabajo,
   VisitaTrabajoSubtrabajo,
 } from "@/lib/types";
@@ -208,6 +209,21 @@ interface FilaFoto {
   tomada_en: string | null;
 }
 
+interface FilaVideo {
+  id: number;
+  visita_id: number;
+  problema_id: number | null;
+  etiqueta: string | null;
+  archivo_url: string;
+  mime: string;
+  bytes: number | null;
+  duracion_seg: number | null;
+  ancho: number | null;
+  alto: number | null;
+  orden: number;
+  grabado_en: string | null;
+}
+
 interface FilaFirma {
   id: number;
   visita_id: number;
@@ -242,7 +258,7 @@ async function cargar(filtro: Filtro): Promise<Visita[]> {
   const ids = subconsultaIds(filtro);
   const p = () => filtro.params.map((x) => [...x] as Parametro);
 
-  const [visitas, motivosVisita, ejecuciones, trabajos, subtrabajos, problemas, items, fotos, firmas, reagendas] =
+  const [visitas, motivosVisita, ejecuciones, trabajos, subtrabajos, problemas, items, fotos, videos, firmas, reagendas] =
     await Promise.all([
       consultaCon<FilaVisita>(
         `${SELECT_VISITA} WHERE ${filtro.where} ORDER BY v.fecha_programada DESC, v.hora_programada, v.id DESC`,
@@ -295,6 +311,16 @@ async function cargar(filtro: Filtro): Promise<Visita[]> {
           WHERE visita_id IN (${ids}) AND activo = 1 ORDER BY orden, id`,
         p()
       ),
+      // Solo los clips que terminaron de subir: los que se cortaron a mitad de
+      // la señal existen en la tabla, pero no son reproducibles.
+      consultaCon<FilaVideo>(
+        `SELECT id, visita_id, problema_id, etiqueta, archivo_url, mime, bytes,
+                duracion_seg, ancho, alto, orden, ${F_TS("grabado_en")} AS grabado_en
+           FROM dmc.visita_video
+          WHERE visita_id IN (${ids}) AND activo = 1 AND subida_completa = 1
+          ORDER BY orden, id`,
+        p()
+      ),
       consultaCon<FilaFirma>(
         `SELECT id, visita_id, rol, nombre, rut, imagen_url, ${F_TS("firmado_en")} AS firmado_en
            FROM dmc.visita_firma WHERE visita_id IN (${ids}) ORDER BY id`,
@@ -314,6 +340,7 @@ async function cargar(filtro: Filtro): Promise<Visita[]> {
   const trabajosPorVisita = agrupar(trabajos, (t) => num(t.visita_id));
   const problemasPorVisita = agrupar(problemas, (x) => num(x.visita_id));
   const fotosPorVisita = agrupar(fotos, (f) => num(f.visita_id));
+  const videosPorVisita = agrupar(videos, (v) => num(v.visita_id));
   const firmasPorVisita = agrupar(firmas, (f) => num(f.visita_id));
   const reagendasPorVisita = agrupar(reagendas, (r) => num(r.visita_id));
   const ejecucionPorVisita = new Map(ejecuciones.map((e) => [num(e.visita_id), e]));
@@ -447,6 +474,23 @@ async function cargar(filtro: Filtro): Promise<Visita[]> {
           archivoUrl: f.archivo_url,
           orden: f.orden,
           tomadaEn: f.tomada_en,
+        })
+      ),
+
+      videos: (videosPorVisita.get(id) ?? []).map(
+        (v): VisitaVideo => ({
+          id: num(v.id),
+          visitaId: id,
+          problemaId: numONull(v.problema_id),
+          etiqueta: v.etiqueta,
+          archivoUrl: v.archivo_url,
+          mime: v.mime,
+          bytes: numONull(v.bytes),
+          duracionSeg: numONull(v.duracion_seg),
+          ancho: numONull(v.ancho),
+          alto: numONull(v.alto),
+          orden: v.orden,
+          grabadoEn: v.grabado_en,
         })
       ),
 
@@ -621,6 +665,76 @@ export async function cambiarEstadoVisita(input: {
 }
 
 /**
+ * "Cancelar por admin": el cierre administrativo de una visita que quedó vieja
+ * o que ya no sirve.
+ *
+ * Es una cancelación, pero con estado propio (CANCELADA_ADMIN) porque la
+ * diferencia importa al leer la ficha: CANCELADA la deja el técnico parado en
+ * la puerta de la tienda, esta la cierra administración desde la oficina.
+ *
+ * Solo se puede aplicar sobre una visita PROGRAMADA o EN_CURSO. Una COMPLETADA
+ * ya tiene acta firmada y no se toca; el UPDLOCK evita que el técnico alcance a
+ * cerrarla mientras el administrador confirma el diálogo.
+ *
+ * Devuelve por qué no se pudo, o null si quedó cancelada.
+ */
+export async function cancelarVisitaPorAdmin(input: {
+  folio: string;
+  motivo: string;
+  usuarioId: number;
+}): Promise<{ error: string } | null> {
+  return enTransaccion(async (ej) => {
+    const [visita] = await ej.consulta<{ id: number; estado: EstadoVisita }>(
+      `SELECT id, estado FROM dmc.visita WITH (UPDLOCK, ROWLOCK) WHERE folio = @folio`,
+      [["folio", sql.VarChar(16), input.folio]]
+    );
+    if (!visita) return { error: "No encontramos esa visita." };
+    if (visita.estado === "CANCELADA_ADMIN") return { error: "Esta visita ya la cerró administración." };
+    if (visita.estado === "COMPLETADA") {
+      return { error: "Esta visita ya tiene acta firmada: una visita completada no se cancela." };
+    }
+    if (visita.estado !== "PROGRAMADA" && visita.estado !== "EN_CURSO") {
+      return {
+        error: "Solo se pueden cerrar por administración las visitas programadas o en curso.",
+      };
+    }
+
+    const id = num(visita.id);
+    await ej.ejecutar(
+      `DECLARE @antes bigint =
+         (SELECT ISNULL(MAX(id), 0) FROM dmc.visita_estado_historial WHERE visita_id = @id);
+
+       UPDATE dmc.visita SET estado = 'CANCELADA_ADMIN' WHERE id = @id;
+
+       IF EXISTS (SELECT 1 FROM dmc.visita_estado_historial WHERE visita_id = @id AND id > @antes)
+         UPDATE dmc.visita_estado_historial
+            SET motivo = @motivo, origen = 'WEB', usuario_id = @usuario
+          WHERE visita_id = @id AND id > @antes;
+       ELSE
+         INSERT INTO dmc.visita_estado_historial (visita_id, estado, motivo, origen, usuario_id)
+         VALUES (@id, 'CANCELADA_ADMIN', @motivo, 'WEB', @usuario);`,
+      [
+        ["id", sql.BigInt, id],
+        ["motivo", sql.NVarChar(sql.MAX), input.motivo],
+        ["usuario", sql.BigInt, input.usuarioId],
+      ]
+    );
+
+    // La ejecución a medio abrir se sella: si el técnico había apretado
+    // "Iniciar visita", la hora de término queda en el momento del cierre y no
+    // en null para siempre.
+    await ej.ejecutar(
+      `UPDATE dmc.visita_ejecucion
+          SET hora_termino = SYSDATETIME()
+        WHERE visita_id = @id AND hora_termino IS NULL`,
+      [["id", sql.BigInt, id]]
+    );
+
+    return null;
+  });
+}
+
+/**
  * Cambia el estado y deja el motivo en la bitácora. El trigger tg_visita_cambio
  * ya inserta la fila del historial cuando el estado cambia de verdad: se le
  * completa el motivo. Si el estado no cambió, el trigger no insertó nada y la
@@ -648,7 +762,9 @@ async function marcarEstado(
        VALUES (@id, @estado, @motivo, @origen, @usuario);`,
     [
       ["id", sql.BigInt, id],
-      ["estado", sql.VarChar(12), estado],
+      // varchar(16) desde CANCELADA_ADMIN: con 12 el driver truncaba el valor
+      // y el CHECK de dmc.visita lo rechazaba.
+      ["estado", sql.VarChar(16), estado],
       ["motivo", sql.NVarChar(sql.MAX), motivo],
       ["origen", sql.VarChar(6), origen],
       ["usuario", sql.BigInt, usuarioId],
@@ -1013,6 +1129,16 @@ export interface ActaEntrada {
   trabajos: TrabajoActa[];
   problemas: ProblemaActa[];
   fotos: FotoActa[];
+  /**
+   * Los clips que quedaron en el acta, en el orden en que se ven.
+   *
+   * Van solo los ids: el video no viaja acá. Un minuto en 720p pesa unos 11 MB
+   * y el cuerpo de una Server Action se corta en 4,5 MB, así que el clip se
+   * sube aparte y por partes en cuanto se termina de grabar (ver
+   * lib/data/videos y app/actions/videos). Al cerrar el acta solo queda decir
+   * cuáles se conservan: los que no estén acá quedan inactivos.
+   */
+  videosIds?: number[];
   firma: FirmaActa | null;
   dispositivo: string | null;
   /**
@@ -1261,6 +1387,31 @@ export async function guardarActa(
           ["contenido", sql.VarBinary(sql.MAX), f.bytes],
           ["mime", sql.VarChar(40), f.mime],
           ["bytes", sql.Int, f.bytes.length],
+          ["orden", sql.SmallInt, i + 1],
+        ]
+      );
+    }
+
+    // 5b · Videos. Ya estaban subidos mientras el técnico llenaba el acta: acá
+    //      solo se decide cuáles quedan y en qué orden. Los que sacó del
+    //      formulario se dejan inactivos, igual que las fotos.
+    const videosIds = [...new Set((entrada.videosIds ?? []).filter((n) => Number.isInteger(n) && n > 0))];
+    // Interpolado y no parametrizado porque la lista es de largo variable; el
+    // filtro de arriba garantiza que solo son enteros positivos.
+    const listaVideos = videosIds.length ? videosIds.join(",") : "0";
+    await ej.ejecutar(
+      `UPDATE dmc.visita_video
+          SET activo = 0
+        WHERE visita_id = @id AND activo = 1 AND id NOT IN (${listaVideos})`,
+      [["id", sql.BigInt, id]]
+    );
+    for (const [i, videoId] of videosIds.entries()) {
+      await ej.ejecutar(
+        `UPDATE dmc.visita_video SET orden = @orden
+          WHERE id = @video AND visita_id = @id AND subida_completa = 1`,
+        [
+          ["video", sql.BigInt, videoId],
+          ["id", sql.BigInt, id],
           ["orden", sql.SmallInt, i + 1],
         ]
       );

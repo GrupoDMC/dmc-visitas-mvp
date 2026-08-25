@@ -113,6 +113,7 @@ const ORDEN_ESTADOS: EstadoVisita[] = [
   "PENDIENTE",
   "REAGENDADA",
   "CANCELADA",
+  "CANCELADA_ADMIN",
 ];
 
 export async function getEstadoHoyDistribucion(hoy: string): Promise<{ estado: EstadoVisita; n: number; pct: number }[]> {

@@ -8,7 +8,13 @@ import Dialogo, {
   type FormValores,
 } from "@/components/admin/Dialogo";
 import { useReferencias, type Referencias } from "@/lib/ui/referencias";
-import { crearVisitaAction, editarVisitaAction, reprogramarVisitaAction } from "@/app/actions/admin";
+import {
+  cancelarVisitaAdminAction,
+  crearVisitaAction,
+  editarVisitaAction,
+  reprogramarVisitaAction,
+} from "@/app/actions/admin";
+import { ESTADO_VISITA_LABEL } from "@/lib/ui/estado";
 import type { Visita } from "@/lib/types";
 
 /** Opciones de los selectores, derivadas de los maestros que baja el layout. */
@@ -309,6 +315,69 @@ export function ReprogramarDialogo({
       titulo={`Reprogramar ${visita.folio}`}
       cta="Reprogramar visita"
       nota="La visita vuelve a estado PROGRAMADA con la nueva fecha y le aparece al técnico asignado en su celular."
+      campos={campos}
+      form={form}
+      onCampo={(k, v) => setForm((prev) => ({ ...prev, [k]: v }))}
+      onCerrar={onCerrar}
+      onGuardar={guardar}
+      guardando={guardando}
+    />
+  );
+}
+
+/**
+ * "Cancelar por admin" — el cierre administrativo de una visita que quedó vieja
+ * o que ya no sirve.
+ *
+ * Es lo mismo que cancelar, pero hecho desde la oficina y con su propio estado
+ * (CANCELADA_ADMIN), para que al leer la ficha se distinga de la que canceló el
+ * técnico parado en la puerta de la tienda.
+ *
+ * Solo aparece sobre visitas EN CURSO o sin iniciar. Una COMPLETADA ya tiene
+ * acta firmada; el motivo escrito acá queda en la bitácora con el nombre de
+ * quien lo apretó.
+ */
+export function CancelarAdminDialogo({
+  visita,
+  onCerrar,
+  onHecho,
+}: {
+  visita: Visita;
+  onCerrar: () => void;
+  onHecho: (mensaje: string) => void;
+}) {
+  const [form, setForm] = useState<FormValores>({ motivo: "" });
+  const [guardando, setGuardando] = useState(false);
+
+  const campos: CampoDef[] = [
+    {
+      k: "motivo",
+      label: "Por qué se cierra",
+      span: 2,
+      tipo: "area",
+      ph: "Ej: la tienda cerró en marzo y el pórtico se retiró; la visita quedó agendada sin efecto.",
+      ayuda: "Queda guardado en la bitácora de la visita junto con tu usuario y la fecha.",
+    },
+  ];
+
+  async function guardar() {
+    setGuardando(true);
+    const res = await cancelarVisitaAdminAction({ folio: visita.folio, motivo: String(form.motivo) });
+    setGuardando(false);
+    if (!res.ok) {
+      onHecho(res.error ?? "No se pudo cerrar la visita.");
+      return;
+    }
+    onHecho(`Visita ${visita.folio} cerrada por administración`);
+    onCerrar();
+  }
+
+  return (
+    <Dialogo
+      kicker="Operación · cierre administrativo"
+      titulo={`Cancelar por admin ${visita.folio}`}
+      cta="Cerrar la visita"
+      nota={`La visita está ${ESTADO_VISITA_LABEL[visita.estado].toLowerCase()} y va a quedar «Cancelada por admin». Deja de aparecerle al técnico en el celular y no se puede volver atrás desde el panel: si hay que rehacerla, se agenda una visita nueva.`}
       campos={campos}
       form={form}
       onCampo={(k, v) => setForm((prev) => ({ ...prev, [k]: v }))}

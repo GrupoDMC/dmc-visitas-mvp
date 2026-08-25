@@ -5,11 +5,19 @@ import { useRouter } from "next/navigation";
 import Sheet from "./Sheet";
 import Confirmar, { type ConfirmarCfg } from "./Confirmar";
 import CamaraSheet from "./CamaraSheet";
+import VideoSheet, { type ClipGrabado } from "./VideoSheet";
 import FirmaSheet, { type FirmaGuardada } from "./FirmaSheet";
 import { Toast, useToast } from "./toast";
 import { fmtRut, fmtTel, mensajeRut, rutCompleto, rutDvCorrecto, telCompleto } from "@/lib/ui/formato";
 import { comprimirFoto } from "@/lib/ui/imagen";
+import { mb, reloj, trozoBase64, VIDEO_TROZO_BYTES } from "@/lib/ui/video";
 import { guardarActaAction } from "@/app/actions/visitas";
+import {
+  abrirVideoAction,
+  borrarVideoAction,
+  cerrarVideoAction,
+  subirTrozoVideoAction,
+} from "@/app/actions/videos";
 import { descartarBorradorAction, guardarBorradorAction } from "@/app/actions/borradores";
 import { ESTADO_PROBLEMA_LABEL } from "@/lib/ui/estado";
 import {
@@ -30,6 +38,7 @@ import {
   type Seccion,
   type SubSeleccion,
   type TrabajoForm,
+  type VideoForm,
 } from "@/lib/ui/borrador";
 import type { ActaEntrada } from "@/lib/data/visitas";
 import type {
@@ -94,14 +103,31 @@ export default function FormularioVisita({
   const [problemas, setProblemas] = useState<ProblemaForm[]>([]);
   const [interno, setInterno] = useState("");
 
-  // 4 · Fotos
+  // 4 · Fotos y videos
   const [fotos, setFotos] = useState<FotoForm[]>([]);
+  // El video no se acumula en el formulario como las fotos: se sube a
+  // dmc.visita_video en cuanto se termina de grabar, porque un minuto en 720p
+  // pesa unos 11 MB y no cabe ni en una Server Action ni en localStorage. Por
+  // eso la lista arranca de lo que la visita ya tiene subido y no del borrador:
+  // la base es la que sabe qué clips hay.
+  const [videos, setVideos] = useState<VideoForm[]>(() =>
+    (visita.videos ?? []).map((v) => ({
+      id: v.id,
+      src: v.archivoUrl,
+      duracionSeg: v.duracionSeg ?? 0,
+      ancho: v.ancho ?? 0,
+      alto: v.alto ?? 0,
+      bytes: v.bytes ?? 0,
+      progreso: null,
+      error: null,
+    }))
+  );
 
   // 5 · Firma
   const [firma, setFirma] = useState<FirmaGuardada | null>(null);
 
   // Hojas inferiores
-  const [sheet, setSheet] = useState<"trabajo" | "problema" | "firma" | "camara" | null>(null);
+  const [sheet, setSheet] = useState<"trabajo" | "problema" | "firma" | "camara" | "video" | null>(null);
   const [nt, setNt] = useState<{ codigo: string; subs: SubSeleccion[]; detalle: string }>({
     codigo: "",
     subs: [],
@@ -306,6 +332,9 @@ export default function FormularioVisita({
       // Las fotos ya vienen reducidas desde que se tomaron: así el acta cabe en
       // el celular mientras espera señal y sale rápido cuando la hay.
       fotos: fotos.map((f) => ({ dataUrl: f.src, etiqueta: null })),
+      // Los clips ya están en la base: acá va solo qué se conserva y en qué
+      // orden. Los que quedaron subiendo cuando se apretó Guardar no entran.
+      videosIds: videos.filter((v) => v.id > 0 && v.progreso === null && !v.error).map((v) => v.id),
       firma: { nombre: firma.nombre, rut: firma.rut || null, dataUrl: firma.imagen },
       dispositivo: typeof navigator === "undefined" ? null : navigator.userAgent.slice(0, 60),
     };
@@ -668,6 +697,30 @@ export default function FormularioVisita({
               </div>
             ) : null}
 
+            {videos.length > 0 ? (
+              <div className="pt-4">
+                <div className="text-[10px] tracking-[.12em] uppercase opacity-62 mb-2">
+                  Videos ({videos.length})
+                </div>
+                <div className="grid gap-2">
+                  {videos.map((v) => (
+                    <div key={v.id} className="flex items-center gap-2.5 border border-black/[.3] px-2.5 py-2">
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" className="flex-none">
+                        <path d="M3 7h11v10H3z" />
+                        <path d="M14 11l7-4v10l-7-4z" />
+                      </svg>
+                      <span className="text-[13px] tabular-nums">
+                        {reloj(v.duracionSeg)} · {v.ancho}x{v.alto}
+                      </span>
+                      <span className="ml-auto text-[11px] opacity-62 tabular-nums">
+                        {v.error ? "no se subió" : v.progreso !== null ? `subiendo ${v.progreso}%` : "guardado"}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
             {firma ? (
               <div className="flex gap-3.5 pt-4.5">
                 <div className="flex-[0_1_250px] min-w-0">
@@ -774,7 +827,7 @@ export default function FormularioVisita({
             setConfirmar({
               titulo: "¿Empezar el acta de nuevo?",
               texto:
-                "Se borra lo que habías dejado a medias en este celular —trabajos, problemas, fotos y firma— y el formulario queda en blanco.",
+                "Se borra lo que habías dejado a medias en este celular —trabajos, problemas, fotos y firma— y el formulario queda en blanco. Los videos ya subidos se quitan aparte, uno por uno.",
               cta: "Empezar de nuevo",
               accion: () => {
                 borrarBorrador(visita.folio);
@@ -1118,9 +1171,18 @@ export default function FormularioVisita({
         {/* ── 4 · Fotos del trabajo ── */}
         <Cabecera
           n={4}
-          titulo="Fotos del trabajo"
+          titulo="Fotos y video del trabajo"
           ok={!!guardadas.fotos}
-          chip={guardadas.fotos ? { variante: "accent", texto: `${fotos.length} fotos` } : { variante: "neutral", texto: "Al final" }}
+          chip={
+            guardadas.fotos
+              ? {
+                  variante: "accent",
+                  texto: videos.length
+                    ? `${fotos.length} fotos · ${videos.length} video${videos.length > 1 ? "s" : ""}`
+                    : `${fotos.length} fotos`,
+                }
+              : { variante: "neutral", texto: "Al final" }
+          }
           onToggle={() => toggleSeccion("fotos")}
         />
         {abierta === "fotos" ? (
@@ -1171,11 +1233,102 @@ export default function FormularioVisita({
                 <input type="file" accept="image/*" multiple onChange={onArchivos} className="absolute w-px h-px opacity-0 pointer-events-none" />
               </label>
             </div>
+            {/* ── Video: 720p y hasta 1 minuto ── */}
+            <div className="mt-5 pt-4 border-t border-[var(--color-divider)]">
+              <div className="flex items-center gap-2">
+                <div className="text-[10px] tracking-[.12em] uppercase opacity-66">Video del trabajo</div>
+                <span className="ml-auto text-[11px] opacity-55 tabular-nums">720p · máx. 1 min</span>
+              </div>
+              <p className="m-0 mt-1.5 mb-3 text-[13px] opacity-60">
+                Para lo que una foto no alcanza a mostrar: la falsa alarma sonando, el pórtico
+                mientras pasa el carro, el ruido de la placa.
+              </p>
+
+              {videos.length ? (
+                <div className="grid gap-2 mb-3">
+                  {videos.map((v) => (
+                    <div key={v.id} className="border border-[var(--color-divider)] bg-[var(--color-surface-3)]">
+                      <video
+                        src={v.src}
+                        controls
+                        preload="metadata"
+                        playsInline
+                        className="w-full aspect-video bg-black object-contain"
+                      />
+                      <div className="flex items-center gap-2 px-2.5 py-2">
+                        <span className="text-[11px] tabular-nums opacity-70">
+                          {reloj(v.duracionSeg)} · {v.ancho}x{v.alto} · {mb(v.bytes)}
+                        </span>
+                        <button
+                          onClick={() =>
+                            setConfirmar({
+                              titulo: "¿Borrar este video?",
+                              texto: "El video se quita del acta y hay que volver a grabarlo si lo necesitas.",
+                              cta: "Borrar video",
+                              accion: () => quitarVideo(v),
+                            })
+                          }
+                          aria-label="Quitar video"
+                          className="ml-auto w-8 h-8 grid place-items-center bg-transparent border border-[var(--color-divider)] cursor-pointer text-[var(--color-text)] hover:bg-black/[.07]"
+                        >
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6">
+                            <path d="M6 6l12 12M18 6L6 18" />
+                          </svg>
+                        </button>
+                      </div>
+
+                      {/* Mientras sube: la barra. Si se cortó: el motivo. */}
+                      {v.progreso !== null ? (
+                        <div className="px-2.5 pb-2.5">
+                          <div className="h-1 bg-[var(--color-divider)] overflow-hidden">
+                            <div
+                              className="h-full bg-[var(--color-accent)] transition-[width] duration-300"
+                              style={{ width: `${v.progreso}%` }}
+                            />
+                          </div>
+                          <div className="mt-1 text-[11px] opacity-62 tabular-nums">
+                            Subiendo… {v.progreso}%
+                          </div>
+                        </div>
+                      ) : null}
+                      {v.error ? (
+                        <div className="px-2.5 pb-2.5 text-[11px] text-[var(--color-accent-active)]">
+                          {v.error} El acta se puede guardar igual; el video no va a quedar.
+                        </div>
+                      ) : null}
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+
+              <button
+                onClick={() => setSheet("video")}
+                className="w-full min-h-[52px] flex items-center gap-2.5 px-4 bg-[var(--color-text)] text-[var(--color-bg)] border-0 font-extrabold text-sm cursor-pointer text-left hover:bg-[var(--color-neutral-900)]"
+              >
+                <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9">
+                  <path d="M3 7h11v10H3z" />
+                  <path d="M14 11l7-4v10l-7-4z" />
+                </svg>
+                <span>{videos.length ? "Grabar otro video" : "Grabar video"}</span>
+              </button>
+            </div>
+
             <div className="mt-3.5">
               <BotonGuardar
-                texto={fotos.length ? `Guardar ${fotos.length} foto${fotos.length > 1 ? "s" : ""}` : "Guardar sin fotos"}
+                texto={
+                  fotos.length || videos.length
+                    ? `Guardar ${fotos.length} foto${fotos.length === 1 ? "" : "s"}${videos.length ? ` y ${videos.length} video${videos.length > 1 ? "s" : ""}` : ""}`
+                    : "Guardar sin fotos"
+                }
                 habilitado
-                onClick={() => guardarSeccion("fotos", fotos.length ? `${fotos.length} fotos` : "Sección sin fotos")}
+                onClick={() =>
+                  guardarSeccion(
+                    "fotos",
+                    fotos.length || videos.length
+                      ? `${fotos.length} fotos${videos.length ? ` · ${videos.length} video${videos.length > 1 ? "s" : ""}` : ""}`
+                      : "Sección sin fotos"
+                  )
+                }
               />
             </div>
           </Cuerpo>
@@ -1578,6 +1731,18 @@ export default function FormularioVisita({
         />
       ) : null}
 
+      {sheet === "video" ? (
+        <VideoSheet
+          onGrabado={(clip) => {
+            agregarVideo(clip);
+            setSheet(null);
+            setAbierta("fotos");
+            aviso("Video agregado · subiendo al servidor");
+          }}
+          onCerrar={() => setSheet(null)}
+        />
+      ) : null}
+
       {confirmar ? <Confirmar cfg={confirmar} onCerrar={() => setConfirmar(null)} /> : null}
       <Toast texto={toast} />
     </div>
@@ -1614,6 +1779,109 @@ export default function FormularioVisita({
       reader.readAsDataURL(file);
     });
     e.target.value = "";
+  }
+
+  /**
+   * Sube el clip recién grabado, por partes y en cuanto se acepta.
+   *
+   * No espera al "Guardar visita": un minuto en 720p pesa unos 11 MB y el
+   * cuerpo de una Server Action se corta en 4,5 MB, así que el clip nunca
+   * podría viajar dentro del acta. Se manda de a 2 MB mientras el técnico sigue
+   * llenando el formulario, y lo que queda en pantalla es una barra de avance.
+   *
+   * Si se corta la señal a mitad, la fila queda incompleta en la base —no la
+   * muestra nadie— y en el formulario aparece el clip con su error y el botón
+   * para reintentar. El acta se puede cerrar igual: el video es evidencia
+   * adicional, no un requisito.
+   */
+  async function subirClip(clip: ClipGrabado, filaId: number) {
+    const marcar = (cambio: Partial<VideoForm>) =>
+      setVideos((prev) => prev.map((v) => (v.id === filaId ? { ...v, ...cambio } : v)));
+
+    const abierto = await abrirVideoAction(visita.folio, {
+      mime: clip.mime,
+      bytes: clip.blob.size,
+      duracionSeg: clip.medida.duracionSeg,
+      ancho: clip.medida.ancho,
+      alto: clip.medida.alto,
+      grabadoEn: new Date().toISOString(),
+    }).catch(() => null);
+
+    if (!abierto?.ok || !abierto.videoId) {
+      marcar({ progreso: null, error: abierto?.error ?? "No hubo señal para subir el video." });
+      return;
+    }
+    const videoId = abierto.videoId;
+
+    let subido = 0;
+    while (subido < clip.blob.size) {
+      const hasta = Math.min(subido + VIDEO_TROZO_BYTES, clip.blob.size);
+      let res;
+      try {
+        res = await subirTrozoVideoAction(
+          visita.folio,
+          videoId,
+          subido,
+          await trozoBase64(clip.blob, subido, hasta)
+        );
+      } catch {
+        marcar({ progreso: null, error: "Se cortó la señal a mitad del video." });
+        return;
+      }
+      if (!res.ok) {
+        marcar({ progreso: null, error: res.error ?? "No se pudo subir el video." });
+        return;
+      }
+      subido = res.recibidos ?? hasta;
+      marcar({ progreso: Math.round((subido / clip.blob.size) * 100) });
+    }
+
+    const cerrado = await cerrarVideoAction(visita.folio, videoId).catch(() => null);
+    if (!cerrado?.ok) {
+      marcar({ progreso: null, error: cerrado?.error ?? "El video no terminó de guardarse." });
+      return;
+    }
+    // Se pisa el id temporal por el de la base y la vista previa local por la
+    // ruta que sirve el servidor: así el clip sobrevive a recargar la pantalla.
+    setVideos((prev) =>
+      prev.map((v) =>
+        v.id === filaId
+          ? { ...v, id: videoId, src: cerrado.archivoUrl ?? v.src, progreso: null, error: null }
+          : v
+      )
+    );
+  }
+
+  /** El clip aceptado en la hoja de grabación entra a la lista y empieza a subir. */
+  function agregarVideo(clip: ClipGrabado) {
+    const filaId = -autoId++;  // negativo: todavía no tiene id de la base
+    setVideos((prev) => [
+      ...prev,
+      {
+        id: filaId,
+        src: URL.createObjectURL(clip.blob),
+        duracionSeg: clip.medida.duracionSeg,
+        ancho: clip.medida.ancho,
+        alto: clip.medida.alto,
+        bytes: clip.blob.size,
+        progreso: 0,
+        error: null,
+      },
+    ]);
+    setGuardadas((g) => ({ ...g, fotos: false }));
+    void subirClip(clip, filaId);
+  }
+
+  /** Quita el clip del acta. Si ya estaba en la base, se deja inactivo allá. */
+  function quitarVideo(video: VideoForm) {
+    setVideos((prev) => prev.filter((v) => v.id !== video.id));
+    setGuardadas((g) => ({ ...g, fotos: false }));
+    if (video.id > 0) {
+      void borrarVideoAction(visita.folio, video.id).catch(() => {
+        // Que no se pueda marcar inactivo ahora no importa: al cerrar el acta
+        // se desactiva igual todo lo que no venga en videosIds.
+      });
+    }
   }
 }
 
