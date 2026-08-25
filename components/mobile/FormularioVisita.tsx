@@ -160,6 +160,13 @@ export default function FormularioVisita({
 
   /** Último borrador escrito en el celular, para saber qué falta subir. */
   const borradorRef = useRef<BorradorActa | null>(null);
+  /**
+   * Los clips todavía en el celular, por si hay que reintentar la subida.
+   *
+   * Van en un ref y no en el estado porque son megas: meterlos en el estado los
+   * haría viajar en cada render y no aportan nada a lo que se pinta.
+   */
+  const clipsRef = useRef<Map<number, ClipGrabado>>(new Map());
   const subidoRef = useRef<string>("");
   /** La recuperación se hace una sola vez por pantalla, nunca dos. */
   const yaRecuperado = useRef(false);
@@ -1292,8 +1299,22 @@ export default function FormularioVisita({
                         </div>
                       ) : null}
                       {v.error ? (
-                        <div className="px-2.5 pb-2.5 text-[11px] text-[var(--color-accent-active)]">
-                          {v.error} El acta se puede guardar igual; el video no va a quedar.
+                        <div className="px-2.5 pb-2.5">
+                          <div className="text-[11px] text-[var(--color-accent-active)] leading-[1.45]">
+                            {v.error}
+                          </div>
+                          {clipsRef.current.has(v.id) ? (
+                            <button
+                              onClick={() => reintentarVideo(v)}
+                              className="mt-2 min-h-[38px] w-full px-3 bg-[var(--color-text)] text-[var(--color-bg)] border-0 font-extrabold text-[12px] cursor-pointer text-left hover:bg-[var(--color-neutral-900)]"
+                            >
+                              Reintentar la subida
+                            </button>
+                          ) : (
+                            <div className="mt-1 text-[11px] opacity-62">
+                              El acta se puede guardar igual; el video no va a quedar.
+                            </div>
+                          )}
                         </div>
                       ) : null}
                     </div>
@@ -1737,7 +1758,11 @@ export default function FormularioVisita({
             agregarVideo(clip);
             setSheet(null);
             setAbierta("fotos");
-            aviso("Video agregado · subiendo al servidor");
+            aviso(
+              clip.ajustes.length
+                ? "Video ajustado y agregado · subiendo al servidor"
+                : "Video agregado · subiendo al servidor"
+            );
           }}
           onCerrar={() => setSheet(null)}
         />
@@ -1798,17 +1823,24 @@ export default function FormularioVisita({
     const marcar = (cambio: Partial<VideoForm>) =>
       setVideos((prev) => prev.map((v) => (v.id === filaId ? { ...v, ...cambio } : v)));
 
-    const abierto = await abrirVideoAction(visita.folio, {
-      mime: clip.mime,
-      bytes: clip.blob.size,
-      duracionSeg: clip.medida.duracionSeg,
-      ancho: clip.medida.ancho,
-      alto: clip.medida.alto,
-      grabadoEn: new Date().toISOString(),
-    }).catch(() => null);
+    let abierto;
+    try {
+      abierto = await abrirVideoAction(visita.folio, {
+        mime: clip.mime,
+        bytes: clip.blob.size,
+        duracionSeg: clip.medida.duracionSeg,
+        ancho: clip.medida.ancho,
+        alto: clip.medida.alto,
+        grabadoEn: new Date().toISOString(),
+      });
+    } catch (err) {
+      console.error("[dmc] abrirVideo:", err);
+      marcar({ progreso: null, error: "No hubo señal para empezar a subir el video." });
+      return;
+    }
 
-    if (!abierto?.ok || !abierto.videoId) {
-      marcar({ progreso: null, error: abierto?.error ?? "No hubo señal para subir el video." });
+    if (!abierto.ok || !abierto.videoId) {
+      marcar({ progreso: null, error: abierto.error ?? "No se pudo empezar a subir el video." });
       return;
     }
     const videoId = abierto.videoId;
@@ -1824,8 +1856,15 @@ export default function FormularioVisita({
           subido,
           await trozoBase64(clip.blob, subido, hasta)
         );
-      } catch {
-        marcar({ progreso: null, error: "Se cortó la señal a mitad del video." });
+      } catch (err) {
+        // El motivo real importa: sin él, un fallo al preparar el trozo en el
+        // propio celular se lee igual que una caída de señal, y se pierde media
+        // hora buscando cobertura que nunca fue el problema.
+        console.error("[dmc] subirTrozoVideo:", err);
+        marcar({
+          progreso: null,
+          error: err instanceof Error ? err.message : "Se cortó la señal a mitad del video.",
+        });
         return;
       }
       if (!res.ok) {
@@ -1843,6 +1882,7 @@ export default function FormularioVisita({
     }
     // Se pisa el id temporal por el de la base y la vista previa local por la
     // ruta que sirve el servidor: así el clip sobrevive a recargar la pantalla.
+    clipsRef.current.delete(filaId);
     setVideos((prev) =>
       prev.map((v) =>
         v.id === filaId
@@ -1855,6 +1895,9 @@ export default function FormularioVisita({
   /** El clip aceptado en la hoja de grabación entra a la lista y empieza a subir. */
   function agregarVideo(clip: ClipGrabado) {
     const filaId = -autoId++;  // negativo: todavía no tiene id de la base
+    // El clip se guarda en memoria para poder reintentar la subida sin obligar
+    // al técnico a volver a grabar: si se cayó la señal, el video sigue acá.
+    clipsRef.current.set(filaId, clip);
     setVideos((prev) => [
       ...prev,
       {
@@ -1872,8 +1915,17 @@ export default function FormularioVisita({
     void subirClip(clip, filaId);
   }
 
+  /** Volver a intentar la subida de un clip que se cortó, sin regrabarlo. */
+  function reintentarVideo(video: VideoForm) {
+    const clip = clipsRef.current.get(video.id);
+    if (!clip) return aviso("Ese video ya no está en el celular: hay que grabarlo de nuevo");
+    setVideos((prev) => prev.map((v) => (v.id === video.id ? { ...v, progreso: 0, error: null } : v)));
+    void subirClip(clip, video.id);
+  }
+
   /** Quita el clip del acta. Si ya estaba en la base, se deja inactivo allá. */
   function quitarVideo(video: VideoForm) {
+    clipsRef.current.delete(video.id);
     setVideos((prev) => prev.filter((v) => v.id !== video.id));
     setGuardadas((g) => ({ ...g, fotos: false }));
     if (video.id > 0) {

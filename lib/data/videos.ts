@@ -42,21 +42,29 @@ export interface DatosVideo {
   grabadoEn?: string | null;
 }
 
-/** Por qué no se puede guardar este clip, o null si está bien. */
+/**
+ * Por qué no se puede guardar este clip, o null si está bien.
+ *
+ * Es una red de seguridad, no la regla: el celular ya recorta al minuto y baja
+ * a 720p cualquier cosa que se pase (ver lib/ui/video), así que llegar acá con
+ * algo fuera de rango significa que el ajuste falló o que alguien llamó a la
+ * acción por su cuenta. Los mensajes lo dicen así en vez de echarle la culpa al
+ * técnico por grabar de más, que es algo que ya no tiene que evitar.
+ */
 export function motivoRechazo(d: DatosVideo): string | null {
   if (!MIMES.includes(String(d.mime).toLowerCase())) {
-    return "Ese formato de video no se puede guardar.";
+    return "El video llegó en un formato que no se puede guardar.";
   }
   if (!Number.isInteger(d.bytes) || d.bytes <= 0 || d.bytes > VIDEO_MAX_BYTES) {
-    return "El video pesa más de 25 MB. Graba uno más corto.";
+    return "El video llegó sin reajustar y pesa más de 25 MB. Vuelve a grabarlo.";
   }
   if (!Number.isInteger(d.duracionSeg) || d.duracionSeg <= 0 || d.duracionSeg > VIDEO_MAX_SEG) {
-    return "El video dura más de 1 minuto.";
+    return "El video llegó sin recortar al minuto. Vuelve a grabarlo.";
   }
   const mayor = Math.max(d.ancho, d.alto);
   const menor = Math.min(d.ancho, d.alto);
   if (!mayor || !menor || mayor > VIDEO_LADO_MAYOR || menor > VIDEO_LADO_MENOR) {
-    return "Solo se guardan clips en 720p.";
+    return "El video llegó sin reescalar a 720p. Vuelve a grabarlo.";
   }
   return null;
 }

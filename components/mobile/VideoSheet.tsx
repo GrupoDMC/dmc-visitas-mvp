@@ -6,22 +6,25 @@ import {
   VIDEO_LADO_MAYOR,
   VIDEO_LADO_MENOR,
   VIDEO_MAX_SEG,
-  medirVideo,
+  ajustarVideo,
   mb,
   mimeBase,
-  motivoRechazo,
   reloj,
   tipoGrabacion,
-  type MedidaVideo,
+  type ClipListo,
 } from "@/lib/ui/video";
 
-type Estado = "pidiendo" | "lista" | "grabando" | "revisando" | "denegada" | "sin-camara";
+type Estado =
+  | "pidiendo"
+  | "lista"
+  | "grabando"
+  /** Recortando y reescalando lo que se pasó de los límites. */
+  | "ajustando"
+  | "revisando"
+  | "denegada"
+  | "sin-camara";
 
-export interface ClipGrabado {
-  blob: Blob;
-  mime: string;
-  medida: MedidaVideo;
-}
+export type ClipGrabado = ClipListo;
 
 /**
  * Grabación del video del trabajo: 720p y hasta 1 minuto.
@@ -49,11 +52,14 @@ export default function VideoSheet({
   const grabadorRef = useRef<MediaRecorder | null>(null);
   const trozosRef = useRef<Blob[]>([]);
   const relojRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  /** Los segundos grabados, legibles desde onstop, que no ve el estado. */
+  const segundosRef = useRef(0);
 
   const [estado, setEstado] = useState<Estado>("pidiendo");
   const [error, setError] = useState("");
   const [segundos, setSegundos] = useState(0);
-  const [clip, setClip] = useState<{ url: string; blob: Blob; mime: string; medida: MedidaVideo } | null>(null);
+  const [ajuste, setAjuste] = useState(0);
+  const [clip, setClip] = useState<(ClipListo & { url: string }) | null>(null);
 
   const detener = useCallback(() => {
     if (relojRef.current) {
@@ -84,12 +90,17 @@ export default function VideoSheet({
       try {
         // 720p con el micrófono abierto: en terreno lo que se explica hablando
         // vale tanto como lo que se ve.
+        //
+        // Se piden como `ideal` y no como `max` a propósito. Con `max`, un
+        // celular que solo sabe grabar en 1080p devuelve OverconstrainedError y
+        // el técnico se queda sin cámara; pidiéndolo como preferencia, el
+        // equipo entrega lo que puede y si se pasa se reajusta después.
         const stream = await navigator.mediaDevices.getUserMedia({
           video: {
             facingMode: { ideal: "environment" },
-            width: { ideal: VIDEO_LADO_MAYOR, max: VIDEO_LADO_MAYOR },
-            height: { ideal: VIDEO_LADO_MENOR, max: VIDEO_LADO_MENOR },
-            frameRate: { ideal: 30, max: 30 },
+            width: { ideal: VIDEO_LADO_MAYOR },
+            height: { ideal: VIDEO_LADO_MENOR },
+            frameRate: { ideal: 30 },
           },
           audio: true,
         });
@@ -114,7 +125,7 @@ export default function VideoSheet({
           );
         } else if (nombre === "NotFoundError" || nombre === "OverconstrainedError") {
           setEstado("sin-camara");
-          setError("No se detectó una cámara que grabe en 720p en este equipo.");
+          setError("No se detectó ninguna cámara en este equipo.");
         } else {
           setEstado("sin-camara");
           setError("No se pudo abrir la cámara. Usa la galería para adjuntar el clip.");
@@ -168,14 +179,24 @@ export default function VideoSheet({
         clearInterval(relojRef.current);
         relojRef.current = null;
       }
-      void revisar(new Blob(trozosRef.current, { type: mimeBase(tipo) }), mimeBase(tipo));
+      // El reloj de la grabación es la duración real, y se la pasa por si el
+      // navegador no sabe medir el WebM que acaba de producir.
+      void revisar(new Blob(trozosRef.current, { type: mimeBase(tipo) }), segundosRef.current);
     };
 
     grabador.start(1000);
+    segundosRef.current = 0;
     setSegundos(0);
     setEstado("grabando");
 
-    relojRef.current = setInterval(() => setSegundos((s) => s + 1), 1000);
+    relojRef.current = setInterval(
+      () =>
+        setSegundos((s) => {
+          segundosRef.current = s + 1;
+          return s + 1;
+        }),
+      1000
+    );
   }
 
   const parar = useCallback(() => {
@@ -190,21 +211,23 @@ export default function VideoSheet({
     if (estado === "grabando" && segundos >= VIDEO_MAX_SEG) parar();
   }, [estado, segundos, parar]);
 
-  /** Mide el clip recién grabado y lo deja listo para aceptar o repetir. */
-  async function revisar(blob: Blob, mime: string) {
+  /**
+   * Deja el clip listo para aceptar o repetir.
+   *
+   * Nada se rechaza: si se pasó del minuto o de 720p, `ajustarVideo` lo recorta
+   * y lo reescala. Eso toma tiempo real, así que mientras tanto se muestra la
+   * barra en vez de dejar la pantalla como colgada.
+   */
+  async function revisar(blob: Blob, duracionSeg?: number) {
+    setError("");
+    setAjuste(0);
+    setEstado("ajustando");
     try {
-      const medida = await medirVideo(blob);
-      const rechazo = motivoRechazo(blob, medida);
-      if (rechazo) {
-        setError(rechazo);
-        setEstado("lista");
-        return;
-      }
-      setError("");
-      setClip({ url: URL.createObjectURL(blob), blob, mime, medida });
+      const listo = await ajustarVideo(blob, setAjuste, { duracionSeg });
+      setClip({ ...listo, url: URL.createObjectURL(listo.blob) });
       setEstado("revisando");
-    } catch {
-      setError("No se pudo leer el video grabado. Inténtalo otra vez.");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "No se pudo preparar el video. Inténtalo otra vez.");
       setEstado("lista");
     }
   }
@@ -220,27 +243,23 @@ export default function VideoSheet({
     if (!clip) return;
     detener();
     URL.revokeObjectURL(clip.url);
-    onGrabado({ blob: clip.blob, mime: clip.mime, medida: clip.medida });
+    onGrabado({ blob: clip.blob, mime: clip.mime, medida: clip.medida, ajustes: clip.ajustes });
   }
 
-  /** El clip traído desde la galería pasa por la misma medición. */
+  /**
+   * El clip traído de la galería pasa por lo mismo que el grabado: se acepta
+   * venga como venga y se recorta y reescala si hace falta. Un video del
+   * carrete suele ser largo y en 1080p o más, así que este es el camino que más
+   * veces termina reajustando.
+   */
   async function desdeArchivo(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     e.target.value = "";
     if (!file) return;
-    setError("");
-    try {
-      const medida = await medirVideo(file);
-      const rechazo = motivoRechazo(file, medida);
-      if (rechazo) {
-        setError(rechazo);
-        return;
-      }
-      detener();
-      onGrabado({ blob: file, mime: mimeBase(file.type), medida });
-    } catch {
-      setError("No se pudo leer ese archivo de video.");
-    }
+    // La cámara en vivo ya no hace falta y compite por el equipo mientras se
+    // reajusta.
+    detener();
+    await revisar(file);
   }
 
   const restantes = VIDEO_MAX_SEG - segundos;
@@ -255,7 +274,11 @@ export default function VideoSheet({
       <div className="w-full max-w-[460px] max-h-[94vh] overflow-y-auto bg-[var(--color-bg)] border-t-2 border-[var(--color-text)] animate-up-sheet">
         <div className="flex items-center gap-2.5 px-4 py-3.5 border-b-2 border-[var(--color-divider)]">
           <div className="font-extrabold text-[17px] leading-[1.2]">
-            {estado === "revisando" ? "Revisa el video" : "Grabar video"}
+            {estado === "revisando"
+              ? "Revisa el video"
+              : estado === "ajustando"
+                ? "Ajustando el video"
+                : "Grabar video"}
           </div>
           <button
             type="button"
@@ -280,6 +303,14 @@ export default function VideoSheet({
             {estado === "pidiendo" ? (
               <div className="absolute inset-0 grid place-items-center px-6 text-center text-[13px] text-[var(--color-bg)]">
                 Esperando que autorices la cámara y el micrófono…
+              </div>
+            ) : null}
+            {estado === "ajustando" ? (
+              <div className="absolute inset-0 grid place-items-center px-6 text-center text-[13px] text-[var(--color-bg)] bg-[rgba(24,22,21,.82)]">
+                <div>
+                  <div className="font-extrabold text-base">Recortando y bajando a 720p…</div>
+                  <div className="mt-1 opacity-80 tabular-nums">{ajuste}%</div>
+                </div>
               </div>
             ) : null}
             {estado === "denegada" || estado === "sin-camara" ? (
@@ -307,6 +338,21 @@ export default function VideoSheet({
                 style={{ width: `${(segundos / VIDEO_MAX_SEG) * 100}%` }}
               />
             </div>
+          ) : null}
+
+          {estado === "ajustando" ? (
+            <>
+              <div className="h-1 mt-2 bg-[var(--color-divider)] overflow-hidden">
+                <div
+                  className="h-full bg-[var(--color-accent)] transition-[width] duration-300"
+                  style={{ width: `${ajuste}%` }}
+                />
+              </div>
+              <p className="mt-2.5 mb-0 text-xs opacity-66">
+                El video venía más largo o con más calidad de la que se puede guardar. Se está
+                reajustando y demora lo mismo que dura el clip: no cierres esta ventana.
+              </p>
+            </>
           ) : null}
 
           {estado === "lista" ? (
@@ -349,6 +395,12 @@ export default function VideoSheet({
                 </span>
                 <span className="ml-auto">{mb(clip.blob.size)}</span>
               </div>
+              {clip.ajustes.length ? (
+                <div className="mt-2 px-3 py-2.5 bg-[var(--color-surface-3)] border-l-[3px] border-[var(--color-accent)] text-[12px] leading-[1.45]">
+                  <span className="font-extrabold">Se ajustó para poder guardarlo: </span>
+                  {clip.ajustes.join("; ")}. Revísalo antes de aceptarlo.
+                </div>
+              ) : null}
               <button
                 type="button"
                 onClick={aceptar}
@@ -373,7 +425,7 @@ export default function VideoSheet({
             <p className="mt-2.5 mb-0 text-xs text-[var(--color-accent-active)]">{error}</p>
           ) : null}
 
-          {estado !== "grabando" && estado !== "revisando" ? (
+          {estado !== "grabando" && estado !== "revisando" && estado !== "ajustando" ? (
             <label className="w-full min-h-[52px] flex items-center gap-2.5 px-4 mt-2.5 bg-transparent border border-dashed border-black/[.5] text-[var(--color-text)] font-extrabold text-sm cursor-pointer hover:bg-black/[.06]">
               <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
                 <path d="M4 5h16v14H4z" />
@@ -389,7 +441,7 @@ export default function VideoSheet({
             </label>
           ) : null}
 
-          {estado !== "grabando" ? (
+          {estado !== "grabando" && estado !== "ajustando" ? (
             <button
               type="button"
               onClick={cerrar}
