@@ -44,6 +44,12 @@ export interface CampoDef {
   ph?: string;
   ayuda?: string;
   opciones?: { v: string; t: string }[];
+  /**
+   * Fuerza el selector con búsqueda aunque la lista sea corta. Se usa donde el
+   * catálogo crece con el tiempo —clientes, sucursales, técnicos— para que el
+   * campo no cambie de forma el día que pasa de seis a siete opciones.
+   */
+  buscable?: boolean;
 }
 
 export interface Adjunto {
@@ -141,7 +147,7 @@ export default function Dialogo({
                   <label htmlFor={`dlg-${c.k}`}>{c.label}</label>
 
                   {c.tipo === "select" ? (
-                    (c.opciones?.length ?? 0) >= MINIMO_PARA_BUSCAR ? (
+                    c.buscable || (c.opciones?.length ?? 0) >= MINIMO_PARA_BUSCAR ? (
                       // Lista larga: se escribe y filtra al momento.
                       <SelectBuscable
                         id={`dlg-${c.k}`}

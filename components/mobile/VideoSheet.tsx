@@ -57,6 +57,8 @@ export default function VideoSheet({
 
   const [estado, setEstado] = useState<Estado>("pidiendo");
   const [error, setError] = useState("");
+  /** Se está grabando sin sonido porque no hubo micrófono. */
+  const [sinAudio, setSinAudio] = useState(false);
   const [segundos, setSegundos] = useState(0);
   const [ajuste, setAjuste] = useState(0);
   const [clip, setClip] = useState<(ClipListo & { url: string }) | null>(null);
@@ -87,23 +89,37 @@ export default function VideoSheet({
         setError("Este navegador no sabe grabar video. Usa la galería para adjuntar el clip.");
         return;
       }
+      // 720p. Se piden como `ideal` y no como `max` a propósito: con `max`, un
+      // celular que solo sabe grabar en 1080p devuelve OverconstrainedError y
+      // el técnico se queda sin cámara; pidiéndolo como preferencia, el equipo
+      // entrega lo que puede y si se pasa se reajusta después.
+      const camara = {
+        facingMode: { ideal: "environment" as const },
+        width: { ideal: VIDEO_LADO_MAYOR },
+        height: { ideal: VIDEO_LADO_MENOR },
+        frameRate: { ideal: 30 },
+      };
+
       try {
-        // 720p con el micrófono abierto: en terreno lo que se explica hablando
-        // vale tanto como lo que se ve.
+        // Primero con micrófono: en terreno lo que se explica hablando vale
+        // tanto como lo que se ve.
         //
-        // Se piden como `ideal` y no como `max` a propósito. Con `max`, un
-        // celular que solo sabe grabar en 1080p devuelve OverconstrainedError y
-        // el técnico se queda sin cámara; pidiéndolo como preferencia, el
-        // equipo entrega lo que puede y si se pasa se reajusta después.
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: {
-            facingMode: { ideal: "environment" },
-            width: { ideal: VIDEO_LADO_MAYOR },
-            height: { ideal: VIDEO_LADO_MENOR },
-            frameRate: { ideal: 30 },
-          },
-          audio: true,
-        });
+        // Si el micrófono falla —permiso denegado solo para él, equipo sin
+        // micrófono, política del navegador— se reintenta con la cámara sola en
+        // vez de dejar al técnico sin poder grabar. Un video mudo del pórtico
+        // sigue siendo evidencia; ninguno no.
+        let stream: MediaStream;
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({ video: camara, audio: true });
+        } catch (conAudio) {
+          stream = await navigator.mediaDevices.getUserMedia({ video: camara, audio: false });
+          if (cancelado) {
+            stream.getTracks().forEach((t) => t.stop());
+            return;
+          }
+          console.warn("[dmc] video sin micrófono:", conAudio);
+          setSinAudio(true);
+        }
         if (cancelado) {
           stream.getTracks().forEach((t) => t.stop());
           return;
@@ -370,6 +386,7 @@ export default function VideoSheet({
               </button>
               <p className="mt-2.5 mb-0 text-xs opacity-66">
                 720p y hasta 1 minuto. Al llegar al minuto la grabación se corta sola.
+                {sinAudio ? " Este equipo no dio micrófono: el clip va a quedar sin sonido." : ""}
               </p>
             </>
           ) : null}
@@ -426,7 +443,7 @@ export default function VideoSheet({
           ) : null}
 
           {estado !== "grabando" && estado !== "revisando" && estado !== "ajustando" ? (
-            <label className="w-full min-h-[52px] flex items-center gap-2.5 px-4 mt-2.5 bg-transparent border border-dashed border-black/[.5] text-[var(--color-text)] font-extrabold text-sm cursor-pointer hover:bg-black/[.06]">
+            <label className="relative w-full min-h-[52px] flex items-center gap-2.5 px-4 mt-2.5 bg-transparent border border-dashed border-black/[.5] text-[var(--color-text)] font-extrabold text-sm cursor-pointer hover:bg-black/[.06]">
               <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
                 <path d="M4 5h16v14H4z" />
                 <path d="M10 9l5 3-5 3z" />

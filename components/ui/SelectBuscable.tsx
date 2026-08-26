@@ -25,6 +25,7 @@ export default function SelectBuscable({
   placeholder = "Escribe para buscar…",
   ariaLabel,
   className = "",
+  claseCampo = "input",
 }: {
   id?: string;
   valor: string;
@@ -33,6 +34,11 @@ export default function SelectBuscable({
   placeholder?: string;
   ariaLabel?: string;
   className?: string;
+  /**
+   * La clase base del campo. Por defecto la del panel (`.input`); el celular
+   * pasa la suya, que es más alta y con el fondo de las hojas del móvil.
+   */
+  claseCampo?: string;
 }) {
   const [abierto, setAbierto] = useState(false);
   const [texto, setTexto] = useState("");
@@ -110,7 +116,7 @@ export default function SelectBuscable({
           setResaltado(0);
         }}
         onKeyDown={onTeclas}
-        className={`input pr-9.5 ${className}`}
+        className={`${claseCampo} pr-9.5 ${className}`}
       />
       <svg
         width="16"

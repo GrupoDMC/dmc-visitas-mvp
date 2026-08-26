@@ -15,6 +15,7 @@ import {
   reprogramarVisitaAction,
 } from "@/app/actions/admin";
 import { ESTADO_VISITA_LABEL } from "@/lib/ui/estado";
+import { mensajeRut } from "@/lib/ui/formato";
 import type { Visita } from "@/lib/types";
 
 /** Opciones de los selectores, derivadas de los maestros que baja el layout. */
@@ -68,6 +69,7 @@ function valoresIniciales(opc: Opciones, visita?: Visita, origen?: OrigenProblem
       fecha: visita.fechaProgramada,
       hora: visita.horaProgramada ?? "",
       responsable: visita.responsableNombre ?? "",
+      respRut: visita.responsableRut ?? "",
       respTelefono: visita.responsableTelefono ?? "",
       trabajo: visita.trabajoSolicitado,
       acceso: visita.indicacionesAcceso ?? "",
@@ -89,6 +91,7 @@ function valoresIniciales(opc: Opciones, visita?: Visita, origen?: OrigenProblem
       fecha: "",
       hora: "",
       responsable: "",
+      respRut: "",
       respTelefono: "",
       trabajo: trabajo.trim(),
       acceso: "",
@@ -103,6 +106,7 @@ function valoresIniciales(opc: Opciones, visita?: Visita, origen?: OrigenProblem
     fecha: "",
     hora: "",
     responsable: "",
+    respRut: "",
     respTelefono: "",
     trabajo: "",
     acceso: "",
@@ -137,9 +141,16 @@ export default function VisitaDialogo({
   const esInstalacion = motivosMarcados.includes("INSTALACION");
 
   const campos: CampoDef[] = [
-    { k: "clienteId", label: "Cliente", tipo: "select", opciones: opc.clientes },
-    { k: "sucursalId", label: "Sucursal", tipo: "select", opciones: opc.sucursalesDe(String(form.clienteId)) },
-    { k: "tecnicoId", label: "Técnico asignado", tipo: "select", opciones: opc.tecnicos },
+    // Los tres se escriben y filtran: son los catálogos que crecen.
+    { k: "clienteId", label: "Cliente", tipo: "select", buscable: true, opciones: opc.clientes },
+    {
+      k: "sucursalId",
+      label: "Sucursal",
+      tipo: "select",
+      buscable: true,
+      opciones: opc.sucursalesDe(String(form.clienteId)),
+    },
+    { k: "tecnicoId", label: "Técnico asignado", tipo: "select", buscable: true, opciones: opc.tecnicos },
     {
       k: "motivoCodigo",
       label: "Motivo de la visita",
@@ -157,7 +168,14 @@ export default function VisitaDialogo({
         ? "En instalación la hora es obligatoria: la tienda tiene que dejar el acceso libre."
         : "Si la dejas vacía, el técnico la realiza en cualquier momento del día.",
     },
-    { k: "responsable", label: "Responsable de tienda", ph: "Nombre de quien recibe" },
+    { k: "responsable", label: "Responsable de tienda", span: 2, ph: "Nombre de quien recibe" },
+    {
+      k: "respRut",
+      label: "RUT del responsable",
+      tipo: "rut",
+      ph: "12.345.678-9",
+      ayuda: "Opcional al agendar. Si va, el técnico lo encuentra ya escrito en el acta.",
+    },
     { k: "respTelefono", label: "Teléfono del responsable", tipo: "tel", ph: "+56 9 8123 4455" },
     {
       k: "trabajo",
@@ -190,6 +208,12 @@ export default function VisitaDialogo({
       onHecho("Marca al menos un motivo de la visita.");
       return;
     }
+    // El RUT es opcional; a medio escribir, no. Si va, va bien.
+    const errorRut = mensajeRut(String(form.respRut ?? ""));
+    if (errorRut) {
+      onHecho(errorRut);
+      return;
+    }
     setGuardando(true);
     const datos = {
       clienteId: Number(form.clienteId),
@@ -202,6 +226,7 @@ export default function VisitaDialogo({
       trabajoSolicitado: String(form.trabajo),
       indicacionesAcceso: String(form.acceso) || null,
       responsableNombre: String(form.responsable) || null,
+      responsableRut: String(form.respRut) || null,
       responsableTelefono: String(form.respTelefono) || null,
       problemaOrigenId: origen?.problemaId ?? null,
     };

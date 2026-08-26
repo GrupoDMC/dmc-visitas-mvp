@@ -68,18 +68,40 @@ export async function abrirVideoAction(folio: string, datos: DatosVideo): Promis
 }
 
 /**
+ * Lo que lleva un envío de trozo.
+ *
+ * VA EN UN OBJETO A PROPÓSITO, no como cuatro argumentos sueltos. React cuenta
+ * el largo de todo string que cuelgue directamente de un array —y los
+ * argumentos de una Server Action son un array— contra un tope de 1.000.000 de
+ * posiciones. Un trozo de 1,5 MB en base64 son 2.097.152 caracteres, así que
+ * pasarlo suelto reventaba SIEMPRE, con este error del propio React:
+ *
+ *   "Maximum array nesting exceeded. Large nested arrays can be dangerous.
+ *    Try adding intermediate objects."
+ *
+ * El error se lanza antes de entrar a la función, así que ningún try/catch de
+ * acá lo veía: al celular llegaba el mensaje genérico de producción ("An error
+ * occurred in the Server Components render…") y el clip no se subía nunca,
+ * daba igual cuánto pesara. El objeto intermedio —justo lo que sugiere el
+ * mensaje— corta la cuenta y el string viaja entero.
+ */
+export interface TrozoVideo {
+  folio: string;
+  videoId: number;
+  /** Lo que el celular cree llevar subido, en bytes del archivo. */
+  desde: number;
+  trozoBase64: string;
+}
+
+/**
  * Paso 2: pega un trozo al final del clip.
  *
  * `desde` es lo que el celular cree llevar subido. Si no calza con la base, el
  * trozo se descarta y se devuelve la posición real para reanudar desde ahí sin
  * duplicar ni dejar un hueco.
  */
-export async function subirTrozoVideoAction(
-  folio: string,
-  videoId: number,
-  desde: number,
-  trozoBase64: string
-): Promise<ResultadoVideo> {
+export async function subirTrozoVideoAction(envio: TrozoVideo): Promise<ResultadoVideo> {
+  const { folio, videoId, desde, trozoBase64 } = envio;
   const visita = await visitaAbierta(folio);
   if (!visita) return { ok: false, error: "Esa visita no está abierta para ti." };
   if (!Number.isInteger(videoId) || videoId <= 0) return { ok: false, error: "Ese video no existe." };

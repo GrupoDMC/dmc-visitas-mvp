@@ -238,6 +238,8 @@ export interface Visita {
   trabajoSolicitado: string;
   indicacionesAcceso: string | null;
   responsableNombre: string | null;
+  /** Lo que se supo al agendar. El acta guarda el suyo en VisitaEjecucion. */
+  responsableRut: string | null;
   responsableTelefono: string | null;
   /** Por qué la visita quedó PENDIENTE o CANCELADA — lo escribe el técnico. */
   motivoPendiente: string | null;

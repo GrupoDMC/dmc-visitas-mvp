@@ -77,6 +77,7 @@ interface FilaVisita {
   trabajo_solicitado: string;
   indicaciones_acceso: string | null;
   responsable_nombre: string | null;
+  responsable_rut: string | null;
   responsable_telefono: string | null;
   motivo_pendiente: string | null;
   problema_origen_id: number | null;
@@ -125,7 +126,8 @@ const SELECT_VISITA = `
   SELECT v.id, v.folio, v.cliente_id, v.sucursal_id, v.tecnico_id, v.motivo_codigo, v.estado,
          ${F_FECHA("v.fecha_programada")} AS fecha_programada,
          ${F_HORA("v.hora_programada")}   AS hora_programada,
-         v.trabajo_solicitado, v.indicaciones_acceso, v.responsable_nombre, v.responsable_telefono,
+         v.trabajo_solicitado, v.indicaciones_acceso, v.responsable_nombre,
+         v.responsable_rut, v.responsable_telefono,
          ${MOTIVO_PENDIENTE} AS motivo_pendiente,
          v.problema_origen_id, v.creada_en_terreno,
          ${F_TS("v.creado_en")} AS creado_en,
@@ -372,6 +374,7 @@ async function cargar(filtro: Filtro): Promise<Visita[]> {
       trabajoSolicitado: v.trabajo_solicitado,
       indicacionesAcceso: v.indicaciones_acceso,
       responsableNombre: v.responsable_nombre,
+      responsableRut: v.responsable_rut,
       responsableTelefono: v.responsable_telefono,
       motivoPendiente: v.motivo_pendiente,
       problemaOrigenId: numONull(v.problema_origen_id),
@@ -785,6 +788,7 @@ export interface DatosVisita {
   trabajoSolicitado: string;
   indicacionesAcceso: string | null;
   responsableNombre: string | null;
+  responsableRut: string | null;
   responsableTelefono: string | null;
   problemaOrigenId?: number | null;
   creadaEnTerreno?: boolean;
@@ -796,10 +800,10 @@ export async function crearVisita(datos: DatosVisita, creadaPor: number | null):
   const [fila] = await consultaCon<{ id: number; folio: string }>(
     `INSERT INTO dmc.visita
        (cliente_id, sucursal_id, tecnico_id, motivo_codigo, fecha_programada, hora_programada,
-        trabajo_solicitado, indicaciones_acceso, responsable_nombre, responsable_telefono,
-        problema_origen_id, creada_en_terreno, creada_por)
+        trabajo_solicitado, indicaciones_acceso, responsable_nombre, responsable_rut,
+        responsable_telefono, problema_origen_id, creada_en_terreno, creada_por)
      VALUES (@cliente, @sucursal, @tecnico, @motivo, @fecha, @hora, @trabajo, @acceso,
-             @responsable, @telefono, @problema, @terreno, @creadaPor);
+             @responsable, @rut, @telefono, @problema, @terreno, @creadaPor);
 
      SELECT id, folio FROM dmc.visita WHERE id = SCOPE_IDENTITY();`,
     [
@@ -812,6 +816,7 @@ export async function crearVisita(datos: DatosVisita, creadaPor: number | null):
       ["trabajo", sql.NVarChar(sql.MAX), datos.trabajoSolicitado],
       ["acceso", sql.NVarChar(sql.MAX), datos.indicacionesAcceso],
       ["responsable", sql.NVarChar(120), datos.responsableNombre],
+      ["rut", sql.VarChar(12), datos.responsableRut || null],
       ["telefono", sql.VarChar(30), datos.responsableTelefono],
       ["problema", sql.BigInt, datos.problemaOrigenId ?? null],
       ["terreno", sql.Bit, datos.creadaEnTerreno ?? false],
@@ -904,7 +909,8 @@ export async function editarVisita(folio: string, datos: DatosVisita, usuarioId:
         SET cliente_id = @cliente, sucursal_id = @sucursal, tecnico_id = @tecnico,
             motivo_codigo = @motivo, fecha_programada = @fecha, hora_programada = @hora,
             trabajo_solicitado = @trabajo, indicaciones_acceso = @acceso,
-            responsable_nombre = @responsable, responsable_telefono = @telefono
+            responsable_nombre = @responsable, responsable_rut = @rut,
+            responsable_telefono = @telefono
       WHERE id = @id`,
     [
       ["cliente", sql.BigInt, datos.clienteId],
@@ -916,6 +922,7 @@ export async function editarVisita(folio: string, datos: DatosVisita, usuarioId:
       ["trabajo", sql.NVarChar(sql.MAX), datos.trabajoSolicitado],
       ["acceso", sql.NVarChar(sql.MAX), datos.indicacionesAcceso],
       ["responsable", sql.NVarChar(120), datos.responsableNombre],
+      ["rut", sql.VarChar(12), datos.responsableRut || null],
       ["telefono", sql.VarChar(30), datos.responsableTelefono],
       ["id", sql.BigInt, id],
     ]

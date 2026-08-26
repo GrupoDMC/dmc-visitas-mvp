@@ -232,6 +232,7 @@ CREATE TABLE dmc.visita (
     trabajo_solicitado    nvarchar(max) NOT NULL,
     indicaciones_acceso   nvarchar(max) NULL,
     responsable_nombre    nvarchar(120) NULL,
+    responsable_rut       varchar(12)   NULL,       -- se pide al agendar; llega precargado al acta
     responsable_telefono  varchar(30)   NULL,
     problema_origen_id    bigint        NULL,       -- visita nacida de un problema abierto
     creada_en_terreno     bit           NOT NULL CONSTRAINT df_visita_terreno DEFAULT (0),

@@ -149,6 +149,7 @@ export async function crearVisitaTecnicoAction(input: {
   fecha: string;
   hora: string | null;
   responsableNombre: string;
+  responsableRut: string;
   responsableTelefono: string;
   trabajo: string;
 }): Promise<ResultadoAccion> {
@@ -178,6 +179,7 @@ export async function crearVisitaTecnicoAction(input: {
         trabajoSolicitado: input.trabajo.trim() || "Visita agregada por el técnico, fuera de la planificación.",
         indicacionesAcceso: null,
         responsableNombre: input.responsableNombre || null,
+        responsableRut: input.responsableRut || null,
         responsableTelefono: input.responsableTelefono || null,
         creadaEnTerreno: true,
       },

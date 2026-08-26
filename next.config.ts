@@ -24,7 +24,16 @@ const nextConfig: NextConfig = {
           { key: "X-Content-Type-Options", value: "nosniff" },
           { key: "Referrer-Policy", value: "same-origin" },
           { key: "X-Frame-Options", value: "DENY" },
-          { key: "Permissions-Policy", value: "geolocation=(self), camera=(self), microphone=()" },
+          // El micrófono va habilitado: el video del trabajo se graba con
+          // sonido, y lo que el técnico explica hablando vale tanto como lo
+          // que se ve. Con `microphone=()` el navegador rechazaba el
+          // getUserMedia de la hoja de grabación antes de preguntarle nada al
+          // técnico, así que en el celular el botón de grabar no llegaba nunca
+          // a aparecer.
+          {
+            key: "Permissions-Policy",
+            value: "geolocation=(self), camera=(self), microphone=(self)",
+          },
           { key: "Strict-Transport-Security", value: "max-age=31536000; includeSubDomains" },
         ],
       },

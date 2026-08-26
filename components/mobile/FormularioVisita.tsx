@@ -88,7 +88,10 @@ export default function FormularioVisita({
 
   // 1 · Sucursal y responsable
   const [respNombre, setRespNombre] = useState(visita.responsableNombre ?? "");
-  const [respRut, setRespRut] = useState(fmtRut(visita.ejecucion?.responsableRut ?? ""));
+  const [respRut, setRespRut] = useState(
+    // Lo que ya haya en el acta manda; si no, lo que se anotó al agendar.
+    fmtRut(visita.ejecucion?.responsableRut ?? visita.responsableRut ?? "")
+  );
   const [respTel, setRespTel] = useState(fmtTel(visita.responsableTelefono ?? ""));
 
   // 2 · Motivo y trabajo realizado. Son varios: el técnico marca todos los que
@@ -846,7 +849,7 @@ export default function FormularioVisita({
                   folio: visita.folio,
                   guardadoEn: new Date().toISOString(),
                   respNombre: visita.responsableNombre ?? "",
-                  respRut: "",
+                  respRut: fmtRut(visita.responsableRut ?? ""),
                   respTel: fmtTel(visita.responsableTelefono ?? ""),
                   motivosCodigos: visita.motivosCodigos ?? [visita.motivoCodigo],
                   obs: "",
@@ -1850,21 +1853,22 @@ export default function FormularioVisita({
       const hasta = Math.min(subido + VIDEO_TROZO_BYTES, clip.blob.size);
       let res;
       try {
-        res = await subirTrozoVideoAction(
-          visita.folio,
+        res = await subirTrozoVideoAction({
+          folio: visita.folio,
           videoId,
-          subido,
-          await trozoBase64(clip.blob, subido, hasta)
-        );
-      } catch (err) {
-        // El motivo real importa: sin él, un fallo al preparar el trozo en el
-        // propio celular se lee igual que una caída de señal, y se pierde media
-        // hora buscando cobertura que nunca fue el problema.
-        console.error("[dmc] subirTrozoVideo:", err);
-        marcar({
-          progreso: null,
-          error: err instanceof Error ? err.message : "Se cortó la señal a mitad del video.",
+          desde: subido,
+          // El trozo viaja dentro del objeto, no como argumento suelto: ver
+          // la explicación en app/actions/videos (TrozoVideo).
+          trozoBase64: await trozoBase64(clip.blob, subido, hasta),
         });
+      } catch (err) {
+        // El motivo real va al log, no a la pantalla: cuando el que falla es el
+        // servidor, el mensaje que llega es el genérico de producción ("An
+        // error occurred in the Server Components render…") y al técnico no le
+        // dice nada. En pantalla va algo accionable y el clip queda con su
+        // botón de reintentar.
+        console.error("[dmc] subirTrozoVideo:", err);
+        marcar({ progreso: null, error: "Se cortó la subida del video. Vuelve a intentarlo." });
         return;
       }
       if (!res.ok) {

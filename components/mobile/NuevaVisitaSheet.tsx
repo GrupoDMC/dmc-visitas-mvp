@@ -3,9 +3,10 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Sheet from "@/components/mobile/Sheet";
+import SelectBuscable from "@/components/ui/SelectBuscable";
 import { crearVisitaTecnicoAction } from "@/app/actions/visitas";
 import { useReferencias } from "@/lib/ui/referencias";
-import { fmtTel } from "@/lib/ui/formato";
+import { fmtRut, fmtTel, mensajeRut } from "@/lib/ui/formato";
 
 const LABEL = "block text-[11px] tracking-[.09em] uppercase opacity-60 mb-1.5";
 const CAMPO =
@@ -45,6 +46,7 @@ export default function NuevaVisitaSheet({
   const [fecha, setFecha] = useState(hoy);
   const [hora, setHora] = useState("");
   const [encargado, setEncargado] = useState("");
+  const [rut, setRut] = useState("");
   const [telefono, setTelefono] = useState("");
   const [trabajo, setTrabajo] = useState("");
   const [guardando, setGuardando] = useState(false);
@@ -64,6 +66,13 @@ export default function NuevaVisitaSheet({
       );
       return;
     }
+    // El RUT es opcional, pero uno a medio escribir no se guarda: el acta lo
+    // va a pedir bien igual y así no llega arrastrado desde acá.
+    const errorRut = mensajeRut(rut);
+    if (errorRut) {
+      onError(errorRut);
+      return;
+    }
     setGuardando(true);
     const res = await crearVisitaTecnicoAction({
       sucursalId: Number(sucursalId),
@@ -72,6 +81,7 @@ export default function NuevaVisitaSheet({
       fecha,
       hora: hora || null,
       responsableNombre: encargado,
+      responsableRut: rut,
       responsableTelefono: telefono,
       trabajo,
     });
@@ -93,41 +103,40 @@ export default function NuevaVisitaSheet({
           de tu planificación.
         </p>
 
-        <div className="flex gap-3">
-          <div className="flex-1 min-w-0">
-            <label htmlFor="nv-cli" className={LABEL}>
-              Cliente
-            </label>
-            <select
-              id="nv-cli"
-              value={clienteId}
-              onChange={(e) => {
-                setClienteId(e.target.value);
-                const primera = sucursales.find((s) => String(s.clienteId) === e.target.value);
-                setSucursalId(primera ? String(primera.id) : "");
-              }}
-              className={CAMPO}
-            >
-              {clientes.map((c) => (
-                <option key={c.id} value={String(c.id)}>
-                  {c.nombreFantasia}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="flex-1 min-w-0">
-            <label htmlFor="nv-suc" className={LABEL}>
-              Sucursal
-            </label>
-            <select id="nv-suc" value={sucursalId} onChange={(e) => setSucursalId(e.target.value)} className={CAMPO}>
-              {propias.length === 0 ? <option value="">Sin sucursales</option> : null}
-              {propias.map((s) => (
-                <option key={s.id} value={String(s.id)}>
-                  {s.nombre}
-                </option>
-              ))}
-            </select>
-          </div>
+        {/* Cliente y sucursal se escriben, no se buscan a rueda: con ochenta
+            sucursales el desplegable nativo del celular es inservible. Van uno
+            debajo del otro para que la lista desplegada tenga ancho completo. */}
+        <div>
+          <label htmlFor="nv-cli" className={LABEL}>
+            Cliente
+          </label>
+          <SelectBuscable
+            id="nv-cli"
+            valor={clienteId}
+            opciones={clientes.map((c) => ({ v: String(c.id), t: c.nombreFantasia }))}
+            onChange={(v) => {
+              setClienteId(v);
+              const primera = sucursales.find((s) => String(s.clienteId) === v);
+              setSucursalId(primera ? String(primera.id) : "");
+            }}
+            ariaLabel="Cliente"
+            placeholder="Escribe para buscar el cliente…"
+            claseCampo={CAMPO}
+          />
+        </div>
+        <div>
+          <label htmlFor="nv-suc" className={LABEL}>
+            Sucursal
+          </label>
+          <SelectBuscable
+            id="nv-suc"
+            valor={sucursalId}
+            opciones={propias.map((s) => ({ v: String(s.id), t: s.nombre }))}
+            onChange={setSucursalId}
+            ariaLabel="Sucursal"
+            placeholder={propias.length ? "Escribe para buscar la sucursal…" : "Este cliente no tiene sucursales"}
+            claseCampo={CAMPO}
+          />
         </div>
 
         <div>
@@ -202,21 +211,42 @@ export default function NuevaVisitaSheet({
           </div>
         </div>
 
+        <div>
+          <label htmlFor="nv-enc" className={LABEL}>
+            Responsable de tienda
+          </label>
+          <input
+            id="nv-enc"
+            value={encargado}
+            onChange={(e) => setEncargado(e.target.value)}
+            placeholder="Quién recibe"
+            autoComplete="off"
+            autoCorrect="off"
+            spellCheck={false}
+            className={CAMPO}
+          />
+        </div>
+
         <div className="flex gap-3">
           <div className="flex-1 min-w-0">
-            <label htmlFor="nv-enc" className={LABEL}>
-              Responsable de tienda
+            <label htmlFor="nv-rut" className={LABEL}>
+              RUT del responsable
             </label>
             <input
-              id="nv-enc"
-              value={encargado}
-              onChange={(e) => setEncargado(e.target.value)}
-              placeholder="Quién recibe"
+              id="nv-rut"
+              inputMode="numeric"
+              value={rut}
+              // Se formatea en cada pulsación: nadie escribe los puntos ni el guion.
+              onChange={(e) => setRut(fmtRut(e.target.value))}
+              placeholder="12.345.678-9"
               autoComplete="off"
               autoCorrect="off"
               spellCheck={false}
-              className={CAMPO}
+              className={`${CAMPO} tabular-nums`}
             />
+            {mensajeRut(rut) ? (
+              <div className="mt-1 text-[11px] leading-[1.4] text-[var(--color-accent-800)]">{mensajeRut(rut)}</div>
+            ) : null}
           </div>
           <div className="flex-1 min-w-0">
             <label htmlFor="nv-tel" className={LABEL}>
