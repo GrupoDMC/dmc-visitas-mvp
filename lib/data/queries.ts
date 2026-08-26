@@ -44,7 +44,7 @@ export async function getVisitasRango(rango: Rango, hoy: string): Promise<Visita
   }>(
     `SELECT id, folio, estado, ${F_FECHA("fecha_programada")} AS fecha, tecnico_id
        FROM dmc.visita
-      WHERE fecha_programada BETWEEN @desde AND @hasta`,
+      WHERE fecha_programada BETWEEN @desde AND @hasta AND activo = 1`,
     [
       ["desde", sql.Date, desde],
       ["hasta", sql.Date, hasta],
@@ -60,19 +60,24 @@ export async function getVisitasRango(rango: Rango, hoy: string): Promise<Visita
 }
 
 export async function contarVisitas(): Promise<number> {
-  const [f] = await consulta<{ n: number }>(`SELECT COUNT(*) AS n FROM dmc.visita`);
+  const [f] = await consulta<{ n: number }>(`SELECT COUNT(*) AS n FROM dmc.visita WHERE activo = 1`);
   return num(f?.n ?? 0);
 }
 
 export async function contarReagendasPendientes(): Promise<number> {
   const [f] = await consulta<{ n: number }>(
-    `SELECT COUNT(*) AS n FROM dmc.visita WHERE estado IN ('REAGENDADA', 'PENDIENTE')`
+    `SELECT COUNT(*) AS n FROM dmc.visita WHERE estado IN ('REAGENDADA', 'PENDIENTE') AND activo = 1`
   );
   return num(f?.n ?? 0);
 }
 
 export async function contarProblemasAbiertos(): Promise<number> {
-  const [f] = await consulta<{ n: number }>(`SELECT COUNT(*) AS n FROM dmc.problema WHERE estado <> 'RESUELTO'`);
+  const [f] = await consulta<{ n: number }>(
+    `SELECT COUNT(*) AS n
+       FROM dmc.problema p
+       JOIN dmc.visita   v ON v.id = p.visita_id
+      WHERE p.estado <> 'RESUELTO' AND v.activo = 1`
+  );
   return num(f?.n ?? 0);
 }
 
@@ -118,7 +123,7 @@ const ORDEN_ESTADOS: EstadoVisita[] = [
 
 export async function getEstadoHoyDistribucion(hoy: string): Promise<{ estado: EstadoVisita; n: number; pct: number }[]> {
   const filas = await consultaCon<{ estado: EstadoVisita; n: number }>(
-    `SELECT estado, COUNT(*) AS n FROM dmc.visita WHERE fecha_programada = @hoy GROUP BY estado`,
+    `SELECT estado, COUNT(*) AS n FROM dmc.visita WHERE fecha_programada = @hoy AND activo = 1 GROUP BY estado`,
     [["hoy", sql.Date, hoy]]
   );
   const total = filas.reduce((acc, f) => acc + num(f.n), 0);
@@ -135,8 +140,9 @@ export async function getProblemasPorTipo(): Promise<{ codigo: string; nombre: s
   const filas = await consulta<{ codigo: string; nombre: string; n: number }>(
     `SELECT p.tipo_codigo AS codigo, ISNULL(c.nombre, p.tipo_codigo) AS nombre, COUNT(*) AS n
        FROM dmc.problema p
+       JOIN dmc.visita v ON v.id = p.visita_id
        LEFT JOIN dmc.catalogo_problema c ON c.codigo = p.tipo_codigo
-      WHERE p.estado <> 'RESUELTO'
+      WHERE p.estado <> 'RESUELTO' AND v.activo = 1
       GROUP BY p.tipo_codigo, c.nombre
       ORDER BY COUNT(*) DESC`
   );
@@ -216,16 +222,19 @@ export async function getTiempoEnSitio(): Promise<{
   porMotivo: { label: string; min: number; pct: number }[];
 }> {
   const [general] = await consulta<{ prom: number | null }>(
-    `SELECT AVG(CAST(DATEDIFF(minute, hora_inicio, hora_termino) AS float)) AS prom
-       FROM dmc.visita_ejecucion WHERE hora_termino IS NOT NULL`
+    `SELECT AVG(CAST(DATEDIFF(minute, e.hora_inicio, e.hora_termino) AS float)) AS prom
+       FROM dmc.visita_ejecucion e
+       JOIN dmc.visita v ON v.id = e.visita_id
+      WHERE e.hora_termino IS NOT NULL AND v.activo = 1`
   );
 
   const filas = await consulta<{ label: string; min: number }>(
     `SELECT ISNULL(c.nombre, e.motivo_real_codigo) AS label,
             AVG(CAST(DATEDIFF(minute, e.hora_inicio, e.hora_termino) AS float)) AS [min]
        FROM dmc.visita_ejecucion e
+       JOIN dmc.visita v ON v.id = e.visita_id
        LEFT JOIN dmc.catalogo_motivo c ON c.codigo = e.motivo_real_codigo
-      WHERE e.hora_termino IS NOT NULL AND e.motivo_real_codigo IS NOT NULL
+      WHERE e.hora_termino IS NOT NULL AND e.motivo_real_codigo IS NOT NULL AND v.activo = 1
       GROUP BY e.motivo_real_codigo, c.nombre`
   );
 
@@ -253,6 +262,7 @@ export async function getReagendas(limite = 5): Promise<ReagendaResumen[]> {
        FROM dmc.reagendamiento r
        JOIN dmc.visita   v ON v.id = r.visita_id
        JOIN dmc.sucursal s ON s.id = v.sucursal_id
+      WHERE v.activo = 1
       ORDER BY r.creado_en DESC, r.id DESC`,
     [["limite", sql.Int, limite]]
   );
@@ -333,9 +343,10 @@ export async function getProblemasPorSucursal(): Promise<GrupoProblemas[]> {
              FROM dmc.problema_visita_resolucion r
              JOIN dmc.visita  va ON va.id = r.visita_id
              JOIN dmc.tecnico ta ON ta.id = va.tecnico_id
-            WHERE r.problema_id = p.id
+            WHERE r.problema_id = p.id AND va.activo = 1
             ORDER BY va.fecha_programada DESC, va.id DESC
          ) AS ag
+        WHERE v.activo = 1
         ORDER BY p.creado_en DESC, p.id DESC`
     ),
     consulta<{ id: number; problema_id: number; etiqueta: string; cantidad: number }>(

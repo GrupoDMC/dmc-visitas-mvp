@@ -56,7 +56,7 @@ sesión local a la base que quieras (la de producción incluida — lo que guard
 verdad).
 
 > [!WARNING]
-> Antes de levantar esta versión hay que aplicar **todas** las migraciones, `002`, `003` y `004`.
+> Antes de levantar esta versión hay que aplicar **todas** las migraciones, `002`, `003`, `004` y `005`.
 > Sin ellas la app **no arranca**: las consultas de visitas leen `dmc.visita_motivo` (002) y
 > `dmc.visita.responsable_rut` (004), y el video del acta necesita `dmc.visita_video` (003). Ver
 > [Migraciones](#migraciones).
@@ -230,11 +230,13 @@ Sobre una base ya creada, los cambios van en archivos aparte y numerados:
 | [`sql/migracion-002-mejoras.sql`](sql/migracion-002-mejoras.sql) | Motivos múltiples por visita, `permite_cantidad` en los subdetalles del checklist, bytes de fotos y firmas, plantilla del checklist, solicitudes de contraseña y `activo` en `visita_trabajo` / `visita_foto` |
 | [`sql/migracion-003-video-y-cancelacion-admin.sql`](sql/migracion-003-video-y-cancelacion-admin.sql) | `dmc.visita_video` con subida por partes, el clip como adjunto del acta y el estado `CANCELADA_ADMIN` |
 | [`sql/migracion-004-rut-responsable-visita.sql`](sql/migracion-004-rut-responsable-visita.sql) | `dmc.visita.responsable_rut`: el RUT de quien recibe se pide ya al agendar y llega precargado al acta |
+| [`sql/migracion-005-eliminar-visita.sql`](sql/migracion-005-eliminar-visita.sql) | `dmc.visita.activo` (borrado lógico), `dmc.visita_eliminacion` como auditoría y las vistas del panel excluyendo lo inactivo |
 
 ```bash
 sqlcmd -S <host>,<puerto> -d DMC_Contingencia -i sql/migracion-002-mejoras.sql
 sqlcmd -S <host>,<puerto> -d DMC_Contingencia -i sql/migracion-003-video-y-cancelacion-admin.sql
 sqlcmd -S <host>,<puerto> -d DMC_Contingencia -i sql/migracion-004-rut-responsable-visita.sql
+sqlcmd -S <host>,<puerto> -d DMC_Contingencia -i sql/migracion-005-eliminar-visita.sql
 ```
 
 Son idempotentes: se pueden correr varias veces, y en orden.

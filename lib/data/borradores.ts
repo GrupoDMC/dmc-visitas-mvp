@@ -26,9 +26,10 @@ const LIMITE_PAYLOAD = 400_000;
 export async function guardarBorrador(folio: string, usuarioId: number, payload: string): Promise<boolean> {
   if (payload.length > LIMITE_PAYLOAD) return false;
 
-  const [visita] = await consultaCon<{ id: number }>(`SELECT id FROM dmc.visita WHERE folio = @folio`, [
-    ["folio", sql.VarChar(16), folio],
-  ]);
+  const [visita] = await consultaCon<{ id: number }>(
+    `SELECT id FROM dmc.visita WHERE folio = @folio AND activo = 1`,
+    [["folio", sql.VarChar(16), folio]]
+  );
   if (!visita) return false;
 
   // uq_borrador (visita_id, usuario_id): uno por técnico y visita, se pisa.

@@ -116,6 +116,34 @@ export function trozoBase64(blob: Blob, desde: number, hasta: number): Promise<s
   });
 }
 
+// ── Reproducción ────────────────────────────────────────────────────────────
+
+/**
+ * Arregla la duración Infinity de un WebM recién grabado para que el propio
+ * `<video controls>` de la previsualización quede con barra de avance y
+ * miniatura, en vez de aparecer congelado o sin poder adelantarse.
+ *
+ * Es el mismo bug de Chrome que obliga al truco de `medirVideo` (el
+ * contenedor no trae escrita la duración real): ahí se usa solo para medir,
+ * acá hay que aplicarlo también sobre el elemento que el técnico ve, porque
+ * un `blob:` URL no se corrige solo. Una vez que sale de la app —servido por
+ * `/api/visita/video/<id>`, que sí responde por rangos— el navegador lo
+ * resuelve solo y por eso el mismo clip se ve bien ahí.
+ */
+export function repararDuracionPreview(video: HTMLVideoElement) {
+  if (Number.isFinite(video.duration)) return;
+  const volver = () => {
+    video.ontimeupdate = null;
+    video.currentTime = 0;
+  };
+  video.ontimeupdate = volver;
+  try {
+    video.currentTime = 1e101;
+  } catch {
+    video.ontimeupdate = null;
+  }
+}
+
 // ── Medición ────────────────────────────────────────────────────────────────
 
 /** Cuánto se espera a que el navegador diga cuánto dura el clip. */

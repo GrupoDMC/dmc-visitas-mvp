@@ -85,7 +85,7 @@ export interface VisitaParaVideo {
  */
 export async function getVisitaParaVideo(folio: string): Promise<VisitaParaVideo | null> {
   const [fila] = await consultaCon<{ id: number; estado: string; tecnico_id: number }>(
-    `SELECT id, estado, tecnico_id FROM dmc.visita WHERE folio = @folio`,
+    `SELECT id, estado, tecnico_id FROM dmc.visita WHERE folio = @folio AND activo = 1`,
     [["folio", sql.VarChar(16), folio]]
   );
   return fila ? { id: num(fila.id), estado: fila.estado, tecnicoId: num(fila.tecnico_id) } : null;

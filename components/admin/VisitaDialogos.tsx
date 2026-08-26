@@ -12,6 +12,7 @@ import {
   cancelarVisitaAdminAction,
   crearVisitaAction,
   editarVisitaAction,
+  eliminarVisitaAction,
   reprogramarVisitaAction,
 } from "@/app/actions/admin";
 import { ESTADO_VISITA_LABEL } from "@/lib/ui/estado";
@@ -403,6 +404,73 @@ export function CancelarAdminDialogo({
       titulo={`Cancelar por admin ${visita.folio}`}
       cta="Cerrar la visita"
       nota={`La visita está ${ESTADO_VISITA_LABEL[visita.estado].toLowerCase()} y va a quedar «Cancelada por admin». Deja de aparecerle al técnico en el celular y no se puede volver atrás desde el panel: si hay que rehacerla, se agenda una visita nueva.`}
+      campos={campos}
+      form={form}
+      onCampo={(k, v) => setForm((prev) => ({ ...prev, [k]: v }))}
+      onCerrar={onCerrar}
+      onGuardar={guardar}
+      guardando={guardando}
+    />
+  );
+}
+
+/**
+ * "Eliminar visita" — sacarla de circulación por completo, no solo cerrarla.
+ *
+ * A propósito pide escribir el folio de nuevo: cerrarlo de un clic de más se
+ * arregla reabriendo el diálogo, esto no. La visita no se borra —queda
+ * inactiva y en dmc.visita_eliminacion con el usuario y la fecha— pero deja
+ * de aparecer en el panel, en el celular del técnico y en los gráficos.
+ */
+export function EliminarVisitaDialogo({
+  visita,
+  onCerrar,
+  onEliminada,
+  onError,
+}: {
+  visita: Visita;
+  onCerrar: () => void;
+  /** La visita quedó eliminada: ya no hay ficha que mostrar acá. */
+  onEliminada: () => void;
+  onError: (mensaje: string) => void;
+}) {
+  const [form, setForm] = useState<FormValores>({ confirmacion: "" });
+  const [guardando, setGuardando] = useState(false);
+
+  const campos: CampoDef[] = [
+    {
+      k: "confirmacion",
+      label: `Escribe el folio para confirmar`,
+      span: 2,
+      ph: visita.folio,
+      ayuda: `Tiene que ser exactamente «${visita.folio}».`,
+    },
+  ];
+
+  async function guardar() {
+    if (String(form.confirmacion).trim() !== visita.folio) {
+      onError("El folio no coincide. Escríbelo tal cual aparece arriba para confirmar.");
+      return;
+    }
+    setGuardando(true);
+    const res = await eliminarVisitaAction({
+      folio: visita.folio,
+      confirmacionFolio: String(form.confirmacion).trim(),
+    });
+    setGuardando(false);
+    if (!res.ok) {
+      onError(res.error ?? "No se pudo eliminar la visita.");
+      return;
+    }
+    onEliminada();
+  }
+
+  return (
+    <Dialogo
+      kicker="Operación · eliminar visita"
+      titulo={`Eliminar ${visita.folio}`}
+      cta="Eliminar visita"
+      nota="No se borra de la base: queda inactiva y registrada en la auditoría de eliminaciones, con tu usuario y la fecha. Pero desaparece del panel, del celular del técnico y de los gráficos de coordinación, y no hay forma de deshacerlo desde acá — si hace falta recuperarla, hay que pedirlo directo en la base de datos."
       campos={campos}
       form={form}
       onCampo={(k, v) => setForm((prev) => ({ ...prev, [k]: v }))}

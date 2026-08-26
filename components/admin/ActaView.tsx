@@ -5,7 +5,11 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import Tag from "@/components/Tag";
 import Dialogo, { type Adjunto } from "@/components/admin/Dialogo";
-import VisitaDialogo, { CancelarAdminDialogo, ReprogramarDialogo } from "@/components/admin/VisitaDialogos";
+import VisitaDialogo, {
+  CancelarAdminDialogo,
+  EliminarVisitaDialogo,
+  ReprogramarDialogo,
+} from "@/components/admin/VisitaDialogos";
 import VisorFotos, { useVisorFotos } from "@/components/ui/VisorFotos";
 import { Toast, useToast } from "@/components/ui/Toast";
 import { enviarActaAction } from "@/app/actions/admin";
@@ -46,7 +50,9 @@ export default function ActaView({
   const { toast, aviso } = useToast();
   const [resumenAbierto, setResumenAbierto] = useState(false);
   const [trazaAbierta, setTrazaAbierta] = useState(false);
-  const [dialogo, setDialogo] = useState<"correo" | "editar" | "reprogramar" | "cancelarAdmin" | null>(null);
+  const [dialogo, setDialogo] = useState<
+    "correo" | "editar" | "reprogramar" | "cancelarAdmin" | "eliminar" | null
+  >(null);
   const visor = useVisorFotos();
 
   const ejec = visita.ejecucion;
@@ -471,6 +477,35 @@ export default function ActaView({
             </div>
           ) : null}
         </div>
+
+        {esAdmin(ref) ? (
+          <div className="mt-8 border border-[var(--color-accent-300)] bg-[var(--color-accent-100)]">
+            <div className="px-5 py-3.5 border-b border-[var(--color-accent-300)]">
+              <div className="font-extrabold text-[13px] tracking-[.06em] uppercase text-[var(--color-accent-800)]">
+                Zona de peligro
+              </div>
+            </div>
+            <div className="px-5 py-4 flex items-center gap-4 flex-wrap">
+              <p className="m-0 flex-1 min-w-[240px] text-[13px] opacity-70">
+                Elimina esta visita del panel, del celular del técnico y de los gráficos de
+                coordinación. No borra el acta de la base: pide escribir el folio para confirmar y
+                queda registrada en la auditoría de eliminaciones.
+              </p>
+              <button
+                type="button"
+                onClick={() => setDialogo("eliminar")}
+                className="btn btn-secondary min-h-10 px-4 flex-none"
+                style={{ borderColor: "var(--color-accent-800)", color: "var(--color-accent-800)" }}
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                  <path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13" />
+                  <path d="M10 11v6M14 11v6" />
+                </svg>
+                <span>Eliminar visita</span>
+              </button>
+            </div>
+          </div>
+        ) : null}
       </div>
 
       {/* Trazabilidad */}
@@ -605,6 +640,14 @@ export default function ActaView({
             aviso(m);
             router.refresh();
           }}
+        />
+      ) : null}
+      {dialogo === "eliminar" ? (
+        <EliminarVisitaDialogo
+          visita={visita}
+          onCerrar={() => setDialogo(null)}
+          onError={aviso}
+          onEliminada={() => router.push("/admin/visitas")}
         />
       ) : null}
 

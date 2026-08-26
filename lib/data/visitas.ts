@@ -43,18 +43,22 @@ interface Filtro {
   params: Parametro[];
 }
 
-const TODAS: Filtro = { where: "1 = 1", params: [] };
+// Una visita eliminada (activo = 0) no es "otro estado": es como si no
+// existiera para el panel, el celular y los gráficos. Por eso el filtro va
+// acá, en la base que comparten todas las lecturas, y no repetido en cada
+// pantalla.
+const TODAS: Filtro = { where: "v.activo = 1", params: [] };
 
 function porTecnico(tecnicoId: number): Filtro {
-  return { where: "v.tecnico_id = @f_tecnico", params: [["f_tecnico", sql.BigInt, tecnicoId]] };
+  return { where: "v.tecnico_id = @f_tecnico AND v.activo = 1", params: [["f_tecnico", sql.BigInt, tecnicoId]] };
 }
 
 function porFolio(folio: string): Filtro {
-  return { where: "v.folio = @f_folio", params: [["f_folio", sql.VarChar(16), folio]] };
+  return { where: "v.folio = @f_folio AND v.activo = 1", params: [["f_folio", sql.VarChar(16), folio]] };
 }
 
 function porId(id: number): Filtro {
-  return { where: "v.id = @f_id", params: [["f_id", sql.BigInt, id]] };
+  return { where: "v.id = @f_id AND v.activo = 1", params: [["f_id", sql.BigInt, id]] };
 }
 
 /** `WHERE <hija>.visita_id IN (…)` con el mismo criterio que la consulta madre. */
@@ -588,7 +592,7 @@ export async function getTodosLosProblemas(): Promise<Problema[]> {
 /** "Iniciar visita": deja la visita EN_CURSO y abre su ejecución. */
 export async function iniciarVisita(folio: string, responsable: string | null): Promise<boolean> {
   const filas = await consultaCon<{ id: number; estado: EstadoVisita }>(
-    `SELECT id, estado FROM dmc.visita WHERE folio = @folio`,
+    `SELECT id, estado FROM dmc.visita WHERE folio = @folio AND activo = 1`,
     [["folio", sql.VarChar(16), folio]]
   );
   const visita = filas[0];
@@ -631,7 +635,7 @@ export async function cambiarEstadoVisita(input: {
 }): Promise<boolean> {
   const [visita] = await consultaCon<{ id: number; fecha: string; hora: string | null }>(
     `SELECT id, ${F_FECHA("fecha_programada")} AS fecha, ${F_HORA("hora_programada")} AS hora
-       FROM dmc.visita WHERE folio = @folio`,
+       FROM dmc.visita WHERE folio = @folio AND activo = 1`,
     [["folio", sql.VarChar(16), input.folio]]
   );
   if (!visita) return false;
@@ -688,7 +692,7 @@ export async function cancelarVisitaPorAdmin(input: {
 }): Promise<{ error: string } | null> {
   return enTransaccion(async (ej) => {
     const [visita] = await ej.consulta<{ id: number; estado: EstadoVisita }>(
-      `SELECT id, estado FROM dmc.visita WITH (UPDLOCK, ROWLOCK) WHERE folio = @folio`,
+      `SELECT id, estado FROM dmc.visita WITH (UPDLOCK, ROWLOCK) WHERE folio = @folio AND activo = 1`,
       [["folio", sql.VarChar(16), input.folio]]
     );
     if (!visita) return { error: "No encontramos esa visita." };
@@ -733,6 +737,57 @@ export async function cancelarVisitaPorAdmin(input: {
       [["id", sql.BigInt, id]]
     );
 
+    return null;
+  });
+}
+
+/**
+ * "Eliminar visita" — la saca de circulación sin borrar la fila.
+ *
+ * No es un DELETE: dmc.visita.activo pasa a 0 y ahí se queda. El acta, las
+ * fotos, el video y la firma siguen en la base tal cual estaban; lo único que
+ * cambia es que el panel, el celular del técnico y los gráficos dejan de
+ * contarla (ver TODAS/porTecnico/porFolio/porId acá arriba y las vistas de la
+ * migración 005). Sirve para sacar del medio una visita de prueba sin perder
+ * el rastro de que existió.
+ *
+ * `confirmacionFolio` tiene que calzar con el folio real: es la traba contra
+ * el clic accidental que pidió el administrador, no una segunda fuente de
+ * verdad — la acción ya llega con el folio, esto solo obliga a escribirlo de
+ * nuevo a propósito.
+ *
+ * Deja registro en dmc.visita_eliminacion con quién, cuándo y en qué estado
+ * estaba: es la auditoría, y a diferencia de dmc.visita_estado_historial no
+ * es un cambio de estado sino sacarla de circulación.
+ */
+export async function eliminarVisita(input: {
+  folio: string;
+  confirmacionFolio: string;
+  usuarioId: number;
+}): Promise<{ error: string } | null> {
+  if (input.confirmacionFolio.trim() !== input.folio.trim()) {
+    return { error: "El folio no coincide. Escríbelo tal cual para confirmar." };
+  }
+
+  return enTransaccion(async (ej) => {
+    const [visita] = await ej.consulta<{ id: number; estado: EstadoVisita }>(
+      `SELECT id, estado FROM dmc.visita WITH (UPDLOCK, ROWLOCK) WHERE folio = @folio AND activo = 1`,
+      [["folio", sql.VarChar(16), input.folio]]
+    );
+    if (!visita) return { error: "No encontramos esa visita, o ya está eliminada." };
+
+    const id = num(visita.id);
+    await ej.ejecutar(`UPDATE dmc.visita SET activo = 0 WHERE id = @id`, [["id", sql.BigInt, id]]);
+    await ej.ejecutar(
+      `INSERT INTO dmc.visita_eliminacion (visita_id, folio, estado_previo, usuario_id)
+       VALUES (@id, @folio, @estado, @usuario)`,
+      [
+        ["id", sql.BigInt, id],
+        ["folio", sql.VarChar(16), input.folio],
+        ["estado", sql.VarChar(16), visita.estado],
+        ["usuario", sql.BigInt, input.usuarioId],
+      ]
+    );
     return null;
   });
 }
@@ -898,7 +953,7 @@ async function sincronizarMotivos(visitaId: number, ambito: "PLAN" | "REAL", cod
 /** "Corregir visita" del acta. Si venía REAGENDADA vuelve a PROGRAMADA. */
 export async function editarVisita(folio: string, datos: DatosVisita, usuarioId: number | null): Promise<boolean> {
   const [visita] = await consultaCon<{ id: number; estado: EstadoVisita }>(
-    `SELECT id, estado FROM dmc.visita WHERE folio = @folio`,
+    `SELECT id, estado FROM dmc.visita WHERE folio = @folio AND activo = 1`,
     [["folio", sql.VarChar(16), folio]]
   );
   if (!visita) return false;
@@ -947,7 +1002,7 @@ export async function reprogramarVisita(input: {
   const [visita] = await consultaCon<{ id: number; fecha: string; hora: string | null; motivo: string | null }>(
     `SELECT v.id, ${F_FECHA("v.fecha_programada")} AS fecha, ${F_HORA("v.hora_programada")} AS hora,
             ${MOTIVO_PENDIENTE} AS motivo
-       FROM dmc.visita v WHERE v.folio = @folio`,
+       FROM dmc.visita v WHERE v.folio = @folio AND v.activo = 1`,
     [["folio", sql.VarChar(16), input.folio]]
   );
   if (!visita) return false;
@@ -1058,7 +1113,7 @@ export async function registrarEnvioActa(input: {
   adjuntos: number;
   usuarioId: number | null;
 }): Promise<boolean> {
-  const [visita] = await consultaCon<{ id: number }>(`SELECT id FROM dmc.visita WHERE folio = @folio`, [
+  const [visita] = await consultaCon<{ id: number }>(`SELECT id FROM dmc.visita WHERE folio = @folio AND activo = 1`, [
     ["folio", sql.VarChar(16), input.folio],
   ]);
   if (!visita) return false;
@@ -1223,7 +1278,7 @@ export async function guardarActa(
 
   return enTransaccion(async (ej) => {
     const [visita] = await ej.consulta<{ id: number; estado: EstadoVisita; tecnico_id: number }>(
-      `SELECT id, estado, tecnico_id FROM dmc.visita WITH (UPDLOCK, ROWLOCK) WHERE folio = @folio`,
+      `SELECT id, estado, tecnico_id FROM dmc.visita WITH (UPDLOCK, ROWLOCK) WHERE folio = @folio AND activo = 1`,
       [["folio", sql.VarChar(16), entrada.folio]]
     );
     if (!visita) return { ok: false, error: "No encontramos esa visita." };

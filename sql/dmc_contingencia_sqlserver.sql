@@ -237,6 +237,10 @@ CREATE TABLE dmc.visita (
     problema_origen_id    bigint        NULL,       -- visita nacida de un problema abierto
     creada_en_terreno     bit           NOT NULL CONSTRAINT df_visita_terreno DEFAULT (0),
     creada_por            bigint        NULL,
+    -- Borrado lógico: "Eliminar visita" del panel pasa esto a 0 en vez de
+    -- borrar la fila. El acta, las fotos, el video y la firma quedan intactos;
+    -- solo se saca de lo que ve el panel, el celular y los gráficos.
+    activo                bit           NOT NULL CONSTRAINT df_visita_activo DEFAULT (1),
     creado_en             datetime2(0)  NOT NULL CONSTRAINT df_visita_creado DEFAULT (SYSDATETIME()),
     actualizado_en        datetime2(0)  NOT NULL CONSTRAINT df_visita_actualizado DEFAULT (SYSDATETIME()),
     CONSTRAINT pk_visita          PRIMARY KEY (id),
@@ -257,6 +261,7 @@ CREATE INDEX ix_visita_fecha    ON dmc.visita (fecha_programada DESC);
 CREATE INDEX ix_visita_tecnico  ON dmc.visita (tecnico_id, fecha_programada DESC) INCLUDE (estado, sucursal_id);
 CREATE INDEX ix_visita_sucursal ON dmc.visita (sucursal_id, fecha_programada DESC);
 CREATE INDEX ix_visita_estado   ON dmc.visita (estado, fecha_programada DESC);
+CREATE INDEX ix_visita_activo   ON dmc.visita (activo) INCLUDE (fecha_programada, estado);
 GO
 
 -- Una visita puede tener varios motivos: motivo_codigo de arriba es el
@@ -323,6 +328,26 @@ CREATE TABLE dmc.visita_estado_historial (
 );
 GO
 CREATE INDEX ix_hist_visita ON dmc.visita_estado_historial (visita_id, ocurrido_en);
+GO
+
+-- Auditoría de "Eliminar visita": quién, cuándo y en qué estado estaba. No es
+-- lo mismo que visita_estado_historial: eliminar no es un cambio de estado,
+-- es sacar la visita de circulación (dmc.visita.activo = 0). El folio va
+-- duplicado a propósito: la fila de dmc.visita sigue existiendo, pero esta
+-- bitácora se puede leer sin depender del join.
+CREATE TABLE dmc.visita_eliminacion (
+    id            bigint       IDENTITY(1,1) NOT NULL,
+    visita_id     bigint       NOT NULL,
+    folio         varchar(16)  NOT NULL,
+    estado_previo varchar(16)  NOT NULL,
+    usuario_id    bigint       NOT NULL,
+    eliminado_en  datetime2(0) NOT NULL CONSTRAINT df_visita_elim_en DEFAULT (SYSDATETIME()),
+    CONSTRAINT pk_visita_eliminacion PRIMARY KEY (id),
+    CONSTRAINT fk_visita_elim_visita  FOREIGN KEY (visita_id)  REFERENCES dmc.visita  (id),
+    CONSTRAINT fk_visita_elim_usuario FOREIGN KEY (usuario_id) REFERENCES dmc.usuario (id)
+);
+GO
+CREATE INDEX ix_visita_elim_visita ON dmc.visita_eliminacion (visita_id);
 GO
 
 CREATE TABLE dmc.reagendamiento (
@@ -782,7 +807,7 @@ JOIN dmc.cliente  c  ON c.id  = v.cliente_id
 JOIN dmc.tecnico  t  ON t.id  = v.tecnico_id
 JOIN dmc.catalogo_problema cp ON cp.codigo = p.tipo_codigo
 JOIN dmc.catalogo_motivo   cm ON cm.codigo = v.motivo_codigo
-WHERE p.estado <> 'RESUELTO';
+WHERE p.estado <> 'RESUELTO' AND v.activo = 1;
 GO
 
 CREATE OR ALTER VIEW dmc.v_carga_tecnico AS
@@ -793,6 +818,7 @@ SELECT t.id AS tecnico_id, t.nombre_completo AS tecnico, v.fecha_programada,
                 THEN 1 ELSE 0 END) AS no_realizadas
 FROM dmc.visita v
 JOIN dmc.tecnico t ON t.id = v.tecnico_id
+WHERE v.activo = 1
 GROUP BY t.id, t.nombre_completo, v.fecha_programada;
 GO
 
@@ -803,6 +829,7 @@ SELECT fecha_programada,
        CAST(ROUND(100.0 * SUM(CASE WHEN estado = 'COMPLETADA' THEN 1 ELSE 0 END)
                   / NULLIF(COUNT(*), 0), 0) AS int) AS pct
 FROM dmc.visita
+WHERE activo = 1
 GROUP BY fecha_programada;
 GO
 
@@ -814,6 +841,7 @@ FROM dmc.problema p
 JOIN dmc.visita   v ON v.id = p.visita_id
 JOIN dmc.sucursal s ON s.id = v.sucursal_id
 JOIN dmc.cliente  c ON c.id = v.cliente_id
+WHERE v.activo = 1
 GROUP BY s.id, s.nombre, s.comuna, c.nombre_fantasia;
 GO
 
@@ -833,7 +861,7 @@ JOIN dmc.sucursal s ON s.id = v.sucursal_id
 JOIN dmc.cliente  c ON c.id = v.cliente_id
 JOIN dmc.catalogo_motivo cm ON cm.codigo = v.motivo_codigo
 LEFT JOIN dmc.visita_ejecucion e ON e.visita_id = v.id
-WHERE v.estado IN ('COMPLETADA','PENDIENTE');
+WHERE v.estado IN ('COMPLETADA','PENDIENTE') AND v.activo = 1;
 GO
 
 -- Quien cerro la visita desde el panel, cuando y con que explicacion. El motivo
@@ -854,7 +882,7 @@ CROSS APPLY (SELECT TOP 1 x.motivo, x.ocurrido_en, x.usuario_id
               WHERE x.visita_id = v.id AND x.estado = 'CANCELADA_ADMIN'
               ORDER BY x.ocurrido_en DESC, x.id DESC) h
 LEFT JOIN dmc.usuario u ON u.id = h.usuario_id
-WHERE v.estado = 'CANCELADA_ADMIN';
+WHERE v.estado = 'CANCELADA_ADMIN' AND v.activo = 1;
 GO
 
 /* =====================================================================

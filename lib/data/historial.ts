@@ -54,6 +54,7 @@ export async function getHistorialLocal(sucursalId: number | undefined, excluirV
       WHERE v.sucursal_id = @sucursal
         AND v.id <> @excluir
         AND v.estado IN ('COMPLETADA', 'PENDIENTE')
+        AND v.activo = 1
       ORDER BY v.fecha_programada DESC, v.hora_programada DESC, v.id DESC`,
     [
       ["sucursal", sql.BigInt, sucursalId],

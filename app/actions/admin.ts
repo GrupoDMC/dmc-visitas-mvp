@@ -7,6 +7,7 @@ import {
   cancelarVisitaPorAdmin,
   crearVisita,
   editarVisita,
+  eliminarVisita,
   registrarEnvioActa,
   reprogramarVisita,
   type DatosVisita,
@@ -192,6 +193,39 @@ export async function cancelarVisitaAdminAction(input: {
     return comoError(err, "cancelarVisitaPorAdmin");
   }
   revalidarPanel(input.folio);
+  return { ok: true, folio: input.folio };
+}
+
+/**
+ * "Eliminar visita" — sacarla de circulación por completo, no solo cerrarla.
+ *
+ * A diferencia de "Cancelar por admin", esto vale sobre cualquier estado
+ * (incluida una COMPLETADA): es para una visita que nunca debió existir —el
+ * cliente de prueba, el ensayo del técnico— y no para una que se hizo pero ya
+ * no sirve. Solo un administrador, y solo si escribe el folio de nuevo: es la
+ * traba contra el clic accidental. Queda con nombre y apellido en
+ * dmc.visita_eliminacion.
+ */
+export async function eliminarVisitaAction(input: {
+  folio: string;
+  confirmacionFolio: string;
+}): Promise<ResultadoAdmin> {
+  const sesion = await sesionAdmin();
+  if (!sesion) {
+    return { ok: false, error: "Solo un administrador puede eliminar una visita." };
+  }
+
+  try {
+    const fallo = await eliminarVisita({
+      folio: input.folio,
+      confirmacionFolio: input.confirmacionFolio,
+      usuarioId: sesion.usuario.id,
+    });
+    if (fallo) return { ok: false, error: fallo.error };
+  } catch (err) {
+    return comoError(err, "eliminarVisita");
+  }
+  revalidarPanel();
   return { ok: true, folio: input.folio };
 }
 

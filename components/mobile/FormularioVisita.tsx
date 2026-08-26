@@ -10,7 +10,7 @@ import FirmaSheet, { type FirmaGuardada } from "./FirmaSheet";
 import { Toast, useToast } from "./toast";
 import { fmtRut, fmtTel, mensajeRut, rutCompleto, rutDvCorrecto, telCompleto } from "@/lib/ui/formato";
 import { comprimirFoto } from "@/lib/ui/imagen";
-import { mb, reloj, trozoBase64, VIDEO_TROZO_BYTES } from "@/lib/ui/video";
+import { mb, reloj, repararDuracionPreview, trozoBase64, VIDEO_TROZO_BYTES } from "@/lib/ui/video";
 import { guardarActaAction } from "@/app/actions/visitas";
 import {
   abrirVideoAction,
@@ -1263,6 +1263,7 @@ export default function FormularioVisita({
                         controls
                         preload="metadata"
                         playsInline
+                        onLoadedMetadata={(e) => repararDuracionPreview(e.currentTarget)}
                         className="w-full aspect-video bg-black object-contain"
                       />
                       <div className="flex items-center gap-2 px-2.5 py-2">

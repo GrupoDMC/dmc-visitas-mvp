@@ -10,6 +10,7 @@ import {
   mb,
   mimeBase,
   reloj,
+  repararDuracionPreview,
   tipoGrabacion,
   type ClipListo,
 } from "@/lib/ui/video";
@@ -311,7 +312,13 @@ export default function VideoSheet({
         <div className="p-4">
           <div className="relative w-full aspect-[16/9] bg-[var(--color-text)] overflow-hidden border border-[var(--color-divider)]">
             {clip ? (
-              <video src={clip.url} controls playsInline className="w-full h-full object-contain bg-black" />
+              <video
+                src={clip.url}
+                controls
+                playsInline
+                onLoadedMetadata={(e) => repararDuracionPreview(e.currentTarget)}
+                className="w-full h-full object-contain bg-black"
+              />
             ) : (
               <video ref={videoRef} playsInline muted className="w-full h-full object-cover" />
             )}
