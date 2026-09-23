@@ -12,7 +12,7 @@
 export const COOKIE_SESION = "dmc_session";
 
 /** Vigencia del token, en segundos (15 min). */
-export const VIGENCIA_SESION = 60 * 15;
+export const VIGENCIA_SESION = 60 * 30;
 
 export interface TokenSesion {
   /** id de dmc.usuario */
