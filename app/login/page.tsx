@@ -3,7 +3,8 @@ import { redirect } from "next/navigation";
 import { getSesion } from "@/lib/auth";
 import LoginForm from "./LoginForm";
 
-export default async function LoginPage() {
+export default async function LoginPage({ searchParams }: { searchParams: Promise<{ expirada?: string }> }) {
+  const { expirada } = await searchParams;
   const sesion = await getSesion();
   if (sesion) {
     redirect(sesion.usuario.rol === "TECNICO" ? "/tecnico" : "/admin");
@@ -28,6 +29,15 @@ export default async function LoginPage() {
           <p className="mb-[30px] text-sm opacity-60 max-w-[30ch]">
             Registro de mantención e instalación en tienda. Funciona sin señal: lo que guardes se envía solo.
           </p>
+
+          {expirada ? (
+            <div
+              role="status"
+              className="mb-4 px-3.5 py-3 bg-[var(--color-accent-200)] border-l-4 border-[var(--color-accent)] text-[13px] text-[var(--color-accent-800)]"
+            >
+              Tu sesión venció por inactividad. Vuelve a entrar.
+            </div>
+          ) : null}
 
           <LoginForm />
 

@@ -11,10 +11,16 @@ import {
   reiniciarChecklistAction,
 } from "@/app/actions/admin";
 import type { BorradorChecklist } from "@/lib/data/catalogos";
-import type { CatalogoMotivo, CatalogoProblema, CatalogoTrabajo, ChecklistPlantilla } from "@/lib/types";
+import type {
+  CatalogoInterno,
+  CatalogoMotivo,
+  CatalogoProblema,
+  CatalogoTrabajo,
+  ChecklistPlantilla,
+} from "@/lib/types";
 
 /**
- * Editor de las tres listas.
+ * Editor de las listas del checklist.
  *
  * Trabaja sobre un borrador local: mover, renombrar, clonar y quitar solo tocan
  * la pantalla. Nada llega a SQL Server hasta que se aprieta "Guardar cambios" y
@@ -48,12 +54,18 @@ interface Grupo {
   nombre: string;
   grupoLabel: string;
   items: Item[];
+  /**
+   * Solo trabajos: las claves (`key`) de los motivos bajo los que se ofrece.
+   * Por clave y no por nombre para que renombrar un motivo no suelte el
+   * enlace. Vacío = se ofrece en todos los motivos.
+   */
+  motivos: string[];
 }
 
 let contadorClave = 0;
 const nuevaClave = () => `k${(contadorClave += 1)}`;
 
-function aMotivos(lista: CatalogoMotivo[]): Motivo[] {
+function aMotivos(lista: (CatalogoMotivo | CatalogoInterno)[]): Motivo[] {
   return lista.map((m) => ({ key: nuevaClave(), id: m.id, codigo: m.codigo, nombre: m.nombre }));
 }
 
@@ -70,10 +82,12 @@ function aGruposProblema(lista: CatalogoProblema[]): Grupo[] {
       etiqueta: o.etiqueta,
       permiteCantidad: o.permiteCantidad,
     })),
+    motivos: [],
   }));
 }
 
-function aGruposTrabajo(lista: CatalogoTrabajo[]): Grupo[] {
+function aGruposTrabajo(lista: CatalogoTrabajo[], motivos: Motivo[]): Grupo[] {
+  const clavePorCodigo = new Map(motivos.map((m) => [m.codigo, m.key]));
   return lista.map((t) => ({
     key: nuevaClave(),
     id: t.id,
@@ -86,6 +100,7 @@ function aGruposTrabajo(lista: CatalogoTrabajo[]): Grupo[] {
       etiqueta: s.etiqueta,
       permiteCantidad: s.permiteCantidad,
     })),
+    motivos: t.motivosCodigos.map((c) => clavePorCodigo.get(c)).filter((k): k is string => Boolean(k)),
   }));
 }
 
@@ -128,19 +143,28 @@ export default function ChecklistEditor({
   motivosIniciales,
   tiposIniciales,
   trabajosIniciales,
+  internosIniciales,
   plantillaInicial,
 }: {
   motivosIniciales: CatalogoMotivo[];
   tiposIniciales: CatalogoProblema[];
   trabajosIniciales: CatalogoTrabajo[];
+  internosIniciales: CatalogoInterno[];
   plantillaInicial: ChecklistPlantilla | null;
 }) {
   const router = useRouter();
   const { toast, aviso } = useToast();
 
-  const [motivos, setMotivos] = useState<Motivo[]>(() => aMotivos(motivosIniciales));
+  // Motivos y trabajos nacen juntos: los trabajos apuntan a los motivos por la
+  // clave que se les acaba de dar.
+  const [inicial] = useState(() => {
+    const m = aMotivos(motivosIniciales);
+    return { motivos: m, trabajos: aGruposTrabajo(trabajosIniciales, m) };
+  });
+  const [motivos, setMotivos] = useState<Motivo[]>(inicial.motivos);
   const [tipos, setTipos] = useState<Grupo[]>(() => aGruposProblema(tiposIniciales));
-  const [trabajos, setTrabajos] = useState<Grupo[]>(() => aGruposTrabajo(trabajosIniciales));
+  const [trabajos, setTrabajos] = useState<Grupo[]>(inicial.trabajos);
+  const [internos, setInternos] = useState<Motivo[]>(() => aMotivos(internosIniciales));
   const [plantilla, setPlantilla] = useState(plantillaInicial);
 
   const [abiertoTipo, setAbiertoTipo] = useState<string | null>(null);
@@ -155,21 +179,25 @@ export default function ChecklistEditor({
     motivos: motivosIniciales.length,
     tipos: tiposIniciales.length,
     trabajos: trabajosIniciales.length,
+    internos: internosIniciales.length,
   });
 
   // Tras guardar, el servidor vuelve a mandar las listas ya escritas: el
   // borrador se rehace desde ellas para que los ids nuevos queden en pantalla.
   useEffect(() => {
-    setMotivos(aMotivos(motivosIniciales));
+    const m = aMotivos(motivosIniciales);
+    setMotivos(m);
     setTipos(aGruposProblema(tiposIniciales));
-    setTrabajos(aGruposTrabajo(trabajosIniciales));
+    setTrabajos(aGruposTrabajo(trabajosIniciales, m));
+    setInternos(aMotivos(internosIniciales));
     enBase.current = {
       motivos: motivosIniciales.length,
       tipos: tiposIniciales.length,
       trabajos: trabajosIniciales.length,
+      internos: internosIniciales.length,
     };
     setSucio(false);
-  }, [motivosIniciales, tiposIniciales, trabajosIniciales]);
+  }, [motivosIniciales, tiposIniciales, trabajosIniciales, internosIniciales]);
 
   // Con cambios sin guardar, cerrar la pestaña pide confirmación al navegador.
   useEffect(() => {
@@ -204,6 +232,12 @@ export default function ChecklistEditor({
     () => trabajos.map((t, i) => ({ t, i })).filter(({ t }) => coincide(t.nombre, t.items.map((o) => o.etiqueta))),
     [trabajos, coincide]
   );
+  const internosVisibles = useMemo(
+    () => internos.map((m, i) => ({ m, i })).filter(({ m }) => coincide(m.nombre)),
+    [internos, coincide]
+  );
+
+  const nombreMotivoPorClave = (key: string) => motivos.find((m) => m.key === key)?.nombre.trim() ?? "";
 
   const borrador = (): BorradorChecklist => ({
     motivos: motivos.map((m) => ({ id: m.id, nombre: m.nombre })),
@@ -218,23 +252,28 @@ export default function ChecklistEditor({
       nombre: t.nombre,
       grupoLabel: t.grupoLabel.trim() || null,
       subtrabajos: t.items.map((o) => ({ id: o.id, etiqueta: o.etiqueta, permiteCantidad: o.permiteCantidad })),
+      motivos: t.motivos.map(nombreMotivoPorClave).filter(Boolean),
     })),
+    internos: internos.map((m) => ({ id: m.id, nombre: m.nombre })),
   });
 
   const vacios =
     motivos.filter((m) => !m.nombre.trim()).length +
     tipos.filter((t) => !t.nombre.trim()).length +
-    trabajos.filter((t) => !t.nombre.trim()).length;
+    trabajos.filter((t) => !t.nombre.trim()).length +
+    internos.filter((m) => !m.nombre.trim()).length;
 
   const seDesactivan =
     Math.max(0, enBase.current.motivos - motivos.filter((m) => m.id !== null).length) +
     Math.max(0, enBase.current.tipos - tipos.filter((t) => t.id !== null).length) +
-    Math.max(0, enBase.current.trabajos - trabajos.filter((t) => t.id !== null).length);
+    Math.max(0, enBase.current.trabajos - trabajos.filter((t) => t.id !== null).length) +
+    Math.max(0, enBase.current.internos - internos.filter((m) => m.id !== null).length);
 
   const nuevos =
     motivos.filter((m) => m.id === null).length +
     tipos.filter((t) => t.id === null).length +
-    trabajos.filter((t) => t.id === null).length;
+    trabajos.filter((t) => t.id === null).length +
+    internos.filter((m) => m.id === null).length;
 
   // ── Guardado ──────────────────────────────────────────────────────────────
 
@@ -243,7 +282,7 @@ export default function ChecklistEditor({
     if (vacios > 0) return aviso("Hay entradas sin nombre. Escríbelas o quítalas antes de guardar.");
 
     const lineas = [
-      `Van a quedar ${motivos.length} motivos, ${tipos.length} tipos de problema y ${trabajos.length} trabajos.`,
+      `Van a quedar ${motivos.length} motivos, ${tipos.length} tipos de problema, ${trabajos.length} trabajos y ${internos.length} ítems del comentario interno.`,
       nuevos > 0 ? `Se agregan ${nuevos} entradas nuevas.` : "",
       seDesactivan > 0
         ? `${seDesactivan} entradas dejan de aparecer en el celular. No se borra nada: las visitas y actas ya registradas las siguen mostrando.`
@@ -269,7 +308,7 @@ export default function ChecklistEditor({
     const r = res.resumen;
     aviso(
       r
-        ? `Checklist guardado · ${r.motivos} motivos, ${r.problemas} tipos, ${r.trabajos} trabajos` +
+        ? `Checklist guardado · ${r.motivos} motivos, ${r.problemas} tipos, ${r.trabajos} trabajos, ${r.internos} internos` +
             (r.desactivados ? ` · ${r.desactivados} entradas desactivadas` : "")
         : "Checklist guardado"
     );
@@ -281,7 +320,7 @@ export default function ChecklistEditor({
     setConfirmar({
       titulo: "¿Fijar esta lista como tu plantilla?",
       texto:
-        "Se guarda una copia de las tres listas tal como están ahora. El botón «Reiniciar» va a devolverlas siempre a esta copia. " +
+        "Se guarda una copia de las listas tal como están ahora. El botón «Reiniciar» va a devolverlas siempre a esta copia. " +
         (plantilla ? "Reemplaza la plantilla que tenías guardada." : ""),
       cta: "Fijar plantilla",
       accion: async () => {
@@ -300,8 +339,8 @@ export default function ChecklistEditor({
     setConfirmar({
       titulo: "¿Reiniciar a tu plantilla?",
       texto:
-        `Las tres listas vuelven a la plantilla que fijaste ` +
-        `(${plantilla.motivos} motivos, ${plantilla.problemas} tipos, ${plantilla.trabajos} trabajos). ` +
+        `Las listas vuelven a la plantilla que fijaste ` +
+        `(${plantilla.motivos} motivos, ${plantilla.problemas} tipos, ${plantilla.trabajos} trabajos, ${plantilla.internos} internos). ` +
         "Todo lo que hayas agregado después deja de aparecer en el celular. Nada se borra de la base.",
       cta: "Reiniciar checklist",
       accion: async () => {
@@ -323,9 +362,14 @@ export default function ChecklistEditor({
     aviso("Motivo agregado · escribe su nombre y guarda");
   }
 
+  function agregarInterno() {
+    editar(setInternos, (prev) => [...prev, { key: nuevaClave(), id: null, codigo: null, nombre: "" }]);
+    aviso("Ítem agregado · escribe su nombre y guarda");
+  }
+
   function agregarGrupo(set: React.Dispatch<React.SetStateAction<Grupo[]>>, abrir: (k: string) => void) {
     const key = nuevaClave();
-    editar(set, (prev) => [...prev, { key, id: null, codigo: null, nombre: "", grupoLabel: "", items: [] }]);
+    editar(set, (prev) => [...prev, { key, id: null, codigo: null, nombre: "", grupoLabel: "", items: [], motivos: [] }]);
     abrir(key);
   }
 
@@ -344,6 +388,7 @@ export default function ChecklistEditor({
       grupoLabel: grupo.grupoLabel,
       // Los subdetalles van sin id: son filas nuevas colgando de la copia.
       items: grupo.items.map((o) => ({ ...o, key: nuevaClave(), id: null })),
+      motivos: [...grupo.motivos],
     };
     const posicion = lista.findIndex((g) => g.key === grupo.key);
     editar(set, (prev) => {
@@ -366,7 +411,13 @@ export default function ChecklistEditor({
     });
   }
 
-  const total = motivos.length + tipos.length + trabajos.length;
+  const total = motivos.length + tipos.length + trabajos.length + internos.length;
+
+  /** Un motivo que se quita del borrador también se suelta de los trabajos. */
+  const quitarMotivo = (key: string) => {
+    editar(setMotivos, (prev) => prev.filter((x) => x.key !== key));
+    setTrabajos((prev) => prev.map((t) => ({ ...t, motivos: t.motivos.filter((k) => k !== key) })));
+  };
 
   return (
     <>
@@ -391,7 +442,7 @@ export default function ChecklistEditor({
             <input
               value={busqueda}
               onChange={(e) => setBusqueda(e.target.value)}
-              placeholder="Buscar en las tres listas…"
+              placeholder="Buscar en las listas…"
               aria-label="Buscar en el checklist"
               autoComplete="off"
               className="input pl-9.5"
@@ -430,80 +481,29 @@ export default function ChecklistEditor({
           cta="Nuevo motivo"
           onAgregar={agregarMotivo}
         >
-          <div className="flex flex-col gap-2 max-w-[720px]">
-            {motivosVisibles.map(({ m, i }) => (
-              <Arrastrable
-                key={m.key}
-                grupo="motivo"
-                indice={i}
-                total={motivos.length}
-                bloqueado={!!filtro}
-                onReordenar={(desde, ranura) => editar(setMotivos, (prev) => reubicar(prev, desde, ranura))}
-                onMover={(d) => editar(setMotivos, (prev) => mover(prev, i, d))}
-                className="flex items-center gap-2.5"
-              >
-                {(agarre) => (
-              <>
-                {agarre}
-                <Numero n={i + 1} />
-                <input
-                  value={m.nombre}
-                  onChange={(e) =>
-                    editar(setMotivos, (prev) =>
-                      prev.map((x) => (x.key === m.key ? { ...x, nombre: e.target.value } : x))
-                    )
-                  }
-                  placeholder="Ej: Calibración de las antenas"
-                  className="input flex-1 min-w-0 bg-[var(--color-surface-3)]"
-                  aria-label="Nombre del motivo"
-                  autoComplete="off"
-                />
-                <Codigo codigo={m.codigo} />
-                <button
-                  onClick={() =>
-                    editar(setMotivos, (prev) => {
-                      const copia: Motivo = {
-                        key: nuevaClave(),
-                        id: null,
-                        codigo: null,
-                        nombre: nombreDeCopia(m.nombre, prev.map((x) => x.nombre)),
-                      };
-                      const lista = [...prev];
-                      lista.splice(i + 1, 0, copia);
-                      return lista;
-                    })
-                  }
-                  className="btn btn-icon w-10 h-10 flex-none border border-black/[.3]"
-                  aria-label="Clonar motivo"
-                  title="Clonar este motivo"
-                >
-                  <IconoClonar />
-                </button>
-                <button
-                  onClick={() =>
-                    setConfirmar({
-                      titulo: "¿Quitar este motivo?",
-                      texto: `«${m.nombre || "Sin nombre"}» deja de aparecer en el celular del técnico. No se borra: las visitas ya registradas con este motivo lo siguen mostrando. El cambio se aplica al guardar.`,
-                      cta: "Quitar motivo",
-                      accion: () => editar(setMotivos, (prev) => prev.filter((x) => x.key !== m.key)),
-                    })
-                  }
-                  className="btn btn-icon w-10 h-10 flex-none border border-black/[.3]"
-                  aria-label="Quitar motivo"
-                >
-                  <IconoBasura />
-                </button>
-              </>
-                )}
-              </Arrastrable>
-            ))}
-            {motivos.length === 0 ? (
-              <Vacio>Sin motivos: el técnico no podría clasificar la visita, y coordinación no puede agendarla.</Vacio>
-            ) : null}
-            {motivos.length > 0 && motivosVisibles.length === 0 ? (
-              <Vacio>Ningún motivo coincide con «{busqueda}».</Vacio>
-            ) : null}
-          </div>
+          <FilasSimples
+            grupo="motivo"
+            lista={motivos}
+            visibles={motivosVisibles}
+            bloqueado={!!filtro}
+            que="motivo"
+            placeholder="Ej: Calibración de las antenas"
+            onEditar={(fn) => editar(setMotivos, fn)}
+            onPedirQuitar={(m) =>
+              setConfirmar({
+                titulo: "¿Quitar este motivo?",
+                texto: `«${m.nombre || "Sin nombre"}» deja de aparecer en el celular del técnico. No se borra: las visitas ya registradas con este motivo lo siguen mostrando. Los trabajos que estaban solo en este motivo pasan a ofrecerse en todos. El cambio se aplica al guardar.`,
+                cta: "Quitar motivo",
+                accion: () => quitarMotivo(m.key),
+              })
+            }
+          />
+          {motivos.length === 0 ? (
+            <Vacio>Sin motivos: el técnico no podría clasificar la visita, y coordinación no puede agendarla.</Vacio>
+          ) : null}
+          {motivos.length > 0 && motivosVisibles.length === 0 ? (
+            <Vacio>Ningún motivo coincide con «{busqueda}».</Vacio>
+          ) : null}
         </Bloque>
 
         {/* Lista 2 · Tipos de problema */}
@@ -567,7 +567,7 @@ export default function ChecklistEditor({
         <Bloque
           numero="Lista 3"
           titulo="Trabajos realizados"
-          bajada="Lo que el técnico agrega en «Agregar trabajo realizado». Despliega un trabajo para editar sus subtrabajos; sin subtrabajos, el técnico solo escribe un detalle."
+          bajada="Lo que el técnico agrega bajo cada motivo. Despliega un trabajo para editar sus subtrabajos y elegir en qué motivos aparece: así el técnico solo ve los trabajos del motivo que marcó. Sin motivos elegidos, el trabajo aparece en todos."
           cta="Nuevo trabajo"
           onAgregar={() => agregarGrupo(setTrabajos, setAbiertoTrabajo)}
         >
@@ -591,16 +591,20 @@ export default function ChecklistEditor({
               abierto={abiertoTrabajo === t.key}
               onToggle={() => setAbiertoTrabajo(abiertoTrabajo === t.key ? null : t.key)}
               resumen={
-                t.items.length
+                (t.items.length
                   ? `${t.items.length} ${t.items.length === 1 ? "subtrabajo" : "subtrabajos"}`
-                  : "Sin subtrabajo · solo detalle escrito"
+                  : "Sin subtrabajo") +
+                (t.motivos.length
+                  ? ` · en ${t.motivos.length} ${t.motivos.length === 1 ? "motivo" : "motivos"}`
+                  : " · en todos los motivos")
               }
+              motivos={motivos}
               etiquetaSingular="subtrabajo"
               etiquetaPlural="subtrabajos"
               tituloSub="Título del subtrabajo"
               phSub="Ej: Repuesto cambiado"
               phNueva="Ej: Tarjeta electrónica"
-              vacioSub="Sin subtrabajos: en el celular este trabajo se agrega directo, con detalle escrito opcional."
+              vacioSub="Sin subtrabajos: en el celular este trabajo se agrega directo, con un toque."
               onCambiar={(fn) => editar(setTrabajos, (prev) => prev.map((x) => (x.key === t.key ? fn(x) : x)))}
               onClonar={() => clonarGrupo(t, trabajos, setTrabajos, setAbiertoTrabajo)}
               onQuitar={() => quitarGrupo(t, setTrabajos, "trabajo")}
@@ -620,6 +624,39 @@ export default function ChecklistEditor({
           ) : null}
         </Bloque>
 
+        {/* Lista 4 · Comentario interno */}
+        <Bloque
+          numero="Lista 4"
+          titulo="Comentario interno"
+          bajada="Lo que el técnico marca en la sección «Comentario interno» del acta, junto con su texto, fotos y video. Es solo para coordinación: no aparece en el PDF ni en el correo al cliente."
+          cta="Nuevo ítem"
+          onAgregar={agregarInterno}
+        >
+          <FilasSimples
+            grupo="interno"
+            lista={internos}
+            visibles={internosVisibles}
+            bloqueado={!!filtro}
+            que="ítem"
+            placeholder="Ej: El cliente pidió cotización"
+            onEditar={(fn) => editar(setInternos, fn)}
+            onPedirQuitar={(m) =>
+              setConfirmar({
+                titulo: "¿Quitar este ítem?",
+                texto: `«${m.nombre || "Sin nombre"}» deja de aparecer en el celular del técnico. No se borra: las actas que ya lo marcaron lo siguen mostrando. El cambio se aplica al guardar.`,
+                cta: "Quitar ítem",
+                accion: () => editar(setInternos, (prev) => prev.filter((x) => x.key !== m.key)),
+              })
+            }
+          />
+          {internos.length === 0 ? (
+            <Vacio>Sin ítems: el técnico igual puede dejar el comentario interno escrito, con fotos y video.</Vacio>
+          ) : null}
+          {internos.length > 0 && internosVisibles.length === 0 ? (
+            <Vacio>Ningún ítem coincide con «{busqueda}».</Vacio>
+          ) : null}
+        </Bloque>
+
         {/* Plantilla propia */}
         <div className="border-t-2 border-[var(--color-divider)] pt-4.5 mt-2">
           <div className="text-[10px] tracking-[.15em] uppercase text-[var(--color-accent-active)]">Tu plantilla</div>
@@ -628,8 +665,8 @@ export default function ChecklistEditor({
           </h2>
           <p className="m-0 mb-3.5 text-[13px] opacity-68 max-w-[70ch]">
             {plantilla
-              ? `Guardada con ${plantilla.motivos} motivos, ${plantilla.problemas} tipos de problema y ${plantilla.trabajos} trabajos. Vuelve a fijarla cuando cambies las listas y quieras que ese sea el nuevo punto de partida.`
-              : "Todavía no has fijado ninguna. Arma las tres listas como las quieres y fíjalas: desde ahí, «Reiniciar» siempre las devuelve a ese estado."}
+              ? `Guardada con ${plantilla.motivos} motivos, ${plantilla.problemas} tipos de problema, ${plantilla.trabajos} trabajos y ${plantilla.internos} ítems internos. Vuelve a fijarla cuando cambies las listas y quieras que ese sea el nuevo punto de partida.`
+              : "Todavía no has fijado ninguna. Arma las listas como las quieres y fíjalas: desde ahí, «Reiniciar» siempre las devuelve a ese estado."}
           </p>
           <div className="flex items-center gap-2.5 flex-wrap">
             <button className="btn btn-secondary border border-black/[.3]" onClick={guardarComoPlantilla}>
@@ -721,6 +758,7 @@ function Desplegable({
   onQuitar,
   onConfirmarQuitarItem,
   onAviso,
+  motivos,
 }: {
   /** La manilla de arrastre, que pone el contenedor Arrastrable. */
   agarre: React.ReactNode;
@@ -741,6 +779,8 @@ function Desplegable({
   onQuitar: () => void;
   onConfirmarQuitarItem: (cfg: ConfirmarCfg) => void;
   onAviso: (texto: string) => void;
+  /** Solo trabajos: los motivos entre los que se elige dónde se ofrece. */
+  motivos?: Motivo[];
 }) {
   const [nueva, setNueva] = useState("");
 
@@ -816,6 +856,48 @@ function Desplegable({
 
       {abierto ? (
         <div className="px-3.5 pt-3.5 pb-4 border-t border-black/[.25]">
+          {motivos ? (
+            <div className="mb-4.5">
+              <div className="block text-[10px] tracking-[.11em] uppercase opacity-62 mb-1.5">
+                Aparece bajo estos motivos
+              </div>
+              <div className="flex flex-wrap gap-1.5 max-w-[720px]">
+                {motivos
+                  .filter((m) => m.nombre.trim())
+                  .map((m) => {
+                    const activo = grupo.motivos.includes(m.key);
+                    return (
+                      <button
+                        key={m.key}
+                        type="button"
+                        role="checkbox"
+                        aria-checked={activo}
+                        onClick={() =>
+                          onCambiar((g) => ({
+                            ...g,
+                            motivos: activo ? g.motivos.filter((k) => k !== m.key) : [...g.motivos, m.key],
+                          }))
+                        }
+                        className="min-h-[34px] px-3 border cursor-pointer text-[12px] leading-[1.2]"
+                        style={{
+                          background: activo ? "var(--color-text)" : "transparent",
+                          color: activo ? "var(--color-bg)" : "var(--color-text)",
+                          borderColor: activo ? "var(--color-text)" : "rgba(32,30,29,.3)",
+                          fontWeight: activo ? 800 : 400,
+                        }}
+                      >
+                        {m.nombre}
+                      </button>
+                    );
+                  })}
+              </div>
+              <p className="m-0 mt-1.5 text-xs opacity-62">
+                {grupo.motivos.length
+                  ? "El técnico solo ve este trabajo bajo los motivos marcados."
+                  : "Sin ninguno marcado, el técnico lo ve bajo cualquier motivo."}
+              </p>
+            </div>
+          ) : null}
           <label className="block text-[10px] tracking-[.11em] uppercase opacity-62 mb-1.5">{tituloSub}</label>
           <input
             value={grupo.grupoLabel}
@@ -916,6 +998,92 @@ function Desplegable({
           </div>
         </div>
       ) : null}
+    </div>
+  );
+}
+
+/**
+ * Lista plana y reordenable: motivos y checklist interno. Cada fila es un
+ * nombre con su código, un botón para clonar y otro para quitar.
+ */
+function FilasSimples({
+  grupo,
+  lista,
+  visibles,
+  bloqueado,
+  que,
+  placeholder,
+  onEditar,
+  onPedirQuitar,
+}: {
+  grupo: string;
+  lista: Motivo[];
+  visibles: { m: Motivo; i: number }[];
+  bloqueado: boolean;
+  que: string;
+  placeholder: string;
+  onEditar: (fn: (prev: Motivo[]) => Motivo[]) => void;
+  onPedirQuitar: (m: Motivo) => void;
+}) {
+  return (
+    <div className="flex flex-col gap-2 max-w-[720px]">
+      {visibles.map(({ m, i }) => (
+        <Arrastrable
+          key={m.key}
+          grupo={grupo}
+          indice={i}
+          total={lista.length}
+          bloqueado={bloqueado}
+          onReordenar={(desde, ranura) => onEditar((prev) => reubicar(prev, desde, ranura))}
+          onMover={(d) => onEditar((prev) => mover(prev, i, d))}
+          className="flex items-center gap-2.5"
+        >
+          {(agarre) => (
+            <>
+              {agarre}
+              <Numero n={i + 1} />
+              <input
+                value={m.nombre}
+                onChange={(e) =>
+                  onEditar((prev) => prev.map((x) => (x.key === m.key ? { ...x, nombre: e.target.value } : x)))
+                }
+                placeholder={placeholder}
+                className="input flex-1 min-w-0 bg-[var(--color-surface-3)]"
+                aria-label={`Nombre del ${que}`}
+                autoComplete="off"
+              />
+              <Codigo codigo={m.codigo} />
+              <button
+                onClick={() =>
+                  onEditar((prev) => {
+                    const copia: Motivo = {
+                      key: nuevaClave(),
+                      id: null,
+                      codigo: null,
+                      nombre: nombreDeCopia(m.nombre, prev.map((x) => x.nombre)),
+                    };
+                    const nueva = [...prev];
+                    nueva.splice(i + 1, 0, copia);
+                    return nueva;
+                  })
+                }
+                className="btn btn-icon w-10 h-10 flex-none border border-black/[.3]"
+                aria-label={`Clonar ${que}`}
+                title={`Clonar este ${que}`}
+              >
+                <IconoClonar />
+              </button>
+              <button
+                onClick={() => onPedirQuitar(m)}
+                className="btn btn-icon w-10 h-10 flex-none border border-black/[.3]"
+                aria-label={`Quitar ${que}`}
+              >
+                <IconoBasura />
+              </button>
+            </>
+          )}
+        </Arrastrable>
+      ))}
     </div>
   );
 }

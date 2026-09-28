@@ -203,16 +203,27 @@ export default function VisitasTable({
                   <td className={`tabular-nums whitespace-nowrap ${v.horaProgramada ? "opacity-90" : "opacity-45"}`}>
                     {v.horaProgramada ?? "Sin hora"}
                   </td>
-                  <td className="whitespace-nowrap">{v.cliente?.nombreFantasia}</td>
-                  <td className="opacity-70 whitespace-nowrap">{v.sucursal?.nombre}</td>
-                  <td className="opacity-70 whitespace-nowrap">{v.tecnico?.nombreCompleto}</td>
-                  <td className="opacity-70">{textoMotivos(v)}</td>
+                  <td>
+                    <Recorte ancho={170} texto={v.cliente?.nombreFantasia} />
+                  </td>
+                  <td className="opacity-70">
+                    <Recorte ancho={190} texto={v.sucursal?.nombre} />
+                  </td>
+                  <td className="opacity-70">
+                    <Recorte ancho={170} texto={v.tecnico?.nombreCompleto} />
+                  </td>
+                  <td className="opacity-70">
+                    <Recorte ancho={210} texto={textoMotivos(v)} />
+                  </td>
                   <td>
                     <Tag variant={ESTADO_VISITA_TAG[v.estado]}>{ESTADO_VISITA_LABEL[v.estado]}</Tag>
                   </td>
                   {mostrarMotivo ? (
-                    <td className="opacity-70 max-w-[320px]">
-                      {v.motivoPendiente ?? v.reagendamientos?.[0]?.motivo ?? "Sin motivo registrado"}
+                    <td className="opacity-70">
+                      <Recorte
+                        ancho={260}
+                        texto={v.motivoPendiente ?? v.reagendamientos?.[0]?.motivo ?? "Sin motivo registrado"}
+                      />
                     </td>
                   ) : null}
                   <td className="text-right whitespace-nowrap">
@@ -285,5 +296,20 @@ export default function VisitasTable({
 
       <Toast texto={toast} variante="panel" />
     </>
+  );
+}
+
+/**
+ * Texto de celda en una sola línea, cortado con "…" si no cabe.
+ *
+ * Un motivo o un nombre largo estiraba la fila y desordenaba toda la tabla.
+ * Así todas las filas quedan de la misma altura; el texto completo sale al
+ * pasar el mouse y, entero, en el acta.
+ */
+function Recorte({ texto, ancho }: { texto: string | null | undefined; ancho: number }) {
+  return (
+    <span className="block truncate" style={{ maxWidth: ancho }} title={texto ?? undefined}>
+      {texto}
+    </span>
   );
 }

@@ -6,6 +6,7 @@ import { contarSolicitudesPendientes } from "@/lib/data/solicitudes-password";
 import { listarUsuarios } from "@/lib/data/maestros";
 import { ReferenciasProvider } from "@/lib/ui/referencias";
 import AdminSidebar from "@/components/admin/AdminSidebar";
+import VigilanteSesion from "@/components/ui/VigilanteSesion";
 
 export const dynamic = "force-dynamic";
 
@@ -31,6 +32,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
 
   return (
     <ReferenciasProvider valor={referencias}>
+      <VigilanteSesion />
       <div
         className="grid min-h-screen bg-[var(--color-bg)] text-[var(--color-text)]"
         style={{ gridTemplateColumns: "248px minmax(0,1fr)" }}

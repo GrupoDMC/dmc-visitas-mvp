@@ -326,7 +326,8 @@ export async function guardarChecklistAction(borrador: BorradorChecklist): Promi
   const choque =
     repetidos(borrador.motivos.map((m) => m.nombre)) ??
     repetidos(borrador.problemas.map((x) => x.nombre)) ??
-    repetidos(borrador.trabajos.map((x) => x.nombre));
+    repetidos(borrador.trabajos.map((x) => x.nombre)) ??
+    repetidos((borrador.internos ?? []).map((x) => x.nombre));
   if (choque) return { ok: false, error: `«${choque}» está dos veces en la misma lista.` };
 
   for (const pr of borrador.problemas) {

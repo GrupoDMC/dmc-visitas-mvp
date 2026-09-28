@@ -312,7 +312,9 @@ export default function FirmaSheet({
             </label>
             <input
               id="fi-rut"
-              inputMode="numeric"
+              // Teclado de texto y no numérico: el dígito verificador puede ser K.
+              inputMode="text"
+              autoCapitalize="characters"
               value={rut}
               onChange={(e) => setRut(fmtRut(e.target.value))}
               placeholder="11.111.111-1"

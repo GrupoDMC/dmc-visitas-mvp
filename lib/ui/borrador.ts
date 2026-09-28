@@ -34,7 +34,13 @@ export interface SubSeleccion {
 export interface TrabajoForm {
   id: number;
   codigo: string;
+  /**
+   * Bajo qué motivo se agregó. Vacío en borradores anteriores a que los
+   * trabajos colgaran de un motivo: esos se muestran bajo el primero.
+   */
+  motivo?: string;
   subs: SubSeleccion[];
+  /** Ya no se pide por trabajo (el detalle es uno solo, global); queda por compatibilidad. */
   detalle: string;
 }
 
@@ -55,6 +61,8 @@ export interface ProblemaForm {
 export interface FotoForm {
   id: number;
   src: string;
+  /** Foto del comentario interno: no la ve el cliente. */
+  interno?: boolean;
 }
 
 /**
@@ -78,6 +86,8 @@ export interface VideoForm {
   /** 0 a 100 mientras sube; null cuando ya está guardado en la base. */
   progreso: number | null;
   error: string | null;
+  /** Clip del comentario interno: no lo ve el cliente. */
+  interno?: boolean;
 }
 
 export interface FirmaForm {
@@ -87,7 +97,7 @@ export interface FirmaForm {
   hora: string;
 }
 
-export type Seccion = "sucursal" | "motivo" | "problemas" | "fotos" | "firmas";
+export type Seccion = "sucursal" | "motivo" | "problemas" | "interno" | "fotos" | "firmas";
 
 export interface BorradorActa {
   folio: string;
@@ -99,6 +109,8 @@ export interface BorradorActa {
   motivosCodigos: string[];
   obs: string;
   interno: string;
+  /** Lo marcado del checklist del comentario interno (códigos). */
+  internos?: string[];
   trabajos: TrabajoForm[];
   problemas: ProblemaForm[];
   fotos: FotoForm[];
@@ -201,6 +213,7 @@ export function borradorConDatos(b: BorradorActa | null): boolean {
       b.respTel?.trim() ||
       b.obs?.trim() ||
       b.interno?.trim() ||
+      b.internos?.length ||
       b.trabajos?.length ||
       b.problemas?.length ||
       b.fotos?.length ||

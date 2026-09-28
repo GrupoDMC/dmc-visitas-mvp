@@ -38,11 +38,11 @@ export default function SucursalesTable({ sucursales, clientes }: { sucursales: 
       nota="La sucursal siempre pertenece a un cliente y no se puede dejar sin él."
       phBusqueda="Buscar sucursal, comuna, código…"
       rows={sucursales}
-      searchKeys={(s) => `${s.nombre} ${s.codigo} ${s.comuna} ${s.direccion} ${nombreCliente(s.clienteId)}`}
+      searchKeys={(s) => `${s.nombre} ${s.codigo ?? ""} ${s.comuna} ${s.direccion} ${nombreCliente(s.clienteId)}`}
       columns={[
         { key: "nombre", label: "Sucursal" },
         { key: "cliente", label: "Cliente", render: (s) => nombreCliente(s.clienteId) },
-        { key: "codigo", label: "Código" },
+        { key: "codigo", label: "Código", render: (s) => s.codigo ?? "—" },
         { key: "direccion", label: "Dirección" },
         { key: "comuna", label: "Comuna" },
         {
@@ -59,7 +59,7 @@ export default function SucursalesTable({ sucursales, clientes }: { sucursales: 
           opciones: clientes.map((c) => ({ v: String(c.id), t: c.nombreFantasia })),
         },
         { k: "nombre", label: "Nombre de la sucursal" },
-        { k: "codigo", label: "Código interno", ph: "MS-118" },
+        { k: "codigo", label: "Código interno (opcional)", ph: "MS-118" },
         { k: "telefono", label: "Teléfono", tipo: "tel", ph: "+56 2 2299 4100" },
         { k: "direccion", label: "Dirección", span: 2 },
         { k: "comuna", label: "Comuna" },
@@ -70,7 +70,7 @@ export default function SucursalesTable({ sucursales, clientes }: { sucursales: 
       toFormValues={(s) => ({
         clienteId: String(s.clienteId),
         nombre: s.nombre,
-        codigo: s.codigo,
+        codigo: s.codigo ?? "",
         direccion: s.direccion,
         comuna: s.comuna,
         region: s.region,
@@ -81,7 +81,7 @@ export default function SucursalesTable({ sucursales, clientes }: { sucursales: 
         guardarSucursalAction(id, {
           clienteId: Number(f.clienteId),
           nombre: String(f.nombre).trim(),
-          codigo: String(f.codigo).trim(),
+          codigo: String(f.codigo ?? "").trim() || null,
           direccion: String(f.direccion).trim(),
           comuna: String(f.comuna).trim(),
           region: String(f.region),

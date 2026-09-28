@@ -265,7 +265,8 @@ export default function Dialogo({
                     <input
                       id={`dlg-${c.k}`}
                       type={c.tipo === "rut" ? "text" : c.tipo ?? "text"}
-                      inputMode={c.tipo === "rut" ? "numeric" : c.tipo === "tel" ? "tel" : undefined}
+                      inputMode={c.tipo === "tel" ? "tel" : undefined}
+                      autoCapitalize={c.tipo === "rut" ? "characters" : undefined}
                       value={texto}
                       // RUT y teléfono se formatean en cada pulsación: nadie tiene
                       // que escribir los puntos, el guion ni el +56 9.

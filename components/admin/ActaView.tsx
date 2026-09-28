@@ -70,6 +70,19 @@ export default function ActaView({
   const duracion = ejec ? minutosEntre(ejec.horaInicio, ejec.horaTermino) : null;
   const firma = visita.firmas?.[0];
 
+  // Lo del comentario interno va aparte: coordinación lo ve, el cliente no.
+  const fotosCliente = (visita.fotos ?? []).filter((f) => !f.interno);
+  const fotosInternas = (visita.fotos ?? []).filter((f) => f.interno);
+  const videosCliente = (visita.videos ?? []).filter((v) => !v.interno);
+  const videosInternos = (visita.videos ?? []).filter((v) => v.interno);
+  const internos = visita.internos ?? [];
+  const hayInterno =
+    Boolean(ejec?.comentarioInterno) || internos.length > 0 || fotosInternas.length > 0 || videosInternos.length > 0;
+  // El visor recorre primero las fotos del trabajo y después las internas.
+  const fotosVisor = [...fotosCliente, ...fotosInternas];
+  const nombreMotivo = (codigo: string | null) =>
+    codigo ? ref.motivos.find((m) => m.codigo === codigo)?.nombre ?? codigo : null;
+
   const sello = ejecutada && ejec
     ? `${visita.fechaProgramada} · ${hhmm(ejec.horaInicio)}–${hhmm(ejec.horaTermino)}`
     : `${visita.fechaProgramada} · sin ejecutar`;
@@ -160,15 +173,19 @@ export default function ActaView({
             </svg>
             <span>Trazabilidad</span>
           </button>
-          <button
-            onClick={() => aviso(`Acta ${visita.folio} · PDF en preparación`)}
-            className="btn btn-secondary min-h-[38px] px-3.5"
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
-              <path d="M12 4v11M7 11l5 5 5-5M4 20h16" />
-            </svg>
-            <span>Descargar PDF</span>
-          </button>
+          {/* El PDF es el acta que va al cliente: sin comentario interno. */}
+          {cerrada ? (
+            <a
+              href={`/api/visita/acta/${encodeURIComponent(visita.folio)}`}
+              download={`Acta ${visita.folio}.pdf`}
+              className="btn btn-secondary min-h-[38px] px-3.5"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                <path d="M12 4v11M7 11l5 5 5-5M4 20h16" />
+              </svg>
+              <span>Descargar PDF</span>
+            </a>
+          ) : null}
         </div>
       </div>
 
@@ -253,12 +270,53 @@ export default function ActaView({
             </>
           ) : null}
 
-          {ejec?.comentarioInterno ? (
+          {hayInterno ? (
             <div className="px-5 py-5 border-b border-black/[.2] border-l-4 border-l-[var(--color-accent)] bg-[var(--color-accent-100)]">
               <div className="text-[10px] tracking-[.12em] uppercase text-[var(--color-accent-active)] mb-2">
                 Comentario interno del técnico · no va en el acta al cliente
               </div>
-              <div className="text-[15px] leading-[1.5] max-w-[74ch]">{ejec.comentarioInterno}</div>
+              {internos.length > 0 ? (
+                <div className="flex flex-wrap gap-1.5 mb-2.5">
+                  {internos.map((x) => (
+                    <span key={x.codigo} className="tag tag-dark font-extrabold">
+                      {x.nombre}
+                    </span>
+                  ))}
+                </div>
+              ) : null}
+              {ejec?.comentarioInterno ? (
+                <div className="text-[15px] leading-[1.5] max-w-[74ch]">{ejec.comentarioInterno}</div>
+              ) : null}
+              {fotosInternas.length > 0 ? (
+                <div className="grid grid-cols-6 gap-2 mt-3">
+                  {fotosInternas.map((f, i) => (
+                    <button
+                      key={f.id}
+                      type="button"
+                      onClick={() => visor.abrir(fotosCliente.length + i)}
+                      className="border border-black/[.35] aspect-square block overflow-hidden p-0 cursor-zoom-in hover:border-[var(--color-accent)]"
+                      title="Ver la foto en grande"
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={f.archivoUrl} alt="Foto interna" className="w-full h-full object-cover" loading="lazy" />
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+              {videosInternos.length > 0 ? (
+                <div className="grid grid-cols-2 gap-2.5 mt-3">
+                  {videosInternos.map((v) => (
+                    <video
+                      key={v.id}
+                      src={v.archivoUrl}
+                      controls
+                      preload="metadata"
+                      playsInline
+                      className="w-full aspect-video bg-black object-contain border border-black/[.35]"
+                    />
+                  ))}
+                </div>
+              ) : null}
             </div>
           ) : null}
 
@@ -305,6 +363,11 @@ export default function ActaView({
                   <div className="flex flex-col gap-2.5 mb-6.5">
                     {visita.trabajos.map((t) => (
                       <div key={t.id} className="border border-black/[.35] bg-white px-4.5 py-3.5">
+                        {t.motivoCodigo ? (
+                          <div className="text-[10px] tracking-[.1em] uppercase opacity-62 mb-1">
+                            {nombreMotivo(t.motivoCodigo)}
+                          </div>
+                        ) : null}
                         <div className="font-extrabold text-base">
                           {nombreTrabajo(catalogoTrabajo, t.trabajoCodigo)}
                         </div>
@@ -376,14 +439,18 @@ export default function ActaView({
                             <div className="text-[17px] leading-[1.4] mt-1.5 max-w-[70ch]">{p.descripcion}</div>
                           </div>
                         ) : null}
-                        <div className="pt-3.5 pb-4">
-                          <div className="text-[11px] tracking-[.11em] uppercase opacity-60">
-                            {p.estado === "RESUELTO" ? "Qué se realizó en terreno" : "Solución sugerida por el técnico"}
+                        {/* El celular ya no pide solución: solo las actas
+                            anteriores la traen. */}
+                        {p.solucion ? (
+                          <div className="pt-3.5 pb-4">
+                            <div className="text-[11px] tracking-[.11em] uppercase opacity-60">
+                              {p.estado === "RESUELTO" ? "Qué se realizó en terreno" : "Solución sugerida por el técnico"}
+                            </div>
+                            <div className="text-[17px] leading-[1.4] mt-1.5 max-w-[70ch]">{p.solucion}</div>
                           </div>
-                          <div className="text-[17px] leading-[1.4] mt-1.5 max-w-[70ch]">
-                            {p.solucion ?? "Sin indicación del técnico."}
-                          </div>
-                        </div>
+                        ) : (
+                          <div className="pb-4" />
+                        )}
                         {p.estado !== "RESUELTO" ? (
                           <div className="pb-4 -mt-1">
                             <button
@@ -418,10 +485,10 @@ export default function ActaView({
               )}
 
               <div className="text-[11px] tracking-[.11em] uppercase opacity-66 mt-6.5 mb-3">
-                Fotos del trabajo ({visita.fotos?.length ?? 0})
+                Fotos del trabajo ({fotosCliente.length})
               </div>
               <div className="grid grid-cols-4 gap-2.5">
-                {(visita.fotos ?? []).map((f, i) => (
+                {fotosCliente.map((f, i) => (
                   // La foto se agranda encima del acta, no en otra pestaña.
                   <button
                     key={f.id}
@@ -445,7 +512,7 @@ export default function ActaView({
                     </div>
                   </button>
                 ))}
-                {(visita.fotos ?? []).length === 0 ? (
+                {fotosCliente.length === 0 ? (
                   <div className="col-span-4 text-[13px] opacity-66">Sin fotos registradas.</div>
                 ) : null}
               </div>
@@ -454,10 +521,10 @@ export default function ActaView({
                   que responde por rangos: por eso se pueden adelantar sin que
                   el navegador se baje los 11 MB completos. */}
               <div className="text-[11px] tracking-[.11em] uppercase opacity-66 mt-6.5 mb-3">
-                Videos del trabajo ({visita.videos?.length ?? 0})
+                Videos del trabajo ({videosCliente.length})
               </div>
               <div className="grid grid-cols-2 gap-2.5">
-                {(visita.videos ?? []).map((v) => (
+                {videosCliente.map((v) => (
                   <figure key={v.id} className="m-0 border border-black/[.35] bg-[var(--color-surface)]">
                     <video
                       src={v.archivoUrl}
@@ -475,7 +542,7 @@ export default function ActaView({
                     </figcaption>
                   </figure>
                 ))}
-                {(visita.videos ?? []).length === 0 ? (
+                {videosCliente.length === 0 ? (
                   <div className="col-span-2 text-[13px] opacity-66">Sin videos registrados.</div>
                 ) : null}
               </div>
@@ -691,9 +758,9 @@ export default function ActaView({
 
       {visor.abierto ? (
         <VisorFotos
-          fotos={(visita.fotos ?? []).map((f) => ({
+          fotos={fotosVisor.map((f) => ({
             src: f.archivoUrl,
-            titulo: f.etiqueta ?? "Foto del trabajo",
+            titulo: f.interno ? "Foto interna" : f.etiqueta ?? "Foto del trabajo",
             subtitulo: `${visita.folio} · ${visita.sucursal?.nombre ?? ""} · ${hhmm(f.tomadaEn)}`,
           }))}
           indice={visor.indice ?? 0}
@@ -741,12 +808,13 @@ function CorreoDialogo({
       `Saludos cordiales,\nCoordinación\nGrupo dMC`,
   });
 
+  // Solo lo que es del cliente: fotos y clips del comentario interno no salen.
   const [adjuntos, setAdjuntos] = useState<Adjunto[]>(() => [
-    ...(visita.fotos ?? []).map((f) => ({
+    ...(visita.fotos ?? []).filter((f) => !f.interno).map((f) => ({
       label: `Foto ${(f.etiqueta ?? "").toLowerCase()} · ${hhmm(f.tomadaEn)}.jpg`,
       incluido: true,
     })),
-    ...(visita.videos ?? []).map((v) => ({
+    ...(visita.videos ?? []).filter((v) => !v.interno).map((v) => ({
       label: `Video · ${reloj(v.duracionSeg ?? 0)}.${v.mime.split("/")[1] ?? "mp4"}`,
       incluido: true,
     })),

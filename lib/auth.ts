@@ -1,6 +1,6 @@
 import "server-only";
 import { cookies } from "next/headers";
-import { COOKIE_SESION, VIGENCIA_SESION, firmarToken, opcionesCookie, verificarToken } from "@/lib/session";
+import { COOKIE_EXPIRA, COOKIE_SESION, VIGENCIA_SESION, firmarToken, opcionesCookie, verificarToken } from "@/lib/session";
 import { esHashLegado, gastarTiempoDeVerificacion, hashearPassword, verificarPassword } from "@/lib/password";
 import {
   actualizarPasswordHash,
@@ -48,6 +48,11 @@ export async function autenticar(email: string, password: string): Promise<Usuar
 export async function crearSesion(usuarioId: number): Promise<void> {
   const store = await cookies();
   store.set(COOKIE_SESION, await firmarToken(usuarioId), opcionesCookie(VIGENCIA_SESION));
+  store.set(
+    COOKIE_EXPIRA,
+    String(Math.floor(Date.now() / 1000) + VIGENCIA_SESION),
+    opcionesCookie(VIGENCIA_SESION, false)
+  );
 }
 
 export async function cerrarSesion(): Promise<void> {
@@ -56,6 +61,8 @@ export async function cerrarSesion(): Promise<void> {
   // descarte también la cookie si quedó fijada con otros atributos.
   store.set(COOKIE_SESION, "", opcionesCookie(0));
   store.delete(COOKIE_SESION);
+  store.set(COOKIE_EXPIRA, "", opcionesCookie(0, false));
+  store.delete(COOKIE_EXPIRA);
 }
 
 /**

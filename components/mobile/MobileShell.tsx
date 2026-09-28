@@ -68,7 +68,11 @@ export default function MobileShell({
             </div>
           </div>
 
-          <div className="flex-1">{children}</div>
+          {/* overflow-wrap:anywhere — un trabajo, subtrabajo u observación con
+              una palabra larga (un código, una URL, texto sin espacios) se
+              salía por el costado de la pantalla. Así se parte donde haga
+              falta y nada se escapa del ancho del celular. */}
+          <div className="flex-1 min-w-0 [overflow-wrap:anywhere]">{children}</div>
 
           {mostrarTabs ? (
             <div className="sticky bottom-0 z-20 mt-auto bg-[var(--color-bg)] border-t-2 border-[var(--color-divider)] grid grid-cols-3">

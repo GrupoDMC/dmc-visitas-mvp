@@ -104,7 +104,7 @@ interface FilaSucursal {
   id: number;
   cliente_id: number;
   nombre: string;
-  codigo: string;
+  codigo: string | null;
   direccion: string;
   comuna: string;
   region: string;
@@ -133,7 +133,8 @@ export async function listarSucursales(): Promise<Sucursal[]> {
 export interface DatosSucursal {
   clienteId: number;
   nombre: string;
-  codigo: string;
+  /** Opcional: null o vacío se guarda como "sin código". */
+  codigo: string | null;
   direccion: string;
   comuna: string;
   region: string;
@@ -145,7 +146,7 @@ export async function guardarSucursal(id: number | null, d: DatosSucursal): Prom
   const params: Parametros = [
     ["cliente", sql.BigInt, d.clienteId],
     ["nombre", sql.NVarChar(120), d.nombre],
-    ["codigo", sql.VarChar(20), d.codigo],
+    ["codigo", sql.VarChar(20), d.codigo?.trim() || null],
     ["direccion", sql.NVarChar(180), d.direccion],
     ["comuna", sql.NVarChar(80), d.comuna],
     ["region", sql.NVarChar(80), d.region],

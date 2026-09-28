@@ -56,12 +56,13 @@ sesión local a la base que quieras (la de producción incluida — lo que guard
 verdad).
 
 > [!WARNING]
-> Antes de levantar esta versión hay que aplicar **todas** las migraciones, `002`, `003`, `004` y `005`.
-> Sin ellas la app **no arranca**: las consultas de visitas leen `dmc.visita_motivo` (002) y
-> `dmc.visita.responsable_rut` (004), y el video del acta necesita `dmc.visita_video` (003). Ver
+> Antes de levantar esta versión hay que aplicar **todas** las migraciones, de la `002` a la `006`.
+> Sin ellas la app **no arranca**: las consultas de visitas leen `dmc.visita_motivo` (002),
+> `dmc.visita.responsable_rut` (004) y `dmc.visita_interno` (006), el video del acta necesita
+> `dmc.visita_video` (003) y el checklist lee `dmc.catalogo_motivo_trabajo` (006). Ver
 > [Migraciones](#migraciones).
 
-Las tres listas del checklist **arrancan vacías**. Se arman en *Maestros › Checklist* y, cuando
+Las listas del checklist **arrancan vacías**. Se arman en *Maestros › Checklist* y, cuando
 queden como se quieren, se aprieta *Fijar como mi plantilla*: desde ahí el botón *Reiniciar* siempre
 las devuelve a esa copia. Sin al menos un motivo no se puede programar ninguna visita, porque
 `dmc.visita` tiene una FK contra `dmc.catalogo_motivo`.
@@ -231,12 +232,14 @@ Sobre una base ya creada, los cambios van en archivos aparte y numerados:
 | [`sql/migracion-003-video-y-cancelacion-admin.sql`](sql/migracion-003-video-y-cancelacion-admin.sql) | `dmc.visita_video` con subida por partes, el clip como adjunto del acta y el estado `CANCELADA_ADMIN` |
 | [`sql/migracion-004-rut-responsable-visita.sql`](sql/migracion-004-rut-responsable-visita.sql) | `dmc.visita.responsable_rut`: el RUT de quien recibe se pide ya al agendar y llega precargado al acta |
 | [`sql/migracion-005-eliminar-visita.sql`](sql/migracion-005-eliminar-visita.sql) | `dmc.visita.activo` (borrado lógico), `dmc.visita_eliminacion` como auditoría y las vistas del panel excluyendo lo inactivo |
+| [`sql/migracion-006-motivo-trabajo-e-interno.sql`](sql/migracion-006-motivo-trabajo-e-interno.sql) | Trabajos asignados a cada motivo (`dmc.catalogo_motivo_trabajo`, `visita_trabajo.motivo_codigo`), checklist del comentario interno (`dmc.catalogo_interno`, `dmc.visita_interno`), `interno` en `visita_foto` / `visita_video` y `sucursal.codigo` opcional |
 
 ```bash
 sqlcmd -S <host>,<puerto> -d DMC_Contingencia -i sql/migracion-002-mejoras.sql
 sqlcmd -S <host>,<puerto> -d DMC_Contingencia -i sql/migracion-003-video-y-cancelacion-admin.sql
 sqlcmd -S <host>,<puerto> -d DMC_Contingencia -i sql/migracion-004-rut-responsable-visita.sql
 sqlcmd -S <host>,<puerto> -d DMC_Contingencia -i sql/migracion-005-eliminar-visita.sql
+sqlcmd -S <host>,<puerto> -d DMC_Contingencia -i sql/migracion-006-motivo-trabajo-e-interno.sql
 ```
 
 Son idempotentes: se pueden correr varias veces, y en orden.

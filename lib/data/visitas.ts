@@ -94,7 +94,7 @@ interface FilaVisita {
   c_activo: boolean;
 
   s_nombre: string;
-  s_codigo: string;
+  s_codigo: string | null;
   s_direccion: string;
   s_comuna: string;
   s_region: string;
@@ -174,6 +174,7 @@ interface FilaTrabajo {
   id: number;
   visita_id: number;
   trabajo_codigo: string;
+  motivo_codigo: string | null;
   detalle: string | null;
   orden: number;
 }
@@ -211,6 +212,7 @@ interface FilaFoto {
   problema_id: number | null;
   etiqueta: string | null;
   archivo_url: string;
+  interno: boolean;
   orden: number;
   tomada_en: string | null;
 }
@@ -221,6 +223,7 @@ interface FilaVideo {
   problema_id: number | null;
   etiqueta: string | null;
   archivo_url: string;
+  interno: boolean;
   mime: string;
   bytes: number | null;
   duracion_seg: number | null;
@@ -238,6 +241,12 @@ interface FilaFirma {
   rut: string | null;
   imagen_url: string;
   firmado_en: string;
+}
+
+interface FilaInterno {
+  visita_id: number;
+  interno_codigo: string;
+  nombre: string | null;
 }
 
 interface FilaMotivoVisita {
@@ -264,8 +273,20 @@ async function cargar(filtro: Filtro): Promise<Visita[]> {
   const ids = subconsultaIds(filtro);
   const p = () => filtro.params.map((x) => [...x] as Parametro);
 
-  const [visitas, motivosVisita, ejecuciones, trabajos, subtrabajos, problemas, items, fotos, videos, firmas, reagendas] =
-    await Promise.all([
+  const [
+    visitas,
+    motivosVisita,
+    ejecuciones,
+    trabajos,
+    subtrabajos,
+    problemas,
+    items,
+    fotos,
+    videos,
+    firmas,
+    reagendas,
+    internos,
+  ] = await Promise.all([
       consultaCon<FilaVisita>(
         `${SELECT_VISITA} WHERE ${filtro.where} ORDER BY v.fecha_programada DESC, v.hora_programada, v.id DESC`,
         p()
@@ -286,7 +307,7 @@ async function cargar(filtro: Filtro): Promise<Visita[]> {
         p()
       ),
       consultaCon<FilaTrabajo>(
-        `SELECT id, visita_id, trabajo_codigo, detalle, orden
+        `SELECT id, visita_id, trabajo_codigo, motivo_codigo, detalle, orden
            FROM dmc.visita_trabajo
           WHERE visita_id IN (${ids}) AND activo = 1 ORDER BY orden, id`,
         p()
@@ -312,7 +333,8 @@ async function cargar(filtro: Filtro): Promise<Visita[]> {
         p()
       ),
       consultaCon<FilaFoto>(
-        `SELECT id, visita_id, problema_id, etiqueta, archivo_url, orden, ${F_TS("tomada_en")} AS tomada_en
+        `SELECT id, visita_id, problema_id, etiqueta, archivo_url, interno, orden,
+                ${F_TS("tomada_en")} AS tomada_en
            FROM dmc.visita_foto
           WHERE visita_id IN (${ids}) AND activo = 1 ORDER BY orden, id`,
         p()
@@ -320,7 +342,7 @@ async function cargar(filtro: Filtro): Promise<Visita[]> {
       // Solo los clips que terminaron de subir: los que se cortaron a mitad de
       // la señal existen en la tabla, pero no son reproducibles.
       consultaCon<FilaVideo>(
-        `SELECT id, visita_id, problema_id, etiqueta, archivo_url, mime, bytes,
+        `SELECT id, visita_id, problema_id, etiqueta, archivo_url, interno, mime, bytes,
                 duracion_seg, ancho, alto, orden, ${F_TS("grabado_en")} AS grabado_en
            FROM dmc.visita_video
           WHERE visita_id IN (${ids}) AND activo = 1 AND subida_completa = 1
@@ -339,6 +361,13 @@ async function cargar(filtro: Filtro): Promise<Visita[]> {
            FROM dmc.reagendamiento WHERE visita_id IN (${ids}) ORDER BY creado_en DESC, id DESC`,
         p()
       ),
+      consultaCon<FilaInterno>(
+        `SELECT vi.visita_id, vi.interno_codigo, ci.nombre
+           FROM dmc.visita_interno vi
+           LEFT JOIN dmc.catalogo_interno ci ON ci.codigo = vi.interno_codigo
+          WHERE vi.visita_id IN (${ids}) ORDER BY vi.orden, vi.id`,
+        p()
+      ),
     ]);
 
   const subPorTrabajo = agrupar(subtrabajos, (s) => num(s.visita_trabajo_id));
@@ -351,6 +380,7 @@ async function cargar(filtro: Filtro): Promise<Visita[]> {
   const reagendasPorVisita = agrupar(reagendas, (r) => num(r.visita_id));
   const ejecucionPorVisita = new Map(ejecuciones.map((e) => [num(e.visita_id), e]));
   const motivosPorVisita = agrupar(motivosVisita, (m) => num(m.visita_id));
+  const internosPorVisita = agrupar(internos, (x) => num(x.visita_id));
 
   return visitas.map((v) => {
     const id = num(v.id);
@@ -456,6 +486,7 @@ async function cargar(filtro: Filtro): Promise<Visita[]> {
           id: num(t.id),
           visitaId: id,
           trabajoCodigo: t.trabajo_codigo,
+          motivoCodigo: t.motivo_codigo,
           detalle: t.detalle,
           orden: t.orden,
           subtrabajos: (subPorTrabajo.get(num(t.id)) ?? []).map(
@@ -479,6 +510,7 @@ async function cargar(filtro: Filtro): Promise<Visita[]> {
           problemaId: numONull(f.problema_id),
           etiqueta: f.etiqueta,
           archivoUrl: f.archivo_url,
+          interno: Boolean(f.interno),
           orden: f.orden,
           tomadaEn: f.tomada_en,
         })
@@ -491,6 +523,7 @@ async function cargar(filtro: Filtro): Promise<Visita[]> {
           problemaId: numONull(v.problema_id),
           etiqueta: v.etiqueta,
           archivoUrl: v.archivo_url,
+          interno: Boolean(v.interno),
           mime: v.mime,
           bytes: numONull(v.bytes),
           duracionSeg: numONull(v.duracion_seg),
@@ -525,6 +558,11 @@ async function cargar(filtro: Filtro): Promise<Visita[]> {
           origen: r.origen,
         })
       ),
+
+      internos: (internosPorVisita.get(id) ?? []).map((x) => ({
+        codigo: x.interno_codigo,
+        nombre: x.nombre ?? x.interno_codigo,
+      })),
     } satisfies Visita;
   });
 }
@@ -1155,6 +1193,8 @@ export interface SubtrabajoActa {
 
 export interface TrabajoActa {
   codigo: string;
+  /** Bajo qué motivo lo agregó el técnico. */
+  motivoCodigo?: string | null;
   detalle: string | null;
   subtrabajos: SubtrabajoActa[];
 }
@@ -1171,6 +1211,8 @@ export interface FotoActa {
   /** data:image/jpeg;base64,… tal como sale del canvas de la cámara. */
   dataUrl: string;
   etiqueta: string | null;
+  /** Foto del comentario interno: no la ve el cliente. */
+  interno?: boolean;
 }
 
 export interface FirmaActa {
@@ -1188,6 +1230,8 @@ export interface ActaEntrada {
   motivosCodigos: string[];
   observaciones: string | null;
   comentarioInterno: string | null;
+  /** Lo marcado del checklist del comentario interno (códigos). */
+  internosCodigos?: string[];
   trabajos: TrabajoActa[];
   problemas: ProblemaActa[];
   fotos: FotoActa[];
@@ -1201,6 +1245,8 @@ export interface ActaEntrada {
    * cuáles se conservan: los que no estén acá quedan inactivos.
    */
   videosIds?: number[];
+  /** De los de `videosIds`, los que son del comentario interno. */
+  videosInternosIds?: number[];
   firma: FirmaActa | null;
   dispositivo: string | null;
   /**
@@ -1269,11 +1315,11 @@ export async function guardarActa(
     }
   }
 
-  const fotos: { mime: string; bytes: Buffer; etiqueta: string | null }[] = [];
+  const fotos: { mime: string; bytes: Buffer; etiqueta: string | null; interno: boolean }[] = [];
   for (const f of entrada.fotos) {
     const img = decodificarImagen(f.dataUrl);
     if (!img) return { ok: false, error: "Una de las fotos llegó dañada. Quítala y vuelve a tomarla." };
-    fotos.push({ ...img, etiqueta: f.etiqueta });
+    fotos.push({ ...img, etiqueta: f.etiqueta, interno: Boolean(f.interno) });
   }
 
   return enTransaccion(async (ej) => {
@@ -1352,12 +1398,17 @@ export async function guardarActa(
       ["id", sql.BigInt, id],
     ]);
     for (const [i, t] of entrada.trabajos.entries()) {
+      // El motivo solo se guarda si es uno de los que quedaron en el acta: un
+      // borrador viejo podría traer uno que el técnico desmarcó después.
+      const motivoDelTrabajo =
+        t.motivoCodigo && entrada.motivosCodigos.includes(t.motivoCodigo) ? t.motivoCodigo : null;
       const [fila] = await ej.consulta<{ id: number }>(
-        `INSERT INTO dmc.visita_trabajo (visita_id, trabajo_codigo, detalle, orden)
-         OUTPUT INSERTED.id AS id VALUES (@visita, @codigo, @detalle, @orden)`,
+        `INSERT INTO dmc.visita_trabajo (visita_id, trabajo_codigo, motivo_codigo, detalle, orden)
+         OUTPUT INSERTED.id AS id VALUES (@visita, @codigo, @motivo, @detalle, @orden)`,
         [
           ["visita", sql.BigInt, id],
           ["codigo", sql.VarChar(40), t.codigo],
+          ["motivo", sql.VarChar(40), motivoDelTrabajo],
           ["detalle", sql.NVarChar(sql.MAX), t.detalle || null],
           ["orden", sql.SmallInt, i + 1],
         ]
@@ -1436,9 +1487,9 @@ export async function guardarActa(
     for (const [i, f] of fotos.entries()) {
       await ej.ejecutar(
         `DECLARE @nueva TABLE (id bigint);
-         INSERT INTO dmc.visita_foto (visita_id, etiqueta, archivo_url, contenido, mime, bytes, orden, tomada_en)
+         INSERT INTO dmc.visita_foto (visita_id, etiqueta, archivo_url, contenido, mime, bytes, orden, interno, tomada_en)
          OUTPUT INSERTED.id INTO @nueva
-         VALUES (@visita, @etiqueta, '', @contenido, @mime, @bytes, @orden, SYSDATETIME());
+         VALUES (@visita, @etiqueta, '', @contenido, @mime, @bytes, @orden, @interno, SYSDATETIME());
 
          UPDATE dmc.visita_foto
             SET archivo_url = CONCAT('/api/visita/foto/', CAST(id AS varchar(20)))
@@ -1450,6 +1501,7 @@ export async function guardarActa(
           ["mime", sql.VarChar(40), f.mime],
           ["bytes", sql.Int, f.bytes.length],
           ["orden", sql.SmallInt, i + 1],
+          ["interno", sql.Bit, f.interno],
         ]
       );
     }
@@ -1467,13 +1519,29 @@ export async function guardarActa(
         WHERE visita_id = @id AND activo = 1 AND id NOT IN (${listaVideos})`,
       [["id", sql.BigInt, id]]
     );
+    const internosVideo = new Set(entrada.videosInternosIds ?? []);
     for (const [i, videoId] of videosIds.entries()) {
       await ej.ejecutar(
-        `UPDATE dmc.visita_video SET orden = @orden
+        `UPDATE dmc.visita_video SET orden = @orden, interno = @interno
           WHERE id = @video AND visita_id = @id AND subida_completa = 1`,
         [
           ["video", sql.BigInt, videoId],
           ["id", sql.BigInt, id],
+          ["orden", sql.SmallInt, i + 1],
+          ["interno", sql.Bit, internosVideo.has(videoId)],
+        ]
+      );
+    }
+
+    // 5c · Checklist del comentario interno. Se reescribe entero.
+    await ej.ejecutar(`DELETE FROM dmc.visita_interno WHERE visita_id = @id`, [["id", sql.BigInt, id]]);
+    for (const [i, codigo] of [...new Set((entrada.internosCodigos ?? []).filter(Boolean))].entries()) {
+      await ej.ejecutar(
+        `INSERT INTO dmc.visita_interno (visita_id, interno_codigo, orden)
+         SELECT @id, codigo, @orden FROM dmc.catalogo_interno WHERE codigo = @codigo`,
+        [
+          ["id", sql.BigInt, id],
+          ["codigo", sql.VarChar(40), codigo],
           ["orden", sql.SmallInt, i + 1],
         ]
       );

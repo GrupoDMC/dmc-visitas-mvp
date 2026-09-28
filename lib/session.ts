@@ -11,8 +11,29 @@
 
 export const COOKIE_SESION = "dmc_session";
 
-/** Vigencia del token, en segundos (15 min). */
-export const VIGENCIA_SESION = 60 * 30;
+/**
+ * Cuándo vence la sesión, en epoch segundos, legible desde el navegador.
+ *
+ * La cookie del token es httpOnly y la página no puede leerla. Esta otra no
+ * lleva nada secreto —solo la hora de vencimiento— y es la que mira
+ * VigilanteSesion para sacar al usuario en cuanto se le acaba el tiempo, en
+ * vez de esperar a que haga clic y recién ahí caer en /login.
+ */
+export const COOKIE_EXPIRA = "dmc_exp";
+
+/**
+ * Vigencia del token, en segundos (45 min).
+ *
+ * Es por inactividad, no desde que se entró: cada petición renueva el token
+ * (ver middleware.ts), así que solo vence si pasan 45 minutos sin hacer nada.
+ */
+export const VIGENCIA_SESION = 60 * 45;
+
+/**
+ * El token no se vuelve a firmar en cada petición: solo si ya pasó este rato
+ * desde la última firma. Un clic tras otro no multiplica las firmas.
+ */
+export const RENOVAR_CADA = 60;
 
 export interface TokenSesion {
   /** id de dmc.usuario */
@@ -109,10 +130,15 @@ export async function verificarToken(token: string | undefined, ahora = Date.now
   }
 }
 
+/** true si el token se firmó hace más de RENOVAR_CADA segundos. */
+export function tocaRenovar(token: TokenSesion, ahora = Date.now()): boolean {
+  return token.exp - Math.floor(ahora / 1000) < VIGENCIA_SESION - RENOVAR_CADA;
+}
+
 /** Atributos de la cookie. `secure` solo en producción: en local no hay HTTPS. */
-export function opcionesCookie(maxAge: number) {
+export function opcionesCookie(maxAge: number, httpOnly = true) {
   return {
-    httpOnly: true,
+    httpOnly,
     sameSite: "lax" as const,
     secure: process.env.NODE_ENV === "production",
     path: "/",

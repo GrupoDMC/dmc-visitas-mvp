@@ -1,6 +1,7 @@
 import "server-only";
 import { agrupar, consulta, consultaCon, ejecutar, num, sql } from "@/lib/data/sql";
 import type {
+  CatalogoInterno,
   CatalogoMotivo,
   CatalogoProblema,
   CatalogoProblemaOpcion,
@@ -9,9 +10,10 @@ import type {
   ChecklistPlantilla,
 } from "@/lib/types";
 
-// Las tres listas que el panel edita y el móvil consume:
-// dmc.catalogo_motivo, dmc.catalogo_problema (+opciones) y
-// dmc.catalogo_trabajo (+subtrabajos).
+// Las listas que el panel edita y el móvil consume:
+// dmc.catalogo_motivo, dmc.catalogo_problema (+opciones),
+// dmc.catalogo_trabajo (+subtrabajos y los motivos a los que pertenece) y
+// dmc.catalogo_interno (el checklist del comentario interno).
 //
 // Dos reglas que valen para todo este archivo:
 //
@@ -121,7 +123,7 @@ interface FilaSubtrabajo {
 }
 
 export async function listarTrabajos(): Promise<CatalogoTrabajo[]> {
-  const [filas, subs] = await Promise.all([
+  const [filas, subs, enlaces] = await Promise.all([
     consulta<FilaTrabajo>(
       `SELECT id, codigo, nombre, grupo_label, singular, orden, activo
          FROM dmc.catalogo_trabajo WHERE activo = 1 ORDER BY orden, id`
@@ -130,9 +132,18 @@ export async function listarTrabajos(): Promise<CatalogoTrabajo[]> {
       `SELECT id, trabajo_id, etiqueta, orden, permite_cantidad, activo
          FROM dmc.catalogo_trabajo_subtrabajo WHERE activo = 1 ORDER BY orden, id`
     ),
+    // Solo los motivos activos: uno dado de baja no puede dejar a un trabajo
+    // escondido de todos los demás.
+    consulta<{ trabajo_id: number; codigo: string }>(
+      `SELECT mt.trabajo_id, m.codigo
+         FROM dmc.catalogo_motivo_trabajo mt
+         JOIN dmc.catalogo_motivo m ON m.id = mt.motivo_id AND m.activo = 1
+        ORDER BY m.orden, m.id`
+    ),
   ]);
 
   const porTrabajo = agrupar(subs, (s) => num(s.trabajo_id));
+  const motivosPorTrabajo = agrupar(enlaces, (e) => num(e.trabajo_id));
   return filas.map((f) => ({
     id: num(f.id),
     codigo: f.codigo,
@@ -151,6 +162,21 @@ export async function listarTrabajos(): Promise<CatalogoTrabajo[]> {
         activo: Boolean(s.activo),
       })
     ),
+    motivosCodigos: (motivosPorTrabajo.get(num(f.id)) ?? []).map((e) => e.codigo),
+  }));
+}
+
+export async function listarInternos(): Promise<CatalogoInterno[]> {
+  const filas = await consulta<FilaMotivo>(
+    `SELECT id, codigo, nombre, orden, activo
+       FROM dmc.catalogo_interno WHERE activo = 1 ORDER BY orden, id`
+  );
+  return filas.map((f) => ({
+    id: num(f.id),
+    codigo: f.codigo,
+    nombre: f.nombre,
+    orden: f.orden,
+    activo: Boolean(f.activo),
   }));
 }
 
@@ -180,18 +206,26 @@ export interface TrabajoBorrador {
   nombre: string;
   grupoLabel: string | null;
   subtrabajos: ItemBorrador[];
+  /**
+   * Los motivos bajo los que se ofrece, POR NOMBRE y no por id: un motivo
+   * recién agregado en el mismo borrador todavía no tiene id. Vacío = todos.
+   */
+  motivos?: string[];
 }
 
 export interface BorradorChecklist {
   motivos: MotivoBorrador[];
   problemas: ProblemaBorrador[];
   trabajos: TrabajoBorrador[];
+  /** Checklist del comentario interno. Misma forma que los motivos. */
+  internos?: MotivoBorrador[];
 }
 
 export interface ResumenChecklist {
   motivos: number;
   problemas: number;
   trabajos: number;
+  internos: number;
   desactivados: number;
 }
 
@@ -208,36 +242,9 @@ export async function guardarChecklist(borrador: BorradorChecklist): Promise<Res
   let desactivados = 0;
 
   // ── Motivos ──
-  const padresMotivo = await padresExistentes("dmc.catalogo_motivo");
-  const vivosMotivo: number[] = [];
-  for (const [i, m] of borrador.motivos.entries()) {
-    const nombre = m.nombre.trim();
-    if (!nombre) continue;
-    const resuelto = resolverPadre(padresMotivo, m.id, nombre, "MOTIVO");
-    if (resuelto.esNuevo) {
-      const [fila] = await consultaCon<{ id: number }>(
-        `INSERT INTO dmc.catalogo_motivo (codigo, nombre, orden, activo)
-         OUTPUT INSERTED.id AS id VALUES (@codigo, @nombre, @orden, 1)`,
-        [
-          ["codigo", sql.VarChar(40), resuelto.codigo],
-          ["nombre", sql.NVarChar(80), nombre],
-          ["orden", sql.SmallInt, i + 1],
-        ]
-      );
-      vivosMotivo.push(num(fila.id));
-    } else {
-      await ejecutar(
-        `UPDATE dmc.catalogo_motivo SET nombre = @nombre, orden = @orden, activo = 1 WHERE id = @id`,
-        [
-          ["nombre", sql.NVarChar(80), nombre],
-          ["orden", sql.SmallInt, i + 1],
-          ["id", sql.BigInt, resuelto.id],
-        ]
-      );
-      vivosMotivo.push(resuelto.id);
-    }
-  }
-  desactivados += await desactivarSobrantes("dmc.catalogo_motivo", vivosMotivo);
+  const motivos = await guardarListaSimple("dmc.catalogo_motivo", borrador.motivos, "MOTIVO");
+  const vivosMotivo = motivos.vivos;
+  desactivados += motivos.desactivados;
 
   // ── Tipos de problema ──
   const padresProblema = await padresExistentes("dmc.catalogo_problema");
@@ -322,15 +329,85 @@ export async function guardarChecklist(borrador: BorradorChecklist): Promise<Res
       id,
       t.subtrabajos
     );
+
+    // Motivos del trabajo: se reescriben enteros. Un nombre que no esté entre
+    // los motivos recién guardados se ignora.
+    await ejecutar(`DELETE FROM dmc.catalogo_motivo_trabajo WHERE trabajo_id = @id`, [["id", sql.BigInt, id]]);
+    const motivosDelTrabajo = new Set(
+      (t.motivos ?? [])
+        .map((n) => motivos.idPorNombre.get(n.trim().toLowerCase()))
+        .filter((m): m is number => m !== undefined)
+    );
+    for (const motivoId of motivosDelTrabajo) {
+      await ejecutar(`INSERT INTO dmc.catalogo_motivo_trabajo (motivo_id, trabajo_id) VALUES (@motivo, @trabajo)`, [
+        ["motivo", sql.BigInt, motivoId],
+        ["trabajo", sql.BigInt, id],
+      ]);
+    }
   }
   desactivados += await desactivarSobrantes("dmc.catalogo_trabajo", vivosTrabajo);
+
+  // ── Checklist del comentario interno ──
+  // Sin la lista en el borrador (un panel viejo todavía abierto) no se toca:
+  // si no, guardar los motivos vaciaría el checklist interno.
+  let vivosInterno: number;
+  if (borrador.internos) {
+    const internos = await guardarListaSimple("dmc.catalogo_interno", borrador.internos, "INTERNO");
+    vivosInterno = internos.vivos.length;
+    desactivados += internos.desactivados;
+  } else {
+    vivosInterno = (await listarInternos()).length;
+  }
 
   return {
     motivos: vivosMotivo.length,
     problemas: vivosProblema.length,
     trabajos: vivosTrabajo.length,
+    internos: vivosInterno,
     desactivados,
   };
+}
+
+/**
+ * Motivos y checklist interno: las dos tablas son una lista plana de
+ * (codigo, nombre, orden, activo), así que se guardan igual.
+ */
+async function guardarListaSimple(
+  tabla: "dmc.catalogo_motivo" | "dmc.catalogo_interno",
+  items: MotivoBorrador[],
+  respaldo: string
+): Promise<{ vivos: number[]; idPorNombre: Map<string, number>; desactivados: number }> {
+  const padres = await padresExistentes(tabla);
+  const vivos: number[] = [];
+  const idPorNombre = new Map<string, number>();
+  for (const [i, m] of items.entries()) {
+    const nombre = m.nombre.trim();
+    if (!nombre) continue;
+    const resuelto = resolverPadre(padres, m.id, nombre, respaldo);
+    let id = resuelto.id;
+    if (resuelto.esNuevo) {
+      const [fila] = await consultaCon<{ id: number }>(
+        `INSERT INTO ${tabla} (codigo, nombre, orden, activo)
+         OUTPUT INSERTED.id AS id VALUES (@codigo, @nombre, @orden, 1)`,
+        [
+          ["codigo", sql.VarChar(40), resuelto.codigo],
+          ["nombre", sql.NVarChar(80), nombre],
+          ["orden", sql.SmallInt, i + 1],
+        ]
+      );
+      id = num(fila.id);
+    } else {
+      await ejecutar(`UPDATE ${tabla} SET nombre = @nombre, orden = @orden, activo = 1 WHERE id = @id`, [
+        ["nombre", sql.NVarChar(80), nombre],
+        ["orden", sql.SmallInt, i + 1],
+        ["id", sql.BigInt, id],
+      ]);
+    }
+    vivos.push(id);
+    idPorNombre.set(nombre.toLowerCase(), id);
+  }
+  const desactivados = await desactivarSobrantes(tabla, vivos);
+  return { vivos, idPorNombre, desactivados };
 }
 
 /**
@@ -424,11 +501,13 @@ async function desactivarSobrantes(tabla: string, vivos: number[], extra = "1 = 
 export const PLANTILLA_PROPIA = "Mi plantilla";
 
 export async function guardarPlantilla(nombre: string, usuarioId: number | null): Promise<ChecklistPlantilla> {
-  const [motivos, problemas, trabajos] = await Promise.all([
+  const [motivos, problemas, trabajos, internos] = await Promise.all([
     listarMotivos(),
     listarProblemas(),
     listarTrabajos(),
+    listarInternos(),
   ]);
+  const nombreMotivo = (codigo: string) => motivos.find((m) => m.codigo === codigo)?.nombre;
 
   const payload: BorradorChecklist = {
     motivos: motivos.map((m) => ({ id: null, nombre: m.nombre })),
@@ -451,7 +530,9 @@ export async function guardarPlantilla(nombre: string, usuarioId: number | null)
         etiqueta: s.etiqueta,
         permiteCantidad: s.permiteCantidad,
       })),
+      motivos: t.motivosCodigos.map(nombreMotivo).filter((n): n is string => Boolean(n)),
     })),
+    internos: internos.map((x) => ({ id: null, nombre: x.nombre })),
   };
 
   await ejecutar(
@@ -497,6 +578,8 @@ async function leerPlantilla(nombre: string): Promise<{ fila: FilaPlantilla; dat
         motivos: datos.motivos ?? [],
         problemas: datos.problemas ?? [],
         trabajos: datos.trabajos ?? [],
+        // Plantillas guardadas antes de que existiera: sin lista interna.
+        internos: datos.internos,
       },
     };
   } catch {
@@ -517,6 +600,7 @@ export async function getPlantilla(nombre: string): Promise<ChecklistPlantilla |
     motivos: leida.datos.motivos.length,
     problemas: leida.datos.problemas.length,
     trabajos: leida.datos.trabajos.length,
+    internos: leida.datos.internos?.length ?? 0,
   };
 }
 
@@ -529,10 +613,11 @@ export async function aplicarPlantilla(nombre: string): Promise<ResumenChecklist
   const leida = await leerPlantilla(nombre);
   if (!leida) throw new Error("Todavía no has guardado ninguna plantilla.");
 
-  const [motivos, problemas, trabajos] = await Promise.all([
+  const [motivos, problemas, trabajos, internos] = await Promise.all([
     listarMotivos(),
     listarProblemas(),
     listarTrabajos(),
+    listarInternos(),
   ]);
 
   const idPorNombre = <T extends { id: number; nombre: string }>(lista: T[], buscado: string) =>
@@ -552,7 +637,9 @@ export async function aplicarPlantilla(nombre: string): Promise<ResumenChecklist
       nombre: t.nombre,
       grupoLabel: t.grupoLabel,
       subtrabajos: t.subtrabajos.map((s) => ({ id: null, etiqueta: s.etiqueta, permiteCantidad: s.permiteCantidad })),
+      motivos: t.motivos ?? [],
     })),
+    internos: leida.datos.internos?.map((x) => ({ id: idPorNombre(internos, x.nombre), nombre: x.nombre })),
   };
 
   return guardarChecklist(borrador);

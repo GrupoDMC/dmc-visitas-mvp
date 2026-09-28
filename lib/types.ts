@@ -35,7 +35,8 @@ export interface Sucursal {
   id: number;
   clienteId: number;
   nombre: string;
-  codigo: string;
+  /** Código interno de la sucursal. Opcional. */
+  codigo: string | null;
   direccion: string;
   comuna: string;
   region: string;
@@ -113,6 +114,20 @@ export interface CatalogoTrabajo {
   orden: number;
   activo: boolean;
   subtrabajos: CatalogoTrabajoSubtrabajo[];
+  /**
+   * Motivos bajo los que se ofrece este trabajo en el acta. Vacío = se ofrece
+   * en todos (dmc.catalogo_motivo_trabajo sin filas para él).
+   */
+  motivosCodigos: string[];
+}
+
+/** Ítem del checklist del comentario interno. No lo ve el cliente. */
+export interface CatalogoInterno {
+  id: number;
+  codigo: string;
+  nombre: string;
+  orden: number;
+  activo: boolean;
 }
 
 export interface VisitaTrabajoSubtrabajo {
@@ -127,6 +142,8 @@ export interface VisitaTrabajo {
   id: number;
   visitaId: number;
   trabajoCodigo: string;
+  /** Bajo qué motivo lo registró el técnico. Null en actas anteriores. */
+  motivoCodigo: string | null;
   detalle: string | null;
   orden: number;
   subtrabajos: VisitaTrabajoSubtrabajo[];
@@ -174,6 +191,8 @@ export interface VisitaFoto {
   id: number;
   visitaId: number;
   problemaId: number | null;
+  /** Foto del comentario interno: no sale en el PDF ni en el correo al cliente. */
+  interno: boolean;
   etiqueta: string | null;
   archivoUrl: string;
   orden: number;
@@ -188,6 +207,8 @@ export interface VisitaVideo {
   etiqueta: string | null;
   /** Ruta interna: /api/visita/video/<id>. */
   archivoUrl: string;
+  /** Clip del comentario interno: no sale en el PDF ni en el correo al cliente. */
+  interno: boolean;
   mime: string;
   bytes: number | null;
   duracionSeg: number | null;
@@ -258,6 +279,8 @@ export interface Visita {
   fotos?: VisitaFoto[];
   videos?: VisitaVideo[];
   firmas?: VisitaFirma[];
+  /** Lo marcado del checklist del comentario interno, con su nombre. */
+  internos?: { codigo: string; nombre: string }[];
   reagendamientos?: Reagendamiento[];
 }
 
@@ -287,4 +310,5 @@ export interface ChecklistPlantilla {
   motivos: number;
   problemas: number;
   trabajos: number;
+  internos: number;
 }

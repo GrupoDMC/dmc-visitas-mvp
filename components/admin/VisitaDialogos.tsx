@@ -17,6 +17,7 @@ import {
 } from "@/app/actions/admin";
 import { ESTADO_VISITA_LABEL } from "@/lib/ui/estado";
 import { mensajeRut } from "@/lib/ui/formato";
+import { hoyISO } from "@/lib/ui/fecha";
 import type { Visita } from "@/lib/types";
 
 /** Opciones de los selectores, derivadas de los maestros que baja el layout. */
@@ -89,7 +90,8 @@ function valoresIniciales(opc: Opciones, visita?: Visita, origen?: OrigenProblem
       motivoCodigo: escribirChecks([
         opc.motivos.some((m) => m.v === porFalla) ? porFalla : opc.motivos[0]?.v ?? "",
       ]),
-      fecha: "",
+      // Se agenda para hoy salvo que se cambie.
+      fecha: hoyISO(),
       hora: "",
       responsable: "",
       respRut: "",
@@ -104,7 +106,8 @@ function valoresIniciales(opc: Opciones, visita?: Visita, origen?: OrigenProblem
     sucursalId: opc.sucursalesDe(clienteId)[0]?.v ?? "",
     tecnicoId: opc.tecnicos[0]?.v ?? "",
     motivoCodigo: escribirChecks([opc.motivos[0]?.v ?? ""]),
-    fecha: "",
+    // Se agenda para hoy salvo que se cambie.
+    fecha: hoyISO(),
     hora: "",
     responsable: "",
     respRut: "",
@@ -295,7 +298,8 @@ export function ReprogramarDialogo({
   const opc = useMemo(() => opciones(ref), [ref]);
   const [form, setForm] = useState<FormValores>({
     tecnicoId: String(visita.tecnicoId),
-    fecha: visita.fechaProgramada,
+    // Una fecha ya pasada no sirve para reprogramar: se propone hoy.
+    fecha: visita.fechaProgramada < hoyISO() ? hoyISO() : visita.fechaProgramada,
     hora: visita.horaProgramada ?? "",
   });
   const [guardando, setGuardando] = useState(false);

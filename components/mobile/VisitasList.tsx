@@ -162,7 +162,7 @@ export default function VisitasList({ visitas, hoy }: { visitas: Visita[]; hoy: 
               <button
                 key={v.id}
                 onClick={() => router.push(`/tecnico/visitas/${v.folio}`)}
-                className="block w-full text-left bg-[var(--color-surface)] border border-[var(--color-divider)] px-3.5 pt-3.5 pb-3 hover:bg-[#e2e0e0]"
+                className="block w-full min-w-0 text-left bg-[var(--color-surface)] border border-[var(--color-divider)] px-3.5 pt-3.5 pb-3 hover:bg-[#e2e0e0]"
                 style={{ borderLeft: `5px solid ${ESTADO_VISITA_BARRA[v.estado]}` }}
               >
                 <div className="flex items-baseline gap-2.5">
@@ -172,12 +172,20 @@ export default function VisitasList({ visitas, hoy }: { visitas: Visita[]; hoy: 
                     {ESTADO_VISITA_LABEL[v.estado]}
                   </Tag>
                 </div>
-                <div className="font-extrabold text-[17px] leading-[1.2] mt-2.5">{v.sucursal?.nombre}</div>
-                <div className="text-[13px] opacity-60 mt-0.5">{v.cliente?.nombreFantasia}</div>
-                <div className="text-[13px] opacity-60">{v.sucursal?.direccion}</div>
-                <div className="flex flex-wrap gap-1.5 mt-2.5">
-                  <span className="tag tag-neutral border border-black/[.2]">{textoMotivos(v)}</span>
-                  {v.responsableNombre ? <span className="tag tag-neutral border border-black/[.2]">{v.responsableNombre}</span> : null}
+                <div className="font-extrabold text-[17px] leading-[1.2] mt-2.5 truncate">{v.sucursal?.nombre}</div>
+                <div className="text-[13px] opacity-60 mt-0.5 truncate">{v.cliente?.nombreFantasia}</div>
+                <div className="text-[13px] opacity-60 truncate">{v.sucursal?.direccion}</div>
+                {/* Todo en una línea y cortado con "…": un motivo largo ya no
+                    agranda la tarjeta y la lista queda pareja. */}
+                <div className="flex gap-1.5 mt-2.5 min-w-0">
+                  <span className="tag tag-neutral border border-black/[.2] min-w-0 max-w-full">
+                    <span className="truncate">{textoMotivos(v)}</span>
+                  </span>
+                  {v.responsableNombre ? (
+                    <span className="tag tag-neutral border border-black/[.2] min-w-0 flex-none max-w-[45%]">
+                      <span className="truncate">{v.responsableNombre}</span>
+                    </span>
+                  ) : null}
                 </div>
               </button>
             ))}

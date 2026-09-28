@@ -3,7 +3,7 @@
 import Tag from "@/components/Tag";
 import VisorFotos, { useVisorFotos } from "@/components/ui/VisorFotos";
 import { ESTADO_PROBLEMA_LABEL, ESTADO_PROBLEMA_TAG, textoMotivosReales } from "@/lib/ui/estado";
-import { nombreProblema, nombreTrabajo } from "@/lib/ui/referencias";
+import { nombreProblema, nombreTrabajo, useReferencias } from "@/lib/ui/referencias";
 import type { CatalogoProblema, CatalogoTrabajo, Visita } from "@/lib/types";
 
 /**
@@ -30,9 +30,17 @@ export default function ActaGuardada({
   catalogoProblemas: CatalogoProblema[];
 }) {
   const visor = useVisorFotos();
+  const { motivos } = useReferencias();
   const ejec = visita.ejecucion;
-  const fotos = visita.fotos ?? [];
+  // Primero las fotos del trabajo y después las del comentario interno: el
+  // visor las recorre en ese orden.
+  const fotosTrabajo = (visita.fotos ?? []).filter((f) => !f.interno);
+  const fotosInternas = (visita.fotos ?? []).filter((f) => f.interno);
+  const fotos = [...fotosTrabajo, ...fotosInternas];
+  const videosInternos = (visita.videos ?? []).filter((v) => v.interno);
+  const internos = visita.internos ?? [];
   const firma = visita.firmas?.[0];
+  const nombreMotivo = (codigo: string) => motivos.find((m) => m.codigo === codigo)?.nombre ?? codigo;
 
   const filas: { k: string; v: string }[] = [
     { k: "Motivo", v: textoMotivosReales(visita) },
@@ -47,7 +55,6 @@ export default function ActaGuardada({
     },
   ];
   if (ejec?.observaciones) filas.push({ k: "Observación", v: ejec.observaciones });
-  if (ejec?.comentarioInterno) filas.push({ k: "Comentario interno", v: ejec.comentarioInterno });
 
   return (
     <div className="animate-fade-in">
@@ -59,6 +66,18 @@ export default function ActaGuardada({
         <div className="text-sm opacity-60">
           {visita.cliente?.nombreFantasia} · {visita.folio}
         </div>
+        {visita.estado === "COMPLETADA" ? (
+          <a
+            href={`/api/visita/acta/${encodeURIComponent(visita.folio)}`}
+            download={`Acta ${visita.folio}.pdf`}
+            className="w-full min-h-[50px] flex items-center justify-between px-4 mt-3.5 bg-[var(--color-accent)] text-[var(--color-bg)] font-extrabold text-sm hover:bg-[var(--color-accent-hover)]"
+          >
+            <span>Descargar acta en PDF</span>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+              <path d="M12 4v11M7 11l5 5 5-5M4 20h16" />
+            </svg>
+          </a>
+        ) : null}
         {ejec?.registradoOffline ? (
           <div className="mt-3 px-3.5 py-2.5 bg-[var(--color-surface)] border-l-4 border-[var(--color-text)] text-[13px] leading-[1.45]">
             Se llenó sin señal y se sincronizó
@@ -80,6 +99,9 @@ export default function ActaGuardada({
             <div className="text-[11px] tracking-[.1em] uppercase opacity-66 mb-2">Trabajo realizado</div>
             {visita.trabajos.map((t) => (
               <div key={t.id} className="border-l-[3px] border-[var(--color-text)] pl-3 mb-2.5">
+                {t.motivoCodigo ? (
+                  <div className="text-[10px] tracking-[.1em] uppercase opacity-62">{nombreMotivo(t.motivoCodigo)}</div>
+                ) : null}
                 <div className="font-extrabold text-[15px] leading-[1.25]">
                   {nombreTrabajo(catalogoTrabajos, t.trabajoCodigo)}
                 </div>
@@ -143,10 +165,10 @@ export default function ActaGuardada({
 
         {/* Fotos: se agrandan acá mismo, sin salir del acta. */}
         <div className="pt-3.5">
-          <div className="text-[11px] tracking-[.1em] uppercase opacity-66 mb-2">Fotos ({fotos.length})</div>
-          {fotos.length > 0 ? (
+          <div className="text-[11px] tracking-[.1em] uppercase opacity-66 mb-2">Fotos ({fotosTrabajo.length})</div>
+          {fotosTrabajo.length > 0 ? (
             <div className="grid grid-cols-3 gap-1.5">
-              {fotos.map((f, i) => (
+              {fotosTrabajo.map((f, i) => (
                 <button
                   key={f.id}
                   type="button"
@@ -168,6 +190,52 @@ export default function ActaGuardada({
             <div className="text-[13px] opacity-66">No se tomaron fotos en esta visita.</div>
           )}
         </div>
+
+        {/* Comentario interno: lo ve coordinación, no el cliente ni el PDF. */}
+        {ejec?.comentarioInterno || internos.length || fotosInternas.length || videosInternos.length ? (
+          <div className="mt-4 px-3 py-3 bg-[var(--color-surface)] border-l-[3px] border-[var(--color-text)]">
+            <div className="text-[11px] tracking-[.1em] uppercase opacity-66">Comentario interno · no lo ve el cliente</div>
+            {internos.length > 0 ? (
+              <div className="flex flex-wrap gap-1.5 mt-2">
+                {internos.map((x) => (
+                  <span
+                    key={x.codigo}
+                    className="px-2 py-1 bg-[var(--color-text)] text-[var(--color-bg)] font-extrabold text-xs leading-[1.2]"
+                  >
+                    {x.nombre}
+                  </span>
+                ))}
+              </div>
+            ) : null}
+            {ejec?.comentarioInterno ? <div className="text-sm mt-2">{ejec.comentarioInterno}</div> : null}
+            {fotosInternas.length > 0 ? (
+              <div className="grid grid-cols-4 gap-1.5 mt-2.5">
+                {fotosInternas.map((f, i) => (
+                  <button
+                    key={f.id}
+                    type="button"
+                    onClick={() => visor.abrir(fotosTrabajo.length + i)}
+                    aria-label="Ver la foto interna en grande"
+                    className="relative aspect-square p-0 border border-black/[.3] overflow-hidden cursor-zoom-in"
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={f.archivoUrl} alt="Foto interna" className="w-full h-full object-cover" loading="lazy" />
+                  </button>
+                ))}
+              </div>
+            ) : null}
+            {videosInternos.map((v) => (
+              <video
+                key={v.id}
+                src={v.archivoUrl}
+                controls
+                preload="metadata"
+                playsInline
+                className="w-full aspect-video bg-black object-contain mt-2.5"
+              />
+            ))}
+          </div>
+        ) : null}
 
         {firma ? (
           <div className="pt-5">
@@ -195,7 +263,7 @@ export default function ActaGuardada({
         <VisorFotos
           fotos={fotos.map((f, i) => ({
             src: f.archivoUrl,
-            titulo: f.etiqueta ?? `Foto ${i + 1}`,
+            titulo: f.interno ? "Foto interna" : f.etiqueta ?? `Foto ${i + 1}`,
             subtitulo: `${visita.folio} · ${hhmm(f.tomadaEn)}`,
           }))}
           indice={visor.indice ?? 0}

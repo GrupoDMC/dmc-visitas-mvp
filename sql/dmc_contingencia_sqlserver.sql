@@ -69,7 +69,7 @@ CREATE TABLE dmc.sucursal (
     id              bigint        IDENTITY(1,1) NOT NULL,
     cliente_id      bigint        NOT NULL,
     nombre          nvarchar(120) NOT NULL,
-    codigo          varchar(20)   NOT NULL,
+    codigo          varchar(20)   NULL,         -- código interno opcional
     direccion       nvarchar(180) NOT NULL,
     comuna          nvarchar(80)  NOT NULL,
     region          nvarchar(80)  NOT NULL,
@@ -78,12 +78,14 @@ CREATE TABLE dmc.sucursal (
     creado_en       datetime2(0)  NOT NULL CONSTRAINT df_sucursal_creado DEFAULT (SYSDATETIME()),
     actualizado_en  datetime2(0)  NOT NULL CONSTRAINT df_sucursal_actualizado DEFAULT (SYSDATETIME()),
     CONSTRAINT pk_sucursal                PRIMARY KEY (id),
-    CONSTRAINT uq_sucursal_codigo         UNIQUE (codigo),
     CONSTRAINT uq_sucursal_cliente_nombre UNIQUE (cliente_id, nombre),
     CONSTRAINT fk_sucursal_cliente FOREIGN KEY (cliente_id) REFERENCES dmc.cliente (id)
 );
 GO
 CREATE INDEX ix_sucursal_cliente ON dmc.sucursal (cliente_id) WHERE activo = 1;
+GO
+-- El código es opcional: único solo entre las sucursales que lo tienen.
+CREATE UNIQUE INDEX uq_sucursal_codigo ON dmc.sucursal (codigo) WHERE codigo IS NOT NULL;
 GO
 
 CREATE TABLE dmc.tecnico (
@@ -208,6 +210,34 @@ CREATE TABLE dmc.catalogo_trabajo_subtrabajo (
     CONSTRAINT uq_catalogo_trabajo_subtrabajo UNIQUE (trabajo_id, etiqueta),
     CONSTRAINT fk_cat_trabajo_sub FOREIGN KEY (trabajo_id)
         REFERENCES dmc.catalogo_trabajo (id) ON DELETE CASCADE
+);
+GO
+
+-- Qué trabajos van con cada motivo: en el acta, bajo cada motivo marcado solo
+-- se ofrecen los suyos. Un trabajo sin filas acá se ofrece en todos.
+CREATE TABLE dmc.catalogo_motivo_trabajo (
+    motivo_id   bigint  NOT NULL,
+    trabajo_id  bigint  NOT NULL,
+    CONSTRAINT pk_catalogo_motivo_trabajo PRIMARY KEY (motivo_id, trabajo_id),
+    CONSTRAINT fk_cat_mot_trab_motivo  FOREIGN KEY (motivo_id)  REFERENCES dmc.catalogo_motivo (id)  ON DELETE CASCADE,
+    CONSTRAINT fk_cat_mot_trab_trabajo FOREIGN KEY (trabajo_id) REFERENCES dmc.catalogo_trabajo (id) ON DELETE CASCADE
+);
+GO
+CREATE INDEX ix_cat_mot_trab_trabajo ON dmc.catalogo_motivo_trabajo (trabajo_id);
+GO
+
+-- Checklist del comentario interno: lo marca el técnico, no lo ve el cliente.
+CREATE TABLE dmc.catalogo_interno (
+    id              bigint        IDENTITY(1,1) NOT NULL,
+    codigo          varchar(40)   NOT NULL,
+    nombre          nvarchar(80)  NOT NULL,     -- "Cliente pidió cotización"
+    orden           smallint      NOT NULL CONSTRAINT df_cat_interno_orden DEFAULT (0),
+    activo          bit           NOT NULL CONSTRAINT df_cat_interno_activo DEFAULT (1),
+    creado_en       datetime2(0)  NOT NULL CONSTRAINT df_cat_interno_creado DEFAULT (SYSDATETIME()),
+    actualizado_en  datetime2(0)  NOT NULL CONSTRAINT df_cat_interno_actualizado DEFAULT (SYSDATETIME()),
+    CONSTRAINT pk_catalogo_interno        PRIMARY KEY (id),
+    CONSTRAINT uq_catalogo_interno_codigo UNIQUE (codigo),
+    CONSTRAINT uq_catalogo_interno_nombre UNIQUE (nombre)
 );
 GO
 
@@ -379,6 +409,7 @@ CREATE TABLE dmc.visita_trabajo (
     id              bigint        IDENTITY(1,1) NOT NULL,
     visita_id       bigint        NOT NULL,
     trabajo_codigo  varchar(40)   NOT NULL,      -- FK al catálogo editable (Lista 3)
+    motivo_codigo   varchar(40)   NULL,          -- bajo qué motivo se registró
     detalle         nvarchar(max) NULL,          -- texto libre opcional del técnico
     orden           smallint      NOT NULL CONSTRAINT df_vis_trab_orden DEFAULT (1),
     -- Nada se borra: quitar un trabajo del acta lo deja inactivo.
@@ -386,7 +417,8 @@ CREATE TABLE dmc.visita_trabajo (
     creado_en       datetime2(0)  NOT NULL CONSTRAINT df_vis_trab_creado DEFAULT (SYSDATETIME()),
     CONSTRAINT pk_visita_trabajo PRIMARY KEY (id),
     CONSTRAINT fk_vis_trab_visita  FOREIGN KEY (visita_id)      REFERENCES dmc.visita (id) ON DELETE CASCADE,
-    CONSTRAINT fk_vis_trab_catalogo FOREIGN KEY (trabajo_codigo) REFERENCES dmc.catalogo_trabajo (codigo)
+    CONSTRAINT fk_vis_trab_catalogo FOREIGN KEY (trabajo_codigo) REFERENCES dmc.catalogo_trabajo (codigo),
+    CONSTRAINT fk_vis_trab_motivo   FOREIGN KEY (motivo_codigo)  REFERENCES dmc.catalogo_motivo (codigo)
 );
 GO
 CREATE INDEX ix_vis_trab_visita ON dmc.visita_trabajo (visita_id, orden);
@@ -404,6 +436,20 @@ CREATE TABLE dmc.visita_trabajo_subtrabajo (
     CONSTRAINT fk_vis_sub_trabajo FOREIGN KEY (visita_trabajo_id)
         REFERENCES dmc.visita_trabajo (id) ON DELETE CASCADE,
     CONSTRAINT ck_vis_sub_cantidad CHECK (cantidad BETWEEN 1 AND 99)
+);
+GO
+
+-- Lo que el técnico marcó del checklist del comentario interno.
+CREATE TABLE dmc.visita_interno (
+    id              bigint       IDENTITY(1,1) NOT NULL,
+    visita_id       bigint       NOT NULL,
+    interno_codigo  varchar(40)  NOT NULL,
+    orden           smallint     NOT NULL CONSTRAINT df_vis_interno_orden DEFAULT (1),
+    creado_en       datetime2(0) NOT NULL CONSTRAINT df_vis_interno_creado DEFAULT (SYSDATETIME()),
+    CONSTRAINT pk_visita_interno        PRIMARY KEY (id),
+    CONSTRAINT uq_visita_interno        UNIQUE (visita_id, interno_codigo),
+    CONSTRAINT fk_vis_interno_visita    FOREIGN KEY (visita_id)      REFERENCES dmc.visita (id) ON DELETE CASCADE,
+    CONSTRAINT fk_vis_interno_catalogo  FOREIGN KEY (interno_codigo) REFERENCES dmc.catalogo_interno (codigo)
 );
 GO
 
@@ -499,6 +545,8 @@ CREATE TABLE dmc.visita_foto (
     bytes        int           NULL,
     orden        smallint      NOT NULL CONSTRAINT df_foto_orden DEFAULT (0),
     activo       bit           NOT NULL CONSTRAINT df_foto_activo DEFAULT (1),
+    -- 1 = foto del comentario interno: no sale en el PDF ni en el correo.
+    interno      bit           NOT NULL CONSTRAINT df_foto_interno DEFAULT (0),
     tomada_en    datetime2(0)  NULL,
     subida_en    datetime2(0)  NOT NULL CONSTRAINT df_foto_subida DEFAULT (SYSDATETIME()),
     CONSTRAINT pk_visita_foto   PRIMARY KEY (id),
@@ -535,6 +583,8 @@ CREATE TABLE dmc.visita_video (
     orden           smallint       NOT NULL CONSTRAINT df_video_orden DEFAULT (0),
     subida_completa bit            NOT NULL CONSTRAINT df_video_completa DEFAULT (0),
     activo          bit            NOT NULL CONSTRAINT df_video_activo DEFAULT (1),
+    -- 1 = clip del comentario interno: no sale en el PDF ni en el correo.
+    interno         bit            NOT NULL CONSTRAINT df_video_interno DEFAULT (0),
     grabado_en      datetime2(0)   NULL,
     subido_en       datetime2(0)   NOT NULL CONSTRAINT df_video_subido DEFAULT (SYSDATETIME()),
     CONSTRAINT pk_visita_video   PRIMARY KEY (id),
@@ -750,6 +800,12 @@ CREATE OR ALTER TRIGGER dmc.tg_cat_trabajo_actualizado ON dmc.catalogo_trabajo A
 BEGIN
     SET NOCOUNT ON;
     UPDATE c SET actualizado_en = SYSDATETIME() FROM dmc.catalogo_trabajo c JOIN inserted i ON i.id = c.id;
+END;
+GO
+CREATE OR ALTER TRIGGER dmc.tg_cat_interno_actualizado ON dmc.catalogo_interno AFTER UPDATE AS
+BEGIN
+    SET NOCOUNT ON;
+    UPDATE c SET actualizado_en = SYSDATETIME() FROM dmc.catalogo_interno c JOIN inserted i ON i.id = c.id;
 END;
 GO
 CREATE OR ALTER TRIGGER dmc.tg_ejecucion_actualizado ON dmc.visita_ejecucion AFTER UPDATE AS

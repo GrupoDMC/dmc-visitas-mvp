@@ -6,6 +6,12 @@ const nextConfig: NextConfig = {
   // del servidor y se resuelve desde node_modules.
   serverExternalPackages: ["mssql", "tedious"],
 
+  // El PDF del acta lleva el logo, que se lee de disco en el servidor. En
+  // Vercel la función solo trae los archivos que se le indican.
+  outputFileTracingIncludes: {
+    "/api/visita/acta/[folio]": ["./public/DMC-logo.png"],
+  },
+
   experimental: {
     // El acta del técnico viaja entera en una Server Action: fotos y firma
     // incluidas, en base64. El tope por defecto (1 MB) la rechaza en cuanto hay

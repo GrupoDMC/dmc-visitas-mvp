@@ -4,10 +4,12 @@
 
 /** 12345678K → 12.345.678-K. Tolera cualquier basura de entrada. */
 export function fmtRut(v: string): string {
-  const raw = String(v ?? "")
+  const limpio = String(v ?? "")
     .replace(/[^0-9kK]/g, "")
-    .toUpperCase()
-    .slice(0, 9);
+    .toUpperCase();
+  // La K solo vale como dígito verificador, o sea al final: en el cuerpo se
+  // descarta para que un toque de más no deje un RUT imposible.
+  const raw = (limpio.slice(0, -1).replace(/K/g, "") + limpio.slice(-1)).slice(0, 9);
   if (raw.length < 8) return raw.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
   const cuerpo = raw.slice(0, -1);
   const dv = raw.slice(-1);

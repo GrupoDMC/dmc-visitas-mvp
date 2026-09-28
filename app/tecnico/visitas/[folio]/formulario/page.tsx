@@ -1,7 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 import { getSesion } from "@/lib/auth";
 import { getVisitaCompletaPorFolio } from "@/lib/data/visitas";
-import { listarMotivos, listarProblemas, listarTrabajos } from "@/lib/data/catalogos";
+import { listarInternos, listarMotivos, listarProblemas, listarTrabajos } from "@/lib/data/catalogos";
 import { leerBorrador } from "@/lib/data/borradores";
 import MobileShell from "@/components/mobile/MobileShell";
 import FormularioVisita from "@/components/mobile/FormularioVisita";
@@ -23,10 +23,11 @@ export default async function FormularioPage({ params }: { params: Promise<{ fol
   // El borrador respaldado en el servidor: sirve cuando el técnico entra desde
   // otro equipo, o cuando el celular perdió lo que tenía guardado. La copia del
   // propio celular manda si es más nueva; eso lo decide el formulario.
-  const [motivos, trabajos, problemas, borrador] = await Promise.all([
+  const [motivos, trabajos, problemas, internos, borrador] = await Promise.all([
     listarMotivos(),
     listarTrabajos(),
     listarProblemas(),
+    listarInternos(),
     leerBorrador(folio, sesion.usuario.id).catch(() => null),
   ]);
 
@@ -37,6 +38,7 @@ export default async function FormularioPage({ params }: { params: Promise<{ fol
         motivos={motivos}
         catalogoTrabajo={trabajos}
         catalogoProblema={problemas}
+        catalogoInterno={internos}
         borradorServidor={borrador}
       />
     </MobileShell>

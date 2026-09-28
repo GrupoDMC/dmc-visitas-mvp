@@ -234,7 +234,9 @@ export default function NuevaVisitaSheet({
             </label>
             <input
               id="nv-rut"
-              inputMode="numeric"
+              // Teclado de texto y no numérico: el dígito verificador puede ser K.
+              inputMode="text"
+              autoCapitalize="characters"
               value={rut}
               // Se formatea en cada pulsación: nadie escribe los puntos ni el guion.
               onChange={(e) => setRut(fmtRut(e.target.value))}

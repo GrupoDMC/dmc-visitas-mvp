@@ -19,7 +19,7 @@ import {
   subirTrozoVideoAction,
 } from "@/app/actions/videos";
 import { descartarBorradorAction, guardarBorradorAction } from "@/app/actions/borradores";
-import { ESTADO_PROBLEMA_LABEL } from "@/lib/ui/estado";
+import { trabajoVaConMotivo } from "@/lib/ui/referencias";
 import {
   actasEnCola,
   borradorConDatos,
@@ -42,21 +42,28 @@ import {
 } from "@/lib/ui/borrador";
 import type { ActaEntrada } from "@/lib/data/visitas";
 import type {
+  CatalogoInterno,
   CatalogoMotivo,
   CatalogoProblema,
   CatalogoTrabajo,
-  EstadoProblema,
   Visita,
 } from "@/lib/types";
 
-const SECCIONES: Seccion[] = ["sucursal", "motivo", "problemas", "fotos", "firmas"];
+const SECCIONES: Seccion[] = ["sucursal", "motivo", "problemas", "interno", "fotos", "firmas"];
+
+const NOMBRE_SECCION: Record<Seccion, string> = {
+  sucursal: "Sección responsable",
+  motivo: "Sección trabajo realizado",
+  problemas: "Problemas detectados",
+  interno: "Comentario interno",
+  fotos: "Fotos y video",
+  firmas: "Firma de tienda",
+};
 
 /** Cada cuánto se sube el respaldo del borrador cuando hay señal. */
 const CADA_CUANTO_SUBE = 30_000;
 /** Cada cuánto se reintenta sola un acta que quedó esperando cobertura. */
 const CADA_CUANTO_REINTENTA = 20_000;
-
-const ESTADOS_PROBLEMA: EstadoProblema[] = ["ABIERTO", "PENDIENTE", "RESUELTO"];
 
 let autoId = 1;
 
@@ -65,12 +72,14 @@ export default function FormularioVisita({
   motivos,
   catalogoTrabajo,
   catalogoProblema,
+  catalogoInterno,
   borradorServidor,
 }: {
   visita: Visita;
   motivos: CatalogoMotivo[];
   catalogoTrabajo: CatalogoTrabajo[];
   catalogoProblema: CatalogoProblema[];
+  catalogoInterno: CatalogoInterno[];
   /** Respaldo del acta a medio llenar que quedó en el servidor, si lo hay. */
   borradorServidor?: { payload: string; guardadoEn: string } | null;
 }) {
@@ -104,9 +113,13 @@ export default function FormularioVisita({
 
   // 3 · Problemas detectados
   const [problemas, setProblemas] = useState<ProblemaForm[]>([]);
-  const [interno, setInterno] = useState("");
 
-  // 4 · Fotos y videos
+  // 4 · Comentario interno: su checklist, el texto, y fotos y videos marcados
+  //     como internos. Nada de esto lo ve el cliente.
+  const [interno, setInterno] = useState("");
+  const [internos, setInternos] = useState<string[]>([]);
+
+  // 5 · Fotos y videos (los del trabajo y los internos, separados por `interno`)
   const [fotos, setFotos] = useState<FotoForm[]>([]);
   // El video no se acumula en el formulario como las fotos: se sube a
   // dmc.visita_video en cuanto se termina de grabar, porque un minuto en 720p
@@ -123,26 +136,35 @@ export default function FormularioVisita({
       bytes: v.bytes ?? 0,
       progreso: null,
       error: null,
+      interno: v.interno,
     }))
   );
 
-  // 5 · Firma
+  // 6 · Firma
   const [firma, setFirma] = useState<FirmaGuardada | null>(null);
 
   // Hojas inferiores
   const [sheet, setSheet] = useState<"trabajo" | "problema" | "firma" | "camara" | "video" | null>(null);
-  const [nt, setNt] = useState<{ codigo: string; subs: SubSeleccion[]; detalle: string }>({
+  /** A dónde va lo que se capture en la cámara o el video: al trabajo o al comentario interno. */
+  const [destinoMedia, setDestinoMedia] = useState<"trabajo" | "interno">("trabajo");
+  /**
+   * La hoja de "agregar trabajo". `motivo` es bajo qué motivo se agrega, y
+   * `agregados` los que ya se sumaron sin cerrar la hoja: después del primero
+   * la hoja pregunta "¿Qué más hiciste?" en vez de cerrarse.
+   */
+  const [nt, setNt] = useState<{ motivo: string; codigo: string; subs: SubSeleccion[]; agregados: string[] }>({
+    motivo: "",
     codigo: "",
     subs: [],
-    detalle: "",
+    agregados: [],
   });
-  const [np, setNp] = useState<{ codigo: string; items: ProblemaItemForm[]; desc: string; sol: string; estado: EstadoProblema }>({
+  const [np, setNp] = useState<{ codigo: string; items: ProblemaItemForm[]; desc: string }>({
     codigo: "",
     items: [],
     desc: "",
-    sol: "",
-    estado: "ABIERTO",
   });
+  /** Los motivos no marcados se esconden tras "Agregar otro motivo" para no llenar la pantalla. */
+  const [verOtrosMotivos, setVerOtrosMotivos] = useState(false);
 
   // ── Borrador y envío diferido ─────────────────────────────────────────────
   //
@@ -189,6 +211,7 @@ export default function FormularioVisita({
       motivosCodigos,
       obs,
       interno,
+      internos,
       trabajos,
       problemas,
       fotos,
@@ -196,7 +219,7 @@ export default function FormularioVisita({
       guardadas,
       horaInicio,
     }),
-    [visita.folio, respNombre, respRut, respTel, motivosCodigos, obs, interno, trabajos, problemas, fotos, firma, guardadas, horaInicio]
+    [visita.folio, respNombre, respRut, respTel, motivosCodigos, obs, interno, internos, trabajos, problemas, fotos, firma, guardadas, horaInicio]
   );
 
   const aplicarBorrador = useCallback((b: BorradorActa) => {
@@ -206,7 +229,10 @@ export default function FormularioVisita({
     if (b.motivosCodigos?.length) setMotivosCodigos(b.motivosCodigos);
     setObs(b.obs ?? "");
     setInterno(b.interno ?? "");
-    setTrabajos(b.trabajos ?? []);
+    setInternos(b.internos ?? []);
+    // Los trabajos de borradores anteriores no traen motivo: van bajo el primero.
+    const primerMotivo = b.motivosCodigos?.[0] ?? "";
+    setTrabajos((b.trabajos ?? []).map((t) => ({ ...t, motivo: t.motivo || primerMotivo })));
     setProblemas(b.problemas ?? []);
     setFotos(b.fotos ?? []);
     setFirma(b.firma ?? null);
@@ -301,8 +327,14 @@ export default function FormularioVisita({
     };
   }, []);
 
+  /** Motivo bajo el que va un trabajo. Los de borradores viejos, sin motivo, van bajo el primero. */
+  const motivoDe = (t: TrabajoForm) => t.motivo || motivosCodigos[0] || "";
+  const videosListos = videos.filter((v) => v.id > 0 && v.progreso === null && !v.error);
+  const trabajosVigentes = trabajos.filter((t) => motivosCodigos.includes(motivoDe(t)));
+
   const nGuardadas = SECCIONES.filter((k) => guardadas[k]).length;
-  const puedeRevisar = !!guardadas.sucursal && !!guardadas.motivo;
+  const puedeRevisar =
+    (!!guardadas.sucursal || !faltaEnSeccion("sucursal")) && (!!guardadas.motivo || !faltaEnSeccion("motivo"));
   const puedeGuardar = puedeRevisar && !!firma && !guardando;
 
   const falta = useMemo(() => {
@@ -327,24 +359,32 @@ export default function FormularioVisita({
       motivosCodigos,
       observaciones: obs.trim() || null,
       comentarioInterno: interno.trim() || null,
-      trabajos: trabajos.map((t) => ({
-        codigo: t.codigo,
-        detalle: t.detalle.trim() || null,
-        subtrabajos: t.subs.map((sx) => ({ etiqueta: sx.etiqueta, cantidad: sx.cantidad })),
-      })),
+      internosCodigos: internos,
+      // Solo los trabajos de motivos que siguen marcados.
+      trabajos: trabajos
+        .filter((t) => motivosCodigos.includes(motivoDe(t)))
+        .map((t) => ({
+          codigo: t.codigo,
+          motivoCodigo: motivoDe(t),
+          detalle: t.detalle?.trim() || null,
+          subtrabajos: t.subs.map((sx) => ({ etiqueta: sx.etiqueta, cantidad: sx.cantidad })),
+        })),
       problemas: problemas.map((pr) => ({
         tipoCodigo: pr.codigo,
-        estado: pr.estado,
+        // El celular ya no pregunta "¿cómo queda?": todo problema nace abierto
+        // y coordinación le cambia el estado desde el panel.
+        estado: pr.estado ?? "ABIERTO",
         descripcion: pr.desc.trim() || null,
-        solucion: pr.sol.trim() || null,
+        solucion: pr.sol?.trim() || null,
         items: pr.items.map((it) => ({ etiqueta: it.etiqueta, cantidad: it.cantidad })),
       })),
       // Las fotos ya vienen reducidas desde que se tomaron: así el acta cabe en
       // el celular mientras espera señal y sale rápido cuando la hay.
-      fotos: fotos.map((f) => ({ dataUrl: f.src, etiqueta: null })),
+      fotos: fotos.map((f) => ({ dataUrl: f.src, etiqueta: null, interno: Boolean(f.interno) })),
       // Los clips ya están en la base: acá va solo qué se conserva y en qué
       // orden. Los que quedaron subiendo cuando se apretó Guardar no entran.
-      videosIds: videos.filter((v) => v.id > 0 && v.progreso === null && !v.error).map((v) => v.id),
+      videosIds: videosListos.map((v) => v.id),
+      videosInternosIds: videosListos.filter((v) => v.interno).map((v) => v.id),
       firma: { nombre: firma.nombre, rut: firma.rut || null, dataUrl: firma.imagen },
       dispositivo: typeof navigator === "undefined" ? null : navigator.userAgent.slice(0, 60),
     };
@@ -476,20 +516,68 @@ export default function FormularioVisita({
   }, [pendiente, enviando, reintentarPendiente]);
 
   /**
-   * Marca una sección como revisada. NO escribe nada: el acta entera se manda
-   * al final, en "Guardar visita". Antes esto decía "guardada" y no lo estaba.
+   * Qué le falta a una sección para darla por lista, o null si no le falta
+   * nada. Es la misma regla para el botón "Guardar esta sección" y para el
+   * guardado automático al pasar a otra.
    */
-  function guardarSeccion(clave: Seccion, etiqueta: string) {
-    setGuardadas((g) => ({ ...g, [clave]: true }));
-    setAbierta(null);
-    aviso(`${etiqueta} lista`);
+  function faltaEnSeccion(clave: Seccion): string | null {
+    switch (clave) {
+      case "sucursal":
+        if (!respNombre.trim()) return "Falta el nombre del responsable de tienda";
+        if (!rutCompleto(respRut)) return "El RUT del responsable está incompleto";
+        if (!rutDvCorrecto(respRut)) return "Ese RUT no es válido: revisa el dígito verificador";
+        if (!telCompleto(respTel)) return "El teléfono del responsable está incompleto";
+        return null;
+      case "motivo":
+        if (motivosCodigos.length === 0) return "Marca al menos un motivo de la visita";
+        if (!trabajosVigentes.length) return "Agrega al menos un trabajo realizado";
+        return null;
+      case "firmas":
+        return firma ? null : "Falta la firma del responsable de tienda";
+      // Problemas, comentario interno y fotos son opcionales.
+      default:
+        return null;
+    }
   }
 
+  /**
+   * Marca una sección como revisada y abre la siguiente. NO escribe nada en
+   * el servidor: el acta entera se manda al final, en "Guardar visita". Lo
+   * escrito sí queda a salvo en el celular desde la primera tecla.
+   */
+  function guardarSeccion(clave: Seccion) {
+    const falta = faltaEnSeccion(clave);
+    if (falta) return aviso(falta);
+    setGuardadas((g) => ({ ...g, [clave]: true }));
+    const siguiente = SECCIONES[SECCIONES.indexOf(clave) + 1] ?? null;
+    setAbierta(siguiente && !guardadas[siguiente] ? siguiente : null);
+    aviso(`${NOMBRE_SECCION[clave]} lista`);
+  }
+
+  /**
+   * Abrir o cerrar una sección. Al salir de la que estaba abierta, se guarda
+   * sola si está completa: el técnico no tiene que acordarse del botón. Si le
+   * falta algo, queda pendiente y se avisa qué.
+   */
   function toggleSeccion(clave: Seccion) {
+    if (abierta && abierta !== clave) {
+      const falta = faltaEnSeccion(abierta);
+      if (!falta) setGuardadas((g) => ({ ...g, [abierta]: true }));
+      else aviso(`${NOMBRE_SECCION[abierta]} quedó pendiente: ${falta.charAt(0).toLowerCase()}${falta.slice(1)}`);
+    } else if (abierta === clave && !faltaEnSeccion(clave)) {
+      // Cerrarla tocando su propia cabecera también la deja lista.
+      setGuardadas((g) => ({ ...g, [clave]: true }));
+    }
     setAbierta((a) => (a === clave ? null : clave));
   }
 
   const nombreTrabajo = (codigo: string) => catalogoTrabajo.find((t) => t.codigo === codigo)?.nombre ?? "Trabajo";
+  const nombreMotivo = (codigo: string) => motivos.find((m) => m.codigo === codigo)?.nombre ?? codigo;
+  const nombreInterno = (codigo: string) => catalogoInterno.find((x) => x.codigo === codigo)?.nombre ?? codigo;
+  const fotosTrabajo = fotos.filter((f) => !f.interno);
+  const fotosInternas = fotos.filter((f) => f.interno);
+  const videosTrabajo = videos.filter((v) => !v.interno);
+  const videosInternos = videos.filter((v) => v.interno);
   const nombreProblema = (codigo: string) => catalogoProblema.find((p) => p.codigo === codigo)?.nombre ?? "Problema";
 
   // ───────────────────────── pantalla ACTA EN ESPERA ─────────────────────────
@@ -608,9 +696,8 @@ export default function FormularioVisita({
       { k: "Nombre", v: respNombre || "—" },
       { k: "Rut", v: respRut || "Sin RUT" },
       { k: "Teléfono de contacto", v: respTel || "—" },
-      { k: "Observación escrita del técnico", v: obs || "Sin observaciones." },
+      { k: "Detalle del trabajo", v: obs || "Sin detalle escrito." },
     ];
-    if (interno) resumen.push({ k: "Comentario interno (no lo ve el cliente)", v: interno });
 
     return (
       <div className="animate-fade-in">
@@ -637,12 +724,13 @@ export default function FormularioVisita({
               </div>
             ))}
 
-            {trabajos.length > 0 ? (
+            {trabajosVigentes.length > 0 ? (
               <div className="pt-3.5">
                 <div className="text-[11px] tracking-[.1em] uppercase opacity-66 mb-2.5">Trabajo realizado</div>
                 <div className="flex flex-col gap-2.5">
-                  {trabajos.map((t) => (
+                  {trabajosVigentes.map((t) => (
                     <div key={t.id} className="border-l-[3px] border-[var(--color-text)] pl-3">
+                      <div className="text-[10px] tracking-[.1em] uppercase opacity-62">{nombreMotivo(motivoDe(t))}</div>
                       <div className="font-extrabold text-base leading-[1.25]">{nombreTrabajo(t.codigo)}</div>
                       {t.subs.length > 0 ? (
                         <div className="flex flex-wrap gap-1.5 mt-1.5">
@@ -690,11 +778,11 @@ export default function FormularioVisita({
               </div>
             ) : null}
 
-            {fotos.length > 0 ? (
+            {fotosTrabajo.length > 0 ? (
               <div className="pt-4">
-                <div className="text-[10px] tracking-[.12em] uppercase opacity-62 mb-2">Fotos ({fotos.length})</div>
+                <div className="text-[10px] tracking-[.12em] uppercase opacity-62 mb-2">Fotos ({fotosTrabajo.length})</div>
                 <div className="grid grid-cols-4 gap-1.5">
-                  {fotos.map((f) => (
+                  {fotosTrabajo.map((f) => (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
                       key={f.id}
@@ -707,13 +795,13 @@ export default function FormularioVisita({
               </div>
             ) : null}
 
-            {videos.length > 0 ? (
+            {videosTrabajo.length > 0 ? (
               <div className="pt-4">
                 <div className="text-[10px] tracking-[.12em] uppercase opacity-62 mb-2">
-                  Videos ({videos.length})
+                  Videos ({videosTrabajo.length})
                 </div>
                 <div className="grid gap-2">
-                  {videos.map((v) => (
+                  {videosTrabajo.map((v) => (
                     <div key={v.id} className="flex items-center gap-2.5 border border-black/[.3] px-2.5 py-2">
                       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" className="flex-none">
                         <path d="M3 7h11v10H3z" />
@@ -728,6 +816,33 @@ export default function FormularioVisita({
                     </div>
                   ))}
                 </div>
+              </div>
+            ) : null}
+
+            {interno.trim() || internos.length || fotosInternas.length || videosInternos.length ? (
+              <div className="mt-4 px-3 py-3 bg-[var(--color-surface)] border-l-[3px] border-[var(--color-text)]">
+                <div className="text-[10px] tracking-[.12em] uppercase opacity-62">
+                  Comentario interno · no lo ve el cliente
+                </div>
+                {internos.length > 0 ? (
+                  <div className="flex flex-wrap gap-1.5 mt-2">
+                    {internos.map((c) => (
+                      <span
+                        key={c}
+                        className="px-2 py-1 bg-[var(--color-text)] text-[var(--color-bg)] font-extrabold text-xs leading-[1.2]"
+                      >
+                        {nombreInterno(c)}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
+                {interno.trim() ? <div className="text-sm mt-2">{interno}</div> : null}
+                {fotosInternas.length || videosInternos.length ? (
+                  <div className="text-xs opacity-66 mt-2">
+                    {fotosInternas.length} foto{fotosInternas.length === 1 ? "" : "s"}
+                    {videosInternos.length ? ` · ${videosInternos.length} video${videosInternos.length > 1 ? "s" : ""}` : ""}
+                  </div>
+                ) : null}
               </div>
             ) : null}
 
@@ -798,6 +913,9 @@ export default function FormularioVisita({
 
   // ────────────────────────────── pantalla FORM ──────────────────────────────
   const trbSel = catalogoTrabajo.find((t) => t.codigo === nt.codigo) ?? null;
+  // En la hoja de trabajo solo van los que el checklist asignó a este motivo.
+  const trabajosDelMotivo = catalogoTrabajo.filter((t) => trabajoVaConMotivo(t, nt.motivo));
+  const yaAgregado = (codigo: string) => trabajos.some((t) => t.codigo === codigo && motivoDe(t) === nt.motivo);
   const probSel = catalogoProblema.find((p) => p.codigo === np.codigo) ?? null;
   const probTieneOpciones = !!probSel && probSel.opciones.length > 0;
   const probListo = !!np.codigo && (probTieneOpciones ? np.items.length > 0 : !!np.desc.trim());
@@ -821,7 +939,9 @@ export default function FormularioVisita({
           ))}
         </div>
         <div className="flex justify-between mt-1.5 text-[10px] tracking-[.09em] uppercase opacity-62">
-          <span>{nGuardadas} de 5 secciones listas</span>
+          <span>
+            {nGuardadas} de {SECCIONES.length} secciones listas
+          </span>
           <span>El acta se cierra al final</span>
         </div>
 
@@ -854,6 +974,7 @@ export default function FormularioVisita({
                   motivosCodigos: visita.motivosCodigos ?? [visita.motivoCodigo],
                   obs: "",
                   interno: "",
+                  internos: [],
                   trabajos: [],
                   problemas: [],
                   fotos: [],
@@ -897,7 +1018,9 @@ export default function FormularioVisita({
               <Campo label="RUT" htmlFor="f-rut" className="flex-1 min-w-0">
                 <input
                   id="f-rut"
-                  inputMode="numeric"
+                  // Teclado de texto y no numérico: el dígito verificador puede ser K.
+                  inputMode="text"
+                  autoCapitalize="characters"
                   value={respRut}
                   onChange={(e) => setRespRut(fmtRut(e.target.value))}
                   placeholder="11.111.111-1"
@@ -927,15 +1050,9 @@ export default function FormularioVisita({
               </p>
             ) : null}
             <BotonGuardar
-              texto="Guardar esta sección"
+              texto="Guardar y seguir"
               habilitado={sucursalCompleta}
-              onClick={() => {
-                if (!respNombre.trim()) return aviso("Falta el nombre del responsable de tienda");
-                if (!rutCompleto(respRut)) return aviso("El RUT del responsable está incompleto");
-                if (!rutDvCorrecto(respRut)) return aviso("Ese RUT no es válido: revisa el dígito verificador");
-                if (!telCompleto(respTel)) return aviso("El teléfono del responsable está incompleto");
-                guardarSeccion("sucursal", "Sección responsable");
-              }}
+              onClick={() => guardarSeccion("sucursal")}
             />
           </Cuerpo>
         ) : null}
@@ -947,137 +1064,175 @@ export default function FormularioVisita({
           ok={!!guardadas.motivo}
           chip={
             guardadas.motivo
-              ? { variante: "accent", texto: `${trabajos.length} ${trabajos.length === 1 ? "trabajo" : "trabajos"}` }
+              ? {
+                  variante: "accent",
+                  texto: `${trabajosVigentes.length} ${trabajosVigentes.length === 1 ? "trabajo" : "trabajos"}`,
+                }
               : { variante: "neutral", texto: "Pendiente" }
           }
           onToggle={() => toggleSeccion("motivo")}
         />
         {abierta === "motivo" ? (
           <Cuerpo>
-            {/* Una visita puede venir por más de una cosa: se marcan todas las
-                que correspondan, no una sola de una lista desplegable. */}
-            <Campo label="Motivo de la visita" extra="(marca todos los que correspondan)">
-              <div className="flex flex-col gap-1.5">
-                {motivos.map((m) => {
-                  const activo = motivosCodigos.includes(m.codigo);
-                  return (
-                    <button
-                      key={m.codigo}
-                      type="button"
-                      role="checkbox"
-                      aria-checked={activo}
-                      onClick={() =>
-                        setMotivosCodigos((prev) =>
-                          activo ? prev.filter((c) => c !== m.codigo) : [...prev, m.codigo]
-                        )
-                      }
-                      className="w-full min-h-[54px] flex items-center gap-3 px-3.5 text-[15px] leading-[1.25] text-[var(--color-text)] cursor-pointer text-left hover:brightness-95"
-                      style={{
-                        background: activo ? "var(--color-accent-100)" : "var(--color-surface-3)",
-                        border: `1px solid ${activo ? "var(--color-accent)" : "rgba(32,30,29,.35)"}`,
-                        fontWeight: activo ? 800 : 400,
-                      }}
-                    >
-                      <span
-                        className="w-[22px] h-[22px] flex-none border-2 border-[var(--color-text)] grid place-items-center"
-                        style={{ background: activo ? "var(--color-accent)" : "transparent" }}
+            {/* Cada motivo marcado es una subcategoría con sus propios
+                trabajos, y la hoja de "agregar" solo ofrece los trabajos que
+                el checklist asignó a ese motivo. Los motivos sin marcar
+                quedan escondidos para no llenar la pantalla. */}
+            <div>
+              <div className="text-[11px] tracking-[.09em] uppercase opacity-60 mb-1.5">
+                Motivo de la visita
+                <span className="opacity-66 normal-case tracking-normal"> (y lo que hiciste en cada uno)</span>
+              </div>
+              <div className="flex flex-col gap-2.5">
+                {motivos
+                  .filter((m) => motivosCodigos.includes(m.codigo))
+                  .map((m) => {
+                    const suyos = trabajos.filter((t) => motivoDe(t) === m.codigo);
+                    return (
+                      <div
+                        key={m.codigo}
+                        className="bg-[var(--color-surface-3)] border border-[var(--color-accent)] border-l-4"
                       >
-                        {activo ? (
-                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#f3f2f2" strokeWidth="3.4">
-                            <path d="M4 12l5 5L20 6" />
-                          </svg>
-                        ) : null}
-                      </span>
-                      <span className="flex-1 min-w-0">{m.nombre}</span>
-                    </button>
-                  );
-                })}
+                        <div className="flex items-center gap-2.5 px-3.5 pt-3 pb-2">
+                          <span className="w-[22px] h-[22px] flex-none grid place-items-center bg-[var(--color-accent)]">
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#f3f2f2" strokeWidth="3.4">
+                              <path d="M4 12l5 5L20 6" />
+                            </svg>
+                          </span>
+                          <span className="flex-1 min-w-0 font-extrabold text-[15px] leading-[1.25]">{m.nombre}</span>
+                          <button
+                            type="button"
+                            onClick={() => desmarcarMotivo(m.codigo)}
+                            className="min-h-9 px-1 bg-transparent border-0 text-[var(--color-accent-active)] text-xs underline underline-offset-[3px] cursor-pointer flex-none"
+                          >
+                            Quitar
+                          </button>
+                        </div>
+
+                        <div className="px-3.5 pb-3 flex flex-col gap-2">
+                          {suyos.map((t) => (
+                            <div key={t.id} className="bg-[var(--color-bg)] border border-[var(--color-divider)] px-3 py-2.5">
+                              <div className="flex items-start gap-2">
+                                <div className="flex-1 min-w-0 font-extrabold text-[15px] leading-[1.25]">
+                                  {nombreTrabajo(t.codigo)}
+                                </div>
+                                <button
+                                  onClick={() =>
+                                    setConfirmar({
+                                      titulo: "¿Quitar este trabajo?",
+                                      texto: `«${nombreTrabajo(t.codigo)}» se borra del trabajo realizado de esta visita.`,
+                                      cta: "Quitar trabajo",
+                                      accion: () => setTrabajos((prev) => prev.filter((x) => x.id !== t.id)),
+                                    })
+                                  }
+                                  aria-label="Quitar trabajo"
+                                  className="w-8 h-8 -mr-1 -mt-1 flex-none grid place-items-center bg-transparent border-0 text-[var(--color-text)] cursor-pointer hover:bg-black/[.07]"
+                                >
+                                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6">
+                                    <path d="M6 6l12 12M18 6L6 18" />
+                                  </svg>
+                                </button>
+                              </div>
+                              {t.subs.length > 0 ? (
+                                <div className="flex flex-wrap gap-1.5 mt-1.5">
+                                  {t.subs.map((s) => (
+                                    <span
+                                      key={s.etiqueta}
+                                      className="max-w-full px-2 py-1 bg-[var(--color-text)] text-[var(--color-bg)] font-extrabold text-xs leading-[1.2] tabular-nums"
+                                    >
+                                      {s.etiqueta}
+                                      {s.cantidad > 1 ? ` × ${s.cantidad}` : ""}
+                                    </span>
+                                  ))}
+                                </div>
+                              ) : null}
+                              {t.detalle ? <div className="text-sm opacity-75 mt-1.5">{t.detalle}</div> : null}
+                            </div>
+                          ))}
+                          <button
+                            onClick={() => abrirHojaTrabajo(m.codigo)}
+                            className="w-full min-h-[48px] flex items-center gap-2.5 px-3.5 bg-transparent border border-dashed border-black/[.5] text-[var(--color-text)] font-extrabold text-sm cursor-pointer text-left hover:bg-black/[.06]"
+                          >
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                              <path d="M12 5v14M5 12h14" />
+                            </svg>
+                            <span>{suyos.length ? "¿Qué más hiciste?" : "Agregar trabajo realizado"}</span>
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+
                 {motivos.length === 0 ? (
                   <div className="px-3.5 py-3 border border-dashed border-black/[.4] text-[13px] opacity-70">
                     No hay motivos en el checklist. Avisa a coordinación: sin motivos no se puede cerrar el acta.
                   </div>
                 ) : null}
-              </div>
-            </Campo>
 
-            <div>
-              <div className="text-[11px] tracking-[.09em] uppercase opacity-60 mb-1.5">Trabajo realizado</div>
-              <p className="m-0 mb-3.5 text-[13px] opacity-60">
-                Agrega cada trabajo que ejecutaste. La lista y sus subtrabajos vienen del checklist del panel de administración.
-              </p>
-              <div className="flex flex-col gap-2.5">
-                {trabajos.map((t, i) => (
-                  <div key={t.id} className="bg-[var(--color-surface-3)] border border-[var(--color-divider)] border-l-4 border-l-[var(--color-accent)] px-3.5 py-3">
-                    <div className="text-[10px] tracking-[.1em] uppercase text-[var(--color-accent-active)]">Trabajo {i + 1}</div>
-                    <div className="font-extrabold text-base leading-[1.25] mt-1.5">{nombreTrabajo(t.codigo)}</div>
-                    {t.subs.length > 0 ? (
-                      <div className="flex flex-wrap gap-1.5 mt-2">
-                        {t.subs.map((s) => (
-                          <span
-                            key={s.etiqueta}
-                            className="px-2.5 py-1 bg-[var(--color-text)] text-[var(--color-bg)] font-extrabold text-xs leading-[1.2] tabular-nums"
+                {/* Los que no están marcados, plegados. */}
+                {motivos.some((m) => !motivosCodigos.includes(m.codigo)) ? (
+                  motivosCodigos.length === 0 || verOtrosMotivos ? (
+                    <div className="flex flex-col gap-1.5">
+                      {motivosCodigos.length > 0 ? (
+                        <div className="text-[11px] tracking-[.09em] uppercase opacity-60 mt-1">Otros motivos</div>
+                      ) : null}
+                      {motivos
+                        .filter((m) => !motivosCodigos.includes(m.codigo))
+                        .map((m) => (
+                          <button
+                            key={m.codigo}
+                            type="button"
+                            role="checkbox"
+                            aria-checked={false}
+                            onClick={() => {
+                              setMotivosCodigos((prev) => [...prev, m.codigo]);
+                              setGuardadas((g) => ({ ...g, motivo: false }));
+                              setVerOtrosMotivos(false);
+                            }}
+                            className="w-full min-h-[48px] flex items-center gap-3 px-3.5 text-[15px] leading-[1.25] text-[var(--color-text)] cursor-pointer text-left bg-[var(--color-surface-3)] border border-[rgba(32,30,29,.35)] hover:brightness-95"
                           >
-                            {s.etiqueta}
-                            {s.cantidad > 1 ? ` × ${s.cantidad}` : ""}
-                          </span>
+                            <span className="w-[22px] h-[22px] flex-none border-2 border-[var(--color-text)]" />
+                            <span className="flex-1 min-w-0">{m.nombre}</span>
+                          </button>
                         ))}
-                      </div>
-                    ) : null}
-                    {t.detalle ? <div className="text-sm opacity-75 mt-1.5">{t.detalle}</div> : null}
+                    </div>
+                  ) : (
                     <button
-                      onClick={() =>
-                        setConfirmar({
-                          titulo: "¿Quitar este trabajo?",
-                          texto: `«${nombreTrabajo(t.codigo)}» se borra del trabajo realizado de esta visita.`,
-                          cta: "Quitar trabajo",
-                          accion: () => setTrabajos((prev) => prev.filter((x) => x.id !== t.id)),
-                        })
-                      }
-                      className="min-h-10 mt-1.5 p-0 bg-transparent border-0 text-[var(--color-accent-active)] text-xs underline underline-offset-[3px] cursor-pointer"
+                      type="button"
+                      onClick={() => setVerOtrosMotivos(true)}
+                      className="w-full min-h-[44px] flex items-center gap-2 px-3.5 bg-transparent border border-[var(--color-divider)] text-[var(--color-text)] text-[13px] cursor-pointer text-left hover:bg-black/[.06]"
                     >
-                      Quitar
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                        <path d="M12 5v14M5 12h14" />
+                      </svg>
+                      <span>La visita fue también por otro motivo</span>
                     </button>
-                  </div>
-                ))}
+                  )
+                ) : null}
               </div>
-              <button
-                onClick={() => {
-                  setNt({ codigo: "", subs: [], detalle: "" });
-                  setSheet("trabajo");
-                }}
-                className="w-full min-h-[54px] flex items-center gap-2.5 px-4 mt-3 bg-transparent border border-dashed border-black/[.5] text-[var(--color-text)] font-extrabold text-sm cursor-pointer text-left hover:bg-black/[.06]"
-              >
-                <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
-                  <path d="M12 5v14M5 12h14" />
-                </svg>
-                <span>Agregar trabajo realizado</span>
-              </button>
             </div>
 
-            <Campo
-              label="Observación escrita"
-              htmlFor="f-obs"
-              extra="(opcional · la ve el cliente)"
-            >
+            {/* Un solo detalle para todo el trabajo, en vez de uno por trabajo. */}
+            <Campo label="Detalle del trabajo" htmlFor="f-obs" extra="(opcional · la ve el cliente)">
               <textarea
                 id="f-obs"
                 rows={3}
                 value={obs}
                 onChange={(e) => setObs(e.target.value)}
                 autoComplete="off"
-                placeholder="Algo que no calce con la lista: detalles del local, del acceso o del equipo"
+                placeholder="Lo que no calce con la lista: pórtico 2 quedó midiendo 1,1 m, detalles del local, del acceso o del equipo"
                 className={`${entrada} min-h-[96px] leading-[1.4] resize-y`}
               />
             </Campo>
 
             <BotonGuardar
-              texto={trabajos.length ? `Guardar ${trabajos.length} trabajo${trabajos.length > 1 ? "s" : ""}` : "Guardar esta sección"}
-              habilitado={motivosCodigos.length > 0 && trabajos.length > 0}
-              onClick={() => {
-                if (motivosCodigos.length === 0) return aviso("Marca al menos un motivo de la visita");
-                if (!trabajos.length) return aviso("Agrega al menos un trabajo realizado");
-                guardarSeccion("motivo", "Sección trabajo realizado");
-              }}
+              texto={
+                trabajosVigentes.length
+                  ? `Guardar ${trabajosVigentes.length} trabajo${trabajosVigentes.length > 1 ? "s" : ""} y seguir`
+                  : "Guardar y seguir"
+              }
+              habilitado={motivosCodigos.length > 0 && trabajosVigentes.length > 0}
+              onClick={() => guardarSeccion("motivo")}
             />
           </Cuerpo>
         ) : null}
@@ -1102,19 +1257,14 @@ export default function FormularioVisita({
             <div className="flex flex-col gap-2.5">
               {problemas.map((p, i) => (
                 <div key={p.id} className="bg-[var(--color-surface-3)] border border-[var(--color-divider)] border-l-4 border-l-[var(--color-accent)] px-3.5 py-3">
-                  <div className="flex items-baseline gap-2">
-                    <span className="text-[10px] tracking-[.1em] uppercase text-[var(--color-accent-active)]">Problema {i + 1}</span>
-                    <span className={`tag tag-${p.estado === "RESUELTO" ? "neutral" : p.estado === "PENDIENTE" ? "outline" : "accent"} ml-auto`}>
-                      {ESTADO_PROBLEMA_LABEL[p.estado]}
-                    </span>
-                  </div>
+                  <div className="text-[10px] tracking-[.1em] uppercase text-[var(--color-accent-active)]">Problema {i + 1}</div>
                   <div className="font-extrabold text-base leading-[1.25] mt-2">{nombreProblema(p.codigo)}</div>
                   {p.items.length > 0 ? (
                     <div className="flex flex-wrap gap-1.5 mt-2">
                       {p.items.map((z) => (
                         <span
                           key={z.etiqueta}
-                          className="px-2.5 py-1 bg-[var(--color-text)] text-[var(--color-bg)] font-extrabold text-xs leading-[1.2] tabular-nums"
+                          className="max-w-full px-2.5 py-1 bg-[var(--color-text)] text-[var(--color-bg)] font-extrabold text-xs leading-[1.2] tabular-nums"
                         >
                           {z.etiqueta} × {z.cantidad}
                         </span>
@@ -1122,9 +1272,6 @@ export default function FormularioVisita({
                     </div>
                   ) : null}
                   {p.desc ? <div className="text-sm opacity-75 mt-2">{p.desc}</div> : null}
-                  {p.sol ? (
-                    <div className="text-[13px] opacity-66 mt-1.5 pt-1.5 border-t border-black/[.2]">Sugerido: {p.sol}</div>
-                  ) : null}
                   <button
                     onClick={() =>
                       setConfirmar({
@@ -1142,23 +1289,9 @@ export default function FormularioVisita({
               ))}
             </div>
 
-            <div className="mt-4 pt-4 border-t border-[var(--color-divider-soft)]">
-              <Campo label="Comentario interno" htmlFor="f-int" extra="(opcional · no lo ve el cliente)">
-                <textarea
-                  id="f-int"
-                  rows={2}
-                  value={interno}
-                  onChange={(e) => setInterno(e.target.value)}
-                  autoComplete="off"
-                  placeholder="Solo para coordinación: algo que deba saber del local, del acceso o del equipo"
-                  className={`${entrada} min-h-[80px] leading-[1.4] resize-y`}
-                />
-              </Campo>
-            </div>
-
             <button
               onClick={() => {
-                setNp({ codigo: "", items: [], desc: "", sol: "", estado: "ABIERTO" });
+                setNp({ codigo: "", items: [], desc: "" });
                 setSheet("problema");
               }}
               className="w-full min-h-[54px] flex items-center gap-2.5 px-4 mt-3 bg-transparent border border-dashed border-black/[.5] text-[var(--color-text)] font-extrabold text-sm cursor-pointer text-left hover:bg-black/[.06]"
@@ -1170,26 +1303,126 @@ export default function FormularioVisita({
             </button>
             <div className="mt-2.5">
               <BotonGuardar
-                texto={problemas.length ? `Guardar ${problemas.length} problema${problemas.length > 1 ? "s" : ""}` : "Guardar sin problemas"}
+                texto={problemas.length ? `Guardar ${problemas.length} problema${problemas.length > 1 ? "s" : ""} y seguir` : "Sin problemas · seguir"}
                 habilitado
-                onClick={() => guardarSeccion("problemas", problemas.length ? "Problemas detectados" : "Sección sin problemas")}
+                onClick={() => guardarSeccion("problemas")}
               />
             </div>
           </Cuerpo>
         ) : null}
 
-        {/* ── 4 · Fotos del trabajo ── */}
+        {/* ── 4 · Comentario interno ── */}
         <Cabecera
           n={4}
+          titulo="Comentario interno"
+          ok={!!guardadas.interno}
+          chip={
+            internos.length || interno.trim() || fotosInternas.length || videosInternos.length
+              ? { variante: guardadas.interno ? "accent" : "outline", texto: guardadas.interno ? "Guardado" : "Sin guardar" }
+              : { variante: guardadas.interno ? "accent" : "neutral", texto: guardadas.interno ? "Sin comentario" : "Opcional" }
+          }
+          onToggle={() => toggleSeccion("interno")}
+        />
+        {abierta === "interno" ? (
+          <Cuerpo gap={false}>
+            <div className="px-3.5 py-2.5 mb-3.5 bg-[var(--color-bg)] border-l-4 border-[var(--color-text)] text-[13px] leading-[1.45]">
+              Solo para coordinación. Nada de esta sección sale en el acta que recibe el cliente.
+            </div>
+
+            {catalogoInterno.length > 0 ? (
+              <div className="flex flex-col gap-1.5">
+                {catalogoInterno.map((x) => {
+                  const activo = internos.includes(x.codigo);
+                  return (
+                    <button
+                      key={x.codigo}
+                      type="button"
+                      role="checkbox"
+                      aria-checked={activo}
+                      onClick={() => {
+                        setInternos((prev) => (activo ? prev.filter((c) => c !== x.codigo) : [...prev, x.codigo]));
+                        setGuardadas((g) => ({ ...g, interno: false }));
+                      }}
+                      className="w-full min-h-[50px] flex items-center gap-3 px-3.5 text-[15px] leading-[1.25] text-[var(--color-text)] cursor-pointer text-left hover:brightness-95"
+                      style={{
+                        background: activo ? "var(--color-accent-100)" : "var(--color-surface-3)",
+                        border: `1px solid ${activo ? "var(--color-accent)" : "rgba(32,30,29,.35)"}`,
+                        fontWeight: activo ? 800 : 400,
+                      }}
+                    >
+                      <span
+                        className="w-[22px] h-[22px] flex-none border-2 border-[var(--color-text)] grid place-items-center"
+                        style={{ background: activo ? "var(--color-accent)" : "transparent" }}
+                      >
+                        {activo ? (
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#f3f2f2" strokeWidth="3.4">
+                            <path d="M4 12l5 5L20 6" />
+                          </svg>
+                        ) : null}
+                      </span>
+                      <span className="flex-1 min-w-0">{x.nombre}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            ) : null}
+
+            <div className="mt-3.5">
+              <Campo label="Descripción" htmlFor="f-int" extra="(opcional · no la ve el cliente)">
+                <textarea
+                  id="f-int"
+                  rows={3}
+                  value={interno}
+                  onChange={(e) => setInterno(e.target.value)}
+                  autoComplete="off"
+                  placeholder="Solo para coordinación: algo que deba saber del local, del acceso o del equipo"
+                  className={`${entrada} min-h-[96px] leading-[1.4] resize-y`}
+                />
+              </Campo>
+            </div>
+
+            <div className="mt-3.5 text-[11px] tracking-[.09em] uppercase opacity-60 mb-1.5">Fotos y video internos</div>
+            <GaleriaFotos
+              fotos={fotosInternas}
+              onQuitar={pedirQuitarFoto}
+              onCamara={() => abrirCamara("interno")}
+              onArchivos={(e) => onArchivos(e, true)}
+            />
+            <ListaVideos
+              videos={videosInternos}
+              clips={clipsRef.current}
+              onQuitar={pedirQuitarVideo}
+              onReintentar={reintentarVideo}
+            />
+            <button
+              onClick={() => abrirVideo("interno")}
+              className="w-full min-h-[48px] flex items-center gap-2.5 px-4 mt-2 bg-[var(--color-text)] text-[var(--color-bg)] border-0 font-extrabold text-sm cursor-pointer text-left hover:bg-[var(--color-neutral-900)]"
+            >
+              <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9">
+                <path d="M3 7h11v10H3z" />
+                <path d="M14 11l7-4v10l-7-4z" />
+              </svg>
+              <span>{videosInternos.length ? "Grabar otro video interno" : "Grabar video interno"}</span>
+            </button>
+
+            <div className="mt-3.5">
+              <BotonGuardar texto="Guardar y seguir" habilitado onClick={() => guardarSeccion("interno")} />
+            </div>
+          </Cuerpo>
+        ) : null}
+
+        {/* ── 5 · Fotos y video del trabajo ── */}
+        <Cabecera
+          n={5}
           titulo="Fotos y video del trabajo"
           ok={!!guardadas.fotos}
           chip={
             guardadas.fotos
               ? {
                   variante: "accent",
-                  texto: videos.length
-                    ? `${fotos.length} fotos · ${videos.length} video${videos.length > 1 ? "s" : ""}`
-                    : `${fotos.length} fotos`,
+                  texto: videosTrabajo.length
+                    ? `${fotosTrabajo.length} fotos · ${videosTrabajo.length} video${videosTrabajo.length > 1 ? "s" : ""}`
+                    : `${fotosTrabajo.length} fotos`,
                 }
               : { variante: "neutral", texto: "Al final" }
           }
@@ -1200,49 +1433,12 @@ export default function FormularioVisita({
             <p className="m-0 mb-3.5 text-[13px] opacity-60">
               Al final del trabajo: pórtico terminado, etiqueta de serie y cada problema que dejes anotado.
             </p>
-            <div className="grid grid-cols-3 gap-2">
-              {fotos.map((f) => (
-                <div key={f.id} className="relative aspect-square border border-[var(--color-divider)] overflow-hidden bg-[var(--color-neutral-300)]">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={f.src} alt="" className="w-full h-full object-cover" />
-                  <button
-                    onClick={() =>
-                      setConfirmar({
-                        titulo: "¿Borrar esta foto?",
-                        texto: "La foto se quita del acta y hay que volver a tomarla si la necesitas.",
-                        cta: "Borrar foto",
-                        accion: () => setFotos((prev) => prev.filter((x) => x.id !== f.id)),
-                      })
-                    }
-                    aria-label="Quitar foto"
-                    className="absolute top-0 right-0 w-8 h-8 grid place-items-center bg-[var(--color-text)] text-[var(--color-bg)] border-0 cursor-pointer"
-                  >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6">
-                      <path d="M6 6l12 12M18 6L6 18" />
-                    </svg>
-                  </button>
-                </div>
-              ))}
-              <button
-                onClick={() => setSheet("camara")}
-                className="relative aspect-square flex flex-col items-center justify-center gap-1.5 border border-black/[.5] cursor-pointer bg-[var(--color-text)] text-[var(--color-bg)] overflow-hidden hover:bg-[var(--color-neutral-900)]"
-              >
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
-                  <path d="M3 8h3l2-3h8l2 3h3v12H3z" />
-                  <circle cx="12" cy="13" r="3.4" />
-                </svg>
-                <span className="font-extrabold text-[10px] tracking-[.08em] uppercase">Cámara</span>
-              </button>
-              <label className="relative aspect-square flex flex-col items-center justify-center gap-1.5 border border-dashed border-black/[.5] cursor-pointer bg-[var(--color-surface-3)] overflow-hidden hover:bg-[#eeeaea]">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#201e1d" strokeWidth="1.8">
-                  <path d="M4 5h16v14H4z" />
-                  <path d="M4 16l5-5 4 4 3-3 4 4" />
-                  <circle cx="9" cy="9" r="1.4" />
-                </svg>
-                <span className="font-extrabold text-[10px] tracking-[.08em] uppercase">Galería</span>
-                <input type="file" accept="image/*" multiple onChange={onArchivos} className="absolute w-px h-px opacity-0 pointer-events-none" />
-              </label>
-            </div>
+            <GaleriaFotos
+              fotos={fotosTrabajo}
+              onQuitar={pedirQuitarFoto}
+              onCamara={() => abrirCamara("trabajo")}
+              onArchivos={(e) => onArchivos(e, false)}
+            />
             {/* ── Video: 720p y hasta 1 minuto ── */}
             <div className="mt-5 pt-4 border-t border-[var(--color-divider)]">
               <div className="flex items-center gap-2">
@@ -1254,114 +1450,42 @@ export default function FormularioVisita({
                 mientras pasa el carro, el ruido de la placa.
               </p>
 
-              {videos.length ? (
-                <div className="grid gap-2 mb-3">
-                  {videos.map((v) => (
-                    <div key={v.id} className="border border-[var(--color-divider)] bg-[var(--color-surface-3)]">
-                      <video
-                        src={v.src}
-                        controls
-                        preload="metadata"
-                        playsInline
-                        onLoadedMetadata={(e) => repararDuracionPreview(e.currentTarget)}
-                        className="w-full aspect-video bg-black object-contain"
-                      />
-                      <div className="flex items-center gap-2 px-2.5 py-2">
-                        <span className="text-[11px] tabular-nums opacity-70">
-                          {reloj(v.duracionSeg)} · {v.ancho}x{v.alto} · {mb(v.bytes)}
-                        </span>
-                        <button
-                          onClick={() =>
-                            setConfirmar({
-                              titulo: "¿Borrar este video?",
-                              texto: "El video se quita del acta y hay que volver a grabarlo si lo necesitas.",
-                              cta: "Borrar video",
-                              accion: () => quitarVideo(v),
-                            })
-                          }
-                          aria-label="Quitar video"
-                          className="ml-auto w-8 h-8 grid place-items-center bg-transparent border border-[var(--color-divider)] cursor-pointer text-[var(--color-text)] hover:bg-black/[.07]"
-                        >
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6">
-                            <path d="M6 6l12 12M18 6L6 18" />
-                          </svg>
-                        </button>
-                      </div>
-
-                      {/* Mientras sube: la barra. Si se cortó: el motivo. */}
-                      {v.progreso !== null ? (
-                        <div className="px-2.5 pb-2.5">
-                          <div className="h-1 bg-[var(--color-divider)] overflow-hidden">
-                            <div
-                              className="h-full bg-[var(--color-accent)] transition-[width] duration-300"
-                              style={{ width: `${v.progreso}%` }}
-                            />
-                          </div>
-                          <div className="mt-1 text-[11px] opacity-62 tabular-nums">
-                            Subiendo… {v.progreso}%
-                          </div>
-                        </div>
-                      ) : null}
-                      {v.error ? (
-                        <div className="px-2.5 pb-2.5">
-                          <div className="text-[11px] text-[var(--color-accent-active)] leading-[1.45]">
-                            {v.error}
-                          </div>
-                          {clipsRef.current.has(v.id) ? (
-                            <button
-                              onClick={() => reintentarVideo(v)}
-                              className="mt-2 min-h-[38px] w-full px-3 bg-[var(--color-text)] text-[var(--color-bg)] border-0 font-extrabold text-[12px] cursor-pointer text-left hover:bg-[var(--color-neutral-900)]"
-                            >
-                              Reintentar la subida
-                            </button>
-                          ) : (
-                            <div className="mt-1 text-[11px] opacity-62">
-                              El acta se puede guardar igual; el video no va a quedar.
-                            </div>
-                          )}
-                        </div>
-                      ) : null}
-                    </div>
-                  ))}
-                </div>
-              ) : null}
+              <ListaVideos
+                videos={videosTrabajo}
+                clips={clipsRef.current}
+                onQuitar={pedirQuitarVideo}
+                onReintentar={reintentarVideo}
+              />
 
               <button
-                onClick={() => setSheet("video")}
-                className="w-full min-h-[52px] flex items-center gap-2.5 px-4 bg-[var(--color-text)] text-[var(--color-bg)] border-0 font-extrabold text-sm cursor-pointer text-left hover:bg-[var(--color-neutral-900)]"
+                onClick={() => abrirVideo("trabajo")}
+                className="w-full min-h-[52px] flex items-center gap-2.5 px-4 mt-2 bg-[var(--color-text)] text-[var(--color-bg)] border-0 font-extrabold text-sm cursor-pointer text-left hover:bg-[var(--color-neutral-900)]"
               >
                 <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9">
                   <path d="M3 7h11v10H3z" />
                   <path d="M14 11l7-4v10l-7-4z" />
                 </svg>
-                <span>{videos.length ? "Grabar otro video" : "Grabar video"}</span>
+                <span>{videosTrabajo.length ? "Grabar otro video" : "Grabar video"}</span>
               </button>
             </div>
 
             <div className="mt-3.5">
               <BotonGuardar
                 texto={
-                  fotos.length || videos.length
-                    ? `Guardar ${fotos.length} foto${fotos.length === 1 ? "" : "s"}${videos.length ? ` y ${videos.length} video${videos.length > 1 ? "s" : ""}` : ""}`
-                    : "Guardar sin fotos"
+                  fotosTrabajo.length || videosTrabajo.length
+                    ? `Guardar ${fotosTrabajo.length} foto${fotosTrabajo.length === 1 ? "" : "s"}${videosTrabajo.length ? ` y ${videosTrabajo.length} video${videosTrabajo.length > 1 ? "s" : ""}` : ""}`
+                    : "Seguir sin fotos"
                 }
                 habilitado
-                onClick={() =>
-                  guardarSeccion(
-                    "fotos",
-                    fotos.length || videos.length
-                      ? `${fotos.length} fotos${videos.length ? ` · ${videos.length} video${videos.length > 1 ? "s" : ""}` : ""}`
-                      : "Sección sin fotos"
-                  )
-                }
+                onClick={() => guardarSeccion("fotos")}
               />
             </div>
           </Cuerpo>
         ) : null}
 
-        {/* ── 5 · Firma de la tienda ── */}
+        {/* ── 6 · Firma de la tienda ── */}
         <Cabecera
-          n={5}
+          n={6}
           titulo="Firma de la tienda"
           ok={!!firma}
           chip={firma ? { variante: "accent", texto: "Firmada" } : { variante: "neutral", texto: "Pendiente" }}
@@ -1401,14 +1525,7 @@ export default function FormularioVisita({
                 </svg>
               </button>
             </div>
-            <BotonGuardar
-              texto="Guardar esta sección"
-              habilitado={!!firma}
-              onClick={() => {
-                if (!firma) return aviso("Falta la firma del responsable de tienda");
-                guardarSeccion("firmas", "Firma de tienda");
-              }}
-            />
+            <BotonGuardar texto="Guardar esta sección" habilitado={!!firma} onClick={() => guardarSeccion("firmas")} />
           </Cuerpo>
         ) : null}
       </div>
@@ -1416,7 +1533,17 @@ export default function FormularioVisita({
       <div className="px-4 pt-5 pb-6.5">
         <button
           onClick={() => {
-            if (!puedeRevisar) return aviso("Guarda al menos responsable y motivo");
+            // La sección abierta se guarda sola también al ir a revisar.
+            const listas = { ...guardadas };
+            if (abierta && !faltaEnSeccion(abierta)) listas[abierta] = true;
+            // Las dos obligatorias cuentan como listas si ya están completas,
+            // aunque el técnico no haya pasado por ellas (datos precargados).
+            if (!faltaEnSeccion("sucursal")) listas.sucursal = true;
+            if (!faltaEnSeccion("motivo")) listas.motivo = true;
+            setGuardadas(listas);
+            if (!listas.sucursal) return aviso(faltaEnSeccion("sucursal") ?? "Guarda los datos del responsable");
+            if (!listas.motivo) return aviso(faltaEnSeccion("motivo") ?? "Guarda el motivo y el trabajo realizado");
+            setAbierta(null);
             setHoraTermino(ahora());
             setPaso("preview");
           }}
@@ -1440,18 +1567,31 @@ export default function FormularioVisita({
 
       {/* ── Hoja: agregar trabajo realizado ── */}
       {sheet === "trabajo" ? (
-        <Sheet titulo="Trabajo realizado" onClose={() => setSheet(null)}>
+        <Sheet titulo={`Trabajo realizado · ${nombreMotivo(nt.motivo)}`} onClose={() => setSheet(null)}>
           <div className="px-4 pt-4 pb-5.5 flex flex-col gap-4.5">
+            {/* Tras agregar uno la hoja no se cierra: pregunta qué más se hizo,
+                para que el técnico no tenga que volver a buscar el botón ni se
+                confunda con lo que ya cargó. */}
+            {nt.agregados.length > 0 ? (
+              <div className="px-3.5 py-3 bg-[var(--color-accent-100)] border-l-4 border-[var(--color-accent)]">
+                <div className="text-[10px] tracking-[.12em] uppercase text-[var(--color-accent-800)]">
+                  Ya agregaste
+                </div>
+                <div className="text-sm font-extrabold mt-1">{nt.agregados.map(nombreTrabajo).join(" · ")}</div>
+              </div>
+            ) : null}
             <div>
-              <PasoTitulo n="1" texto="¿Qué trabajo hiciste?" />
+              <PasoTitulo n="1" texto={trabajosDelMotivo.some((t) => yaAgregado(t.codigo)) ? "¿Qué más hiciste?" : "¿Qué trabajo hiciste?"} />
               <div className="flex flex-col gap-1.5">
-                {catalogoTrabajo.map((t) => {
+                {trabajosDelMotivo.map((t) => {
                   const activo = nt.codigo === t.codigo;
+                  const agregado = yaAgregado(t.codigo);
                   return (
                     <button
                       key={t.codigo}
-                      onClick={() => setNt({ codigo: t.codigo, subs: [], detalle: nt.detalle })}
-                      className="w-full min-h-[54px] flex items-center gap-3 px-3.5 font-extrabold text-[15px] leading-[1.2] cursor-pointer text-left hover:brightness-95"
+                      disabled={agregado}
+                      onClick={() => setNt((p) => ({ ...p, codigo: t.codigo, subs: [] }))}
+                      className="w-full min-h-[54px] flex items-center gap-3 px-3.5 font-extrabold text-[15px] leading-[1.2] cursor-pointer text-left hover:brightness-95 disabled:cursor-default disabled:opacity-55"
                       style={{
                         background: activo ? "var(--color-text)" : "var(--color-surface-3)",
                         color: activo ? "var(--color-bg)" : "var(--color-text)",
@@ -1459,12 +1599,20 @@ export default function FormularioVisita({
                       }}
                     >
                       <span className="w-[18px] h-[18px] flex-none border-2 border-current grid place-items-center">
-                        {activo ? <span className="w-2 h-2 bg-current" /> : null}
+                        {activo || agregado ? <span className="w-2 h-2 bg-current" /> : null}
                       </span>
-                      <span>{t.nombre}</span>
+                      <span className="flex-1 min-w-0">{t.nombre}</span>
+                      {agregado ? (
+                        <span className="text-[10px] tracking-[.08em] uppercase font-normal flex-none">Agregado</span>
+                      ) : null}
                     </button>
                   );
                 })}
+                {trabajosDelMotivo.length === 0 ? (
+                  <div className="px-3.5 py-3 border border-dashed border-black/[.4] text-[13px] opacity-70">
+                    El checklist no tiene trabajos para este motivo. Avisa a coordinación.
+                  </div>
+                ) : null}
               </div>
             </div>
 
@@ -1529,18 +1677,6 @@ export default function FormularioVisita({
               </div>
             ) : null}
 
-            <div>
-              <PasoTitulo n={trbSel && trbSel.subtrabajos.length > 0 ? "3" : "2"} texto="Detalle (opcional)" />
-              <textarea
-                rows={2}
-                value={nt.detalle}
-                onChange={(e) => setNt((p) => ({ ...p, detalle: e.target.value }))}
-                autoComplete="off"
-                placeholder="Pórtico 2: se calibró y quedó midiendo 1,1 m"
-                className={`${entradaSheet} min-h-[78px] leading-[1.4] resize-y`}
-              />
-            </div>
-
             <button
               onClick={() => {
                 if (!nt.codigo) return aviso("Elige el trabajo realizado");
@@ -1549,11 +1685,12 @@ export default function FormularioVisita({
                 }
                 setTrabajos((prev) => [
                   ...prev,
-                  { id: autoId++, codigo: nt.codigo, subs: nt.subs.map((x) => ({ ...x })), detalle: nt.detalle.trim() },
+                  { id: autoId++, codigo: nt.codigo, motivo: nt.motivo, subs: nt.subs.map((x) => ({ ...x })), detalle: "" },
                 ]);
                 setGuardadas((g) => ({ ...g, motivo: false }));
-                setSheet(null);
-                aviso("Trabajo agregado");
+                // La hoja queda abierta preguntando "¿Qué más hiciste?".
+                setNt((p) => ({ ...p, codigo: "", subs: [], agregados: [...p.agregados, p.codigo] }));
+                aviso(`${nombreTrabajo(nt.codigo)} agregado · ¿qué más hiciste?`);
               }}
               className="w-full min-h-[58px] flex items-center justify-between px-4.5 border-0 font-extrabold text-base cursor-pointer text-left hover:brightness-95"
               style={{
@@ -1566,6 +1703,14 @@ export default function FormularioVisita({
                 <path d="M12 5v14M5 12h14" />
               </svg>
             </button>
+            {nt.agregados.length > 0 ? (
+              <button
+                onClick={() => setSheet(null)}
+                className="w-full min-h-[50px] px-4 -mt-2 bg-transparent border border-[var(--color-divider)] text-[var(--color-text)] font-extrabold text-sm cursor-pointer text-left hover:bg-black/[.07]"
+              >
+                Listo, no hice nada más
+              </button>
+            ) : null}
           </div>
         </Sheet>
       ) : null}
@@ -1653,31 +1798,6 @@ export default function FormularioVisita({
               </div>
             ) : null}
 
-            {np.codigo ? (
-              <div className="border-t border-black/[.3] pt-4">
-                <PasoTitulo n={probTieneOpciones ? "3" : "2"} texto="¿Cómo queda?" />
-                <div className="flex flex-col gap-1.5">
-                  {ESTADOS_PROBLEMA.map((e) => {
-                    const activo = np.estado === e;
-                    return (
-                      <button
-                        key={e}
-                        onClick={() => setNp((p) => ({ ...p, estado: e }))}
-                        className="w-full min-h-[50px] flex items-center px-3.5 border border-black/[.35] text-[15px] leading-[1.3] cursor-pointer text-left"
-                        style={{
-                          background: activo ? "var(--color-text)" : "transparent",
-                          color: activo ? "var(--color-bg)" : "var(--color-text)",
-                          fontWeight: activo ? 800 : 400,
-                        }}
-                      >
-                        {e === "PENDIENTE" ? "Pendiente de repuesto" : ESTADO_PROBLEMA_LABEL[e]}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            ) : null}
-
             <Campo label={probTieneOpciones ? "Nota corta" : "Qué encontraste"} htmlFor="p-desc" extra={probTieneOpciones ? "(opcional)" : undefined}>
               <textarea
                 id="p-desc"
@@ -1690,18 +1810,6 @@ export default function FormularioVisita({
               />
             </Campo>
 
-            <Campo label="Qué hiciste o qué se sugiere" htmlFor="p-sol" extra="(opcional)">
-              <textarea
-                id="p-sol"
-                rows={2}
-                value={np.sol}
-                onChange={(e) => setNp((p) => ({ ...p, sol: e.target.value }))}
-                autoComplete="off"
-                placeholder="Cambiar tarjeta electrónica; queda cotizado"
-                className={`${entradaSheet} min-h-[78px] leading-[1.4] resize-y`}
-              />
-            </Campo>
-
             <button
               onClick={() => {
                 if (!np.codigo) return aviso("Elige primero el tipo de problema");
@@ -1711,7 +1819,7 @@ export default function FormularioVisita({
                 if (!probTieneOpciones && !np.desc.trim()) return aviso("Escribe qué encontraste");
                 setProblemas((prev) => [
                   ...prev,
-                  { id: autoId++, codigo: np.codigo, items: [...np.items], desc: np.desc.trim(), sol: np.sol.trim(), estado: np.estado },
+                  { id: autoId++, codigo: np.codigo, items: [...np.items], desc: np.desc.trim(), sol: "", estado: "ABIERTO" },
                 ]);
                 setGuardadas((g) => ({ ...g, problemas: false }));
                 setSheet(null);
@@ -1751,7 +1859,7 @@ export default function FormularioVisita({
 
       {sheet === "camara" ? (
         <CamaraSheet
-          onCapturar={(src) => void agregarFoto(src)}
+          onCapturar={(src) => void agregarFoto(src, destinoMedia === "interno")}
           onCerrar={() => setSheet(null)}
         />
       ) : null}
@@ -1759,9 +1867,9 @@ export default function FormularioVisita({
       {sheet === "video" ? (
         <VideoSheet
           onGrabado={(clip) => {
-            agregarVideo(clip);
+            agregarVideo(clip, destinoMedia === "interno");
             setSheet(null);
-            setAbierta("fotos");
+            setAbierta(destinoMedia === "interno" ? "interno" : "fotos");
             aviso(
               clip.ajustes.length
                 ? "Video ajustado y agregado · subiendo al servidor"
@@ -1794,20 +1902,73 @@ export default function FormularioVisita({
    * —una foto de cámara pesa varios MB y el almacenamiento del navegador es de
    * unos pocos— y porque al guardar sin señal no hay tiempo de procesar nada.
    */
-  async function agregarFoto(src: string) {
+  async function agregarFoto(src: string, interna = false) {
     const reducida = await comprimirFoto(src);
-    setFotos((prev) => [...prev, { id: autoId++, src: reducida }]);
-    setGuardadas((g) => ({ ...g, fotos: false }));
+    setFotos((prev) => [...prev, { id: autoId++, src: reducida, interno: interna }]);
+    setGuardadas((g) => ({ ...g, [interna ? "interno" : "fotos"]: false }));
   }
 
-  function onArchivos(e: React.ChangeEvent<HTMLInputElement>) {
+  function onArchivos(e: React.ChangeEvent<HTMLInputElement>, interna: boolean) {
     const files = Array.from(e.target.files ?? []);
     files.forEach((file) => {
       const reader = new FileReader();
-      reader.onload = () => void agregarFoto(String(reader.result));
+      reader.onload = () => void agregarFoto(String(reader.result), interna);
       reader.readAsDataURL(file);
     });
     e.target.value = "";
+  }
+
+  function abrirCamara(destino: "trabajo" | "interno") {
+    setDestinoMedia(destino);
+    setSheet("camara");
+  }
+
+  function abrirVideo(destino: "trabajo" | "interno") {
+    setDestinoMedia(destino);
+    setSheet("video");
+  }
+
+  function pedirQuitarFoto(f: FotoForm) {
+    setConfirmar({
+      titulo: "¿Borrar esta foto?",
+      texto: "La foto se quita del acta y hay que volver a tomarla si la necesitas.",
+      cta: "Borrar foto",
+      accion: () => {
+        setFotos((prev) => prev.filter((x) => x.id !== f.id));
+        setGuardadas((g) => ({ ...g, [f.interno ? "interno" : "fotos"]: false }));
+      },
+    });
+  }
+
+  function pedirQuitarVideo(v: VideoForm) {
+    setConfirmar({
+      titulo: "¿Borrar este video?",
+      texto: "El video se quita del acta y hay que volver a grabarlo si lo necesitas.",
+      cta: "Borrar video",
+      accion: () => quitarVideo(v),
+    });
+  }
+
+  function abrirHojaTrabajo(motivo: string) {
+    setNt({ motivo, codigo: "", subs: [], agregados: [] });
+    setSheet("trabajo");
+  }
+
+  /** Quitar un motivo se lleva sus trabajos: se pide confirmación si tenía alguno. */
+  function desmarcarMotivo(codigo: string) {
+    const suyos = trabajos.filter((t) => motivoDe(t) === codigo);
+    const quitar = () => {
+      setTrabajos((prev) => prev.filter((t) => motivoDe(t) !== codigo));
+      setMotivosCodigos((prev) => prev.filter((c) => c !== codigo));
+      setGuardadas((g) => ({ ...g, motivo: false }));
+    };
+    if (!suyos.length) return quitar();
+    setConfirmar({
+      titulo: "¿Quitar este motivo?",
+      texto: `«${nombreMotivo(codigo)}» se quita de la visita junto con ${suyos.length === 1 ? "su trabajo" : `sus ${suyos.length} trabajos`}: ${suyos.map((t) => nombreTrabajo(t.codigo)).join(", ")}.`,
+      cta: "Quitar motivo",
+      accion: quitar,
+    });
   }
 
   /**
@@ -1898,7 +2059,7 @@ export default function FormularioVisita({
   }
 
   /** El clip aceptado en la hoja de grabación entra a la lista y empieza a subir. */
-  function agregarVideo(clip: ClipGrabado) {
+  function agregarVideo(clip: ClipGrabado, interno = false) {
     const filaId = -autoId++;  // negativo: todavía no tiene id de la base
     // El clip se guarda en memoria para poder reintentar la subida sin obligar
     // al técnico a volver a grabar: si se cayó la señal, el video sigue acá.
@@ -1914,9 +2075,10 @@ export default function FormularioVisita({
         bytes: clip.blob.size,
         progreso: 0,
         error: null,
+        interno,
       },
     ]);
-    setGuardadas((g) => ({ ...g, fotos: false }));
+    setGuardadas((g) => ({ ...g, [interno ? "interno" : "fotos"]: false }));
     void subirClip(clip, filaId);
   }
 
@@ -1932,7 +2094,7 @@ export default function FormularioVisita({
   function quitarVideo(video: VideoForm) {
     clipsRef.current.delete(video.id);
     setVideos((prev) => prev.filter((v) => v.id !== video.id));
-    setGuardadas((g) => ({ ...g, fotos: false }));
+    setGuardadas((g) => ({ ...g, [video.interno ? "interno" : "fotos"]: false }));
     if (video.id > 0) {
       void borrarVideoAction(visita.folio, video.id).catch(() => {
         // Que no se pueda marcar inactivo ahora no importa: al cerrar el acta
@@ -2183,5 +2345,131 @@ function BotonGuardar({ texto, onClick, habilitado }: { texto: string; onClick: 
         <path d="M4 12l5 5L20 6" />
       </svg>
     </button>
+  );
+}
+
+/** Grilla de fotos con sus botones de cámara y galería. La usan el trabajo y el comentario interno. */
+function GaleriaFotos({
+  fotos,
+  onQuitar,
+  onCamara,
+  onArchivos,
+}: {
+  fotos: FotoForm[];
+  onQuitar: (f: FotoForm) => void;
+  onCamara: () => void;
+  onArchivos: (e: React.ChangeEvent<HTMLInputElement>) => void;
+}) {
+  return (
+    <div className="grid grid-cols-3 gap-2">
+      {fotos.map((f) => (
+        <div key={f.id} className="relative aspect-square border border-[var(--color-divider)] overflow-hidden bg-[var(--color-neutral-300)]">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={f.src} alt="" className="w-full h-full object-cover" />
+          <button
+            onClick={() => onQuitar(f)}
+            aria-label="Quitar foto"
+            className="absolute top-0 right-0 w-8 h-8 grid place-items-center bg-[var(--color-text)] text-[var(--color-bg)] border-0 cursor-pointer"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6">
+              <path d="M6 6l12 12M18 6L6 18" />
+            </svg>
+          </button>
+        </div>
+      ))}
+      <button
+        onClick={onCamara}
+        className="relative aspect-square flex flex-col items-center justify-center gap-1.5 border border-black/[.5] cursor-pointer bg-[var(--color-text)] text-[var(--color-bg)] overflow-hidden hover:bg-[var(--color-neutral-900)]"
+      >
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+          <path d="M3 8h3l2-3h8l2 3h3v12H3z" />
+          <circle cx="12" cy="13" r="3.4" />
+        </svg>
+        <span className="font-extrabold text-[10px] tracking-[.08em] uppercase">Cámara</span>
+      </button>
+      <label className="relative aspect-square flex flex-col items-center justify-center gap-1.5 border border-dashed border-black/[.5] cursor-pointer bg-[var(--color-surface-3)] overflow-hidden hover:bg-[#eeeaea]">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#201e1d" strokeWidth="1.8">
+          <path d="M4 5h16v14H4z" />
+          <path d="M4 16l5-5 4 4 3-3 4 4" />
+          <circle cx="9" cy="9" r="1.4" />
+        </svg>
+        <span className="font-extrabold text-[10px] tracking-[.08em] uppercase">Galería</span>
+        <input type="file" accept="image/*" multiple onChange={onArchivos} className="absolute w-px h-px opacity-0 pointer-events-none" />
+      </label>
+    </div>
+  );
+}
+
+/** Los clips con su avance de subida, su error y el botón de reintentar. */
+function ListaVideos({
+  videos,
+  clips,
+  onQuitar,
+  onReintentar,
+}: {
+  videos: VideoForm[];
+  /** Los clips todavía en memoria: sin él, un clip cortado no se puede reintentar. */
+  clips: Map<number, ClipGrabado>;
+  onQuitar: (v: VideoForm) => void;
+  onReintentar: (v: VideoForm) => void;
+}) {
+  if (!videos.length) return null;
+  return (
+    <div className="grid gap-2 mt-3 mb-1">
+      {videos.map((v) => (
+        <div key={v.id} className="border border-[var(--color-divider)] bg-[var(--color-surface-3)]">
+          <video
+            src={v.src}
+            controls
+            preload="metadata"
+            playsInline
+            onLoadedMetadata={(e) => repararDuracionPreview(e.currentTarget)}
+            className="w-full aspect-video bg-black object-contain"
+          />
+          <div className="flex items-center gap-2 px-2.5 py-2">
+            <span className="text-[11px] tabular-nums opacity-70">
+              {reloj(v.duracionSeg)} · {v.ancho}x{v.alto} · {mb(v.bytes)}
+            </span>
+            <button
+              onClick={() => onQuitar(v)}
+              aria-label="Quitar video"
+              className="ml-auto w-8 h-8 grid place-items-center bg-transparent border border-[var(--color-divider)] cursor-pointer text-[var(--color-text)] hover:bg-black/[.07]"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6">
+                <path d="M6 6l12 12M18 6L6 18" />
+              </svg>
+            </button>
+          </div>
+
+          {/* Mientras sube: la barra. Si se cortó: el motivo. */}
+          {v.progreso !== null ? (
+            <div className="px-2.5 pb-2.5">
+              <div className="h-1 bg-[var(--color-divider)] overflow-hidden">
+                <div
+                  className="h-full bg-[var(--color-accent)] transition-[width] duration-300"
+                  style={{ width: `${v.progreso}%` }}
+                />
+              </div>
+              <div className="mt-1 text-[11px] opacity-62 tabular-nums">Subiendo… {v.progreso}%</div>
+            </div>
+          ) : null}
+          {v.error ? (
+            <div className="px-2.5 pb-2.5">
+              <div className="text-[11px] text-[var(--color-accent-active)] leading-[1.45]">{v.error}</div>
+              {clips.has(v.id) ? (
+                <button
+                  onClick={() => onReintentar(v)}
+                  className="mt-2 min-h-[38px] w-full px-3 bg-[var(--color-text)] text-[var(--color-bg)] border-0 font-extrabold text-[12px] cursor-pointer text-left hover:bg-[var(--color-neutral-900)]"
+                >
+                  Reintentar la subida
+                </button>
+              ) : (
+                <div className="mt-1 text-[11px] opacity-62">El acta se puede guardar igual; el video no va a quedar.</div>
+              )}
+            </div>
+          ) : null}
+        </div>
+      ))}
+    </div>
   );
 }

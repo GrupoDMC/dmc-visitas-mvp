@@ -63,6 +63,14 @@ export function nombreProblema(problemas: CatalogoProblema[], codigo: string): s
   return problemas.find((p) => p.codigo === codigo)?.nombre ?? codigo;
 }
 
+/**
+ * ¿El trabajo se ofrece bajo este motivo? Un trabajo sin motivos asignados en
+ * el checklist se ofrece en todos.
+ */
+export function trabajoVaConMotivo(trabajo: CatalogoTrabajo, motivoCodigo: string): boolean {
+  return trabajo.motivosCodigos.length === 0 || trabajo.motivosCodigos.includes(motivoCodigo);
+}
+
 /** Nombre legible de un trabajo; si ya no está en el catálogo, su código. */
 export function nombreTrabajo(trabajos: CatalogoTrabajo[], codigo: string): string {
   return trabajos.find((t) => t.codigo === codigo)?.nombre ?? codigo;
