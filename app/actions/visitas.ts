@@ -11,6 +11,8 @@ import {
   type ActaEntrada,
 } from "@/lib/data/visitas";
 import { listarSucursales } from "@/lib/data/maestros";
+import { listarMotivos } from "@/lib/data/catalogos";
+import { algunoPideHora } from "@/lib/ui/motivos";
 import { borrarBorrador } from "@/lib/data/borradores";
 import type { EstadoVisita } from "@/lib/types";
 
@@ -148,6 +150,8 @@ export async function crearVisitaTecnicoAction(input: {
   motivosCodigos?: string[];
   fecha: string;
   hora: string | null;
+  /** El compañero, cuando van dos técnicos al mismo local. */
+  tecnicoAyudanteId?: number | null;
   responsableNombre: string;
   responsableRut: string;
   responsableTelefono: string;
@@ -162,8 +166,11 @@ export async function crearVisitaTecnicoAction(input: {
   if (!input.fecha) return { ok: false, error: "Elige la fecha de la visita." };
   // Basta con que una instalación esté entre los motivos marcados.
   const motivosVisita = input.motivosCodigos?.length ? input.motivosCodigos : [input.motivoCodigo];
-  if (motivosVisita.includes("INSTALACION") && !input.hora) {
+  if (!input.hora && algunoPideHora(motivosVisita, await listarMotivos())) {
     return { ok: false, error: "La hora es obligatoria para instalaciones." };
+  }
+  if (input.tecnicoAyudanteId && input.tecnicoAyudanteId === sesion.tecnico.id) {
+    return { ok: false, error: "El ayudante tiene que ser otro técnico, no tú." };
   }
 
   try {
@@ -172,6 +179,7 @@ export async function crearVisitaTecnicoAction(input: {
         clienteId: sucursal.clienteId,
         sucursalId: sucursal.id,
         tecnicoId: sesion.tecnico.id,
+        tecnicoAyudanteId: input.tecnicoAyudanteId ?? null,
         motivoCodigo: input.motivoCodigo,
         motivosCodigos: input.motivosCodigos,
         fechaProgramada: input.fecha,

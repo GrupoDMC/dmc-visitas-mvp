@@ -15,7 +15,7 @@ export default async function VisitasTecnicoPage() {
 
   return (
     <MobileShell titulo="Mis visitas">
-      <VisitasList visitas={visitas} hoy={hoyISO()} />
+      <VisitasList visitas={visitas} hoy={hoyISO()} tecnicoId={sesion.tecnico.id} />
     </MobileShell>
   );
 }

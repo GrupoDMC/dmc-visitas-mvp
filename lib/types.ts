@@ -245,10 +245,15 @@ export interface Visita {
   clienteId: number;
   sucursalId: number;
   tecnicoId: number;
+  /**
+   * El segundo técnico, cuando van dos al mismo local. Ve la visita en su
+   * celular, pero el acta la llena y la firma el técnico asignado.
+   */
+  tecnicoAyudanteId: number | null;
   motivoCodigo: string;
   /**
    * Todos los motivos agendados. `motivoCodigo` es el principal (el primero de
-   * esta lista): es el que tiene la FK y el CHECK de la hora en instalación.
+   * esta lista): es el que tiene la FK en dmc.visita.
    */
   motivosCodigos: string[];
   /** Los mismos motivos, ya con su nombre del catálogo, para pintarlos. */
@@ -272,6 +277,7 @@ export interface Visita {
   cliente?: Cliente;
   sucursal?: Sucursal;
   tecnico?: Tecnico;
+  tecnicoAyudante?: Pick<Tecnico, "id" | "nombreCompleto" | "telefono">;
   motivo?: CatalogoMotivo;
   ejecucion?: VisitaEjecucion;
   trabajos?: VisitaTrabajo[];

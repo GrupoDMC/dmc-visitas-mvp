@@ -18,6 +18,7 @@ import {
 import { ESTADO_VISITA_LABEL } from "@/lib/ui/estado";
 import { mensajeRut } from "@/lib/ui/formato";
 import { hoyISO } from "@/lib/ui/fecha";
+import { algunoPideHora } from "@/lib/ui/motivos";
 import type { Visita } from "@/lib/types";
 
 /** Opciones de los selectores, derivadas de los maestros que baja el layout. */
@@ -65,6 +66,7 @@ function valoresIniciales(opc: Opciones, visita?: Visita, origen?: OrigenProblem
       clienteId: String(visita.clienteId),
       sucursalId: String(visita.sucursalId),
       tecnicoId: String(visita.tecnicoId),
+      ayudanteId: visita.tecnicoAyudanteId ? String(visita.tecnicoAyudanteId) : "",
       motivoCodigo: escribirChecks(
         visita.motivosCodigos?.length ? visita.motivosCodigos : [visita.motivoCodigo]
       ),
@@ -86,6 +88,7 @@ function valoresIniciales(opc: Opciones, visita?: Visita, origen?: OrigenProblem
       clienteId: String(origen.clienteId),
       sucursalId: String(origen.sucursalId),
       tecnicoId: opc.tecnicos[0]?.v ?? "",
+      ayudanteId: "",
       // Si el motivo sugerido ya no está en el checklist, se cae al primero.
       motivoCodigo: escribirChecks([
         opc.motivos.some((m) => m.v === porFalla) ? porFalla : opc.motivos[0]?.v ?? "",
@@ -105,6 +108,7 @@ function valoresIniciales(opc: Opciones, visita?: Visita, origen?: OrigenProblem
     clienteId,
     sucursalId: opc.sucursalesDe(clienteId)[0]?.v ?? "",
     tecnicoId: opc.tecnicos[0]?.v ?? "",
+    ayudanteId: "",
     motivoCodigo: escribirChecks([opc.motivos[0]?.v ?? ""]),
     // Se agenda para hoy salvo que se cambie.
     fecha: hoyISO(),
@@ -139,10 +143,15 @@ export default function VisitaDialogo({
   const [guardando, setGuardando] = useState(false);
 
   // Una visita puede venir por varias cosas a la vez. El primero marcado es el
-  // principal: es el que va a dmc.visita.motivo_codigo y el que decide si la
-  // hora es obligatoria.
+  // principal: es el que va a dmc.visita.motivo_codigo. La hora es obligatoria
+  // si cualquiera de los marcados es una instalación.
   const motivosMarcados = leerChecks(form.motivoCodigo);
-  const esInstalacion = motivosMarcados.includes("INSTALACION");
+  const esInstalacion = algunoPideHora(motivosMarcados, ref.motivos);
+  // El ayudante sale de los mismos técnicos, menos el asignado.
+  const opcAyudante = [
+    { v: "", t: "Sin ayudante · va solo" },
+    ...opc.tecnicos.filter((t) => t.v !== String(form.tecnicoId)),
+  ];
 
   const campos: CampoDef[] = [
     // Los tres se escriben y filtran: son los catálogos que crecen.
@@ -155,6 +164,14 @@ export default function VisitaDialogo({
       opciones: opc.sucursalesDe(String(form.clienteId)),
     },
     { k: "tecnicoId", label: "Técnico asignado", tipo: "select", buscable: true, opciones: opc.tecnicos },
+    {
+      k: "ayudanteId",
+      label: "Técnico ayudante (opcional)",
+      tipo: "select",
+      buscable: true,
+      opciones: opcAyudante,
+      ayuda: "Si van dos al local. Lo ve en su celular; el acta la llena el asignado.",
+    },
     {
       k: "motivoCodigo",
       label: "Motivo de la visita",
@@ -203,6 +220,10 @@ export default function VisitaDialogo({
         const primera = opc.sucursalesDe(String(valor))[0]?.v ?? "";
         return { ...prev, clienteId: valor, sucursalId: primera };
       }
+      // Si el asignado pasa a ser el que iba de ayudante, el ayudante se suelta.
+      if (k === "tecnicoId" && String(valor) === String(prev.ayudanteId)) {
+        return { ...prev, tecnicoId: valor, ayudanteId: "" };
+      }
       return { ...prev, [k]: valor };
     });
   }
@@ -218,11 +239,16 @@ export default function VisitaDialogo({
       onHecho(errorRut);
       return;
     }
+    if (esInstalacion && !form.hora) {
+      onHecho("En instalación la hora es obligatoria.");
+      return;
+    }
     setGuardando(true);
     const datos = {
       clienteId: Number(form.clienteId),
       sucursalId: Number(form.sucursalId),
       tecnicoId: Number(form.tecnicoId),
+      tecnicoAyudanteId: form.ayudanteId ? Number(form.ayudanteId) : null,
       motivoCodigo: motivosMarcados[0],
       motivosCodigos: motivosMarcados,
       fechaProgramada: String(form.fecha),
@@ -304,7 +330,7 @@ export function ReprogramarDialogo({
   });
   const [guardando, setGuardando] = useState(false);
 
-  const esInstalacion = visita.motivoCodigo === "INSTALACION";
+  const esInstalacion = algunoPideHora(visita.motivosCodigos, ref.motivos);
 
   const campos: CampoDef[] = [
     { k: "tecnicoId", label: "Técnico que asistirá", tipo: "select", opciones: opc.tecnicos },
@@ -326,7 +352,6 @@ export function ReprogramarDialogo({
       tecnicoId: Number(form.tecnicoId),
       fecha: String(form.fecha),
       hora: String(form.hora) || null,
-      motivoCodigo: visita.motivoCodigo,
     });
     setGuardando(false);
 

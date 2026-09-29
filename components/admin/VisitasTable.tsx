@@ -84,10 +84,13 @@ export default function VisitasTable({
     return visitas.filter((v) => {
       if (f.estado !== "TODAS" && v.estado !== f.estado) return false;
       if (f.fecha && v.fechaProgramada !== f.fecha) return false;
-      if (f.tecnicoId && String(v.tecnicoId) !== f.tecnicoId) return false;
+      // Filtrar por técnico trae también las visitas en las que va de ayudante.
+      if (f.tecnicoId && String(v.tecnicoId) !== f.tecnicoId && String(v.tecnicoAyudanteId) !== f.tecnicoId) {
+        return false;
+      }
       if (f.tipo && !(v.problemas ?? []).some((p) => p.tipoCodigo === f.tipo)) return false;
       if (!q) return true;
-      const hay = `${v.folio} ${v.sucursal?.nombre ?? ""} ${v.cliente?.nombreFantasia ?? ""} ${v.tecnico?.nombreCompleto ?? ""} ${v.motivosNombres.join(" ")}`;
+      const hay = `${v.folio} ${v.sucursal?.nombre ?? ""} ${v.cliente?.nombreFantasia ?? ""} ${v.tecnico?.nombreCompleto ?? ""} ${v.tecnicoAyudante?.nombreCompleto ?? ""} ${v.motivosNombres.join(" ")}`;
       return hay.toLowerCase().includes(q);
     });
   }, [visitas, busqueda, f]);
@@ -210,7 +213,14 @@ export default function VisitasTable({
                     <Recorte ancho={190} texto={v.sucursal?.nombre} />
                   </td>
                   <td className="opacity-70">
-                    <Recorte ancho={170} texto={v.tecnico?.nombreCompleto} />
+                    <Recorte
+                      ancho={170}
+                      texto={
+                        v.tecnicoAyudante
+                          ? `${v.tecnico?.nombreCompleto ?? ""} + ${v.tecnicoAyudante.nombreCompleto}`
+                          : v.tecnico?.nombreCompleto
+                      }
+                    />
                   </td>
                   <td className="opacity-70">
                     <Recorte ancho={210} texto={textoMotivos(v)} />

@@ -7,6 +7,7 @@ import SelectBuscable from "@/components/ui/SelectBuscable";
 import { crearVisitaTecnicoAction } from "@/app/actions/visitas";
 import { useReferencias } from "@/lib/ui/referencias";
 import { fmtRut, fmtTel, mensajeRut } from "@/lib/ui/formato";
+import { algunoPideHora } from "@/lib/ui/motivos";
 
 const LABEL = "block text-[11px] tracking-[.09em] uppercase opacity-60 mb-1.5";
 const CAMPO =
@@ -19,10 +20,13 @@ const CAMPO =
  */
 export default function NuevaVisitaSheet({
   hoy,
+  tecnicoId,
   onCerrar,
   onError,
 }: {
   hoy: string;
+  /** El técnico que la está creando: no puede ser su propio ayudante. */
+  tecnicoId: number;
   onCerrar: () => void;
   onError: (mensaje: string) => void;
 }) {
@@ -45,6 +49,7 @@ export default function NuevaVisitaSheet({
   );
   const [fecha, setFecha] = useState(hoy);
   const [hora, setHora] = useState("");
+  const [ayudanteId, setAyudanteId] = useState("");
   const [encargado, setEncargado] = useState("");
   const [rut, setRut] = useState("");
   const [telefono, setTelefono] = useState("");
@@ -52,7 +57,8 @@ export default function NuevaVisitaSheet({
   const [guardando, setGuardando] = useState(false);
 
   const propias = sucursales.filter((s) => String(s.clienteId) === clienteId);
-  const esInstalacion = motivos.includes("INSTALACION");
+  const esInstalacion = algunoPideHora(motivos, catalogoMotivo);
+  const companeros = referencias.tecnicos.filter((t) => t.id !== tecnicoId);
   const listo = Boolean(clienteId && sucursalId && motivos.length > 0 && (!esInstalacion || hora));
 
   async function confirmar() {
@@ -80,6 +86,7 @@ export default function NuevaVisitaSheet({
       motivosCodigos: motivos,
       fecha,
       hora: hora || null,
+      tecnicoAyudanteId: ayudanteId ? Number(ayudanteId) : null,
       responsableNombre: encargado,
       responsableRut: rut,
       responsableTelefono: telefono,
@@ -210,6 +217,26 @@ export default function NuevaVisitaSheet({
             />
           </div>
         </div>
+
+        {companeros.length > 0 ? (
+          <div>
+            <label htmlFor="nv-ayu" className={LABEL}>
+              Técnico ayudante <span className="opacity-70 normal-case tracking-normal">(si vas con alguien)</span>
+            </label>
+            <SelectBuscable
+              id="nv-ayu"
+              valor={ayudanteId}
+              opciones={[
+                { v: "", t: "Voy solo" },
+                ...companeros.map((t) => ({ v: String(t.id), t: t.nombreCompleto })),
+              ]}
+              onChange={setAyudanteId}
+              ariaLabel="Técnico ayudante"
+              placeholder="Escribe para buscar al compañero…"
+              claseCampo={CAMPO}
+            />
+          </div>
+        ) : null}
 
         <div>
           <label htmlFor="nv-enc" className={LABEL}>

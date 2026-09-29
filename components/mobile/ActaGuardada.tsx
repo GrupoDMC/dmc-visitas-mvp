@@ -45,6 +45,7 @@ export default function ActaGuardada({
   const filas: { k: string; v: string }[] = [
     { k: "Motivo", v: textoMotivosReales(visita) },
     { k: "Técnico", v: visita.tecnico?.nombreCompleto ?? "—" },
+    ...(visita.tecnicoAyudante ? [{ k: "Ayudante", v: visita.tecnicoAyudante.nombreCompleto }] : []),
     { k: "Fecha", v: visita.fechaProgramada },
     { k: "Horario", v: ejec ? `${hhmm(ejec.horaInicio)} – ${hhmm(ejec.horaTermino)}` : "Sin registro de horas" },
     {

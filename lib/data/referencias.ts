@@ -20,14 +20,32 @@ export async function cargarReferencias(rol: RolUsuario): Promise<Referencias> {
   return { rol, clientes, sucursales, tecnicos, motivos, problemas, trabajos };
 }
 
-/** Versión reducida para el móvil: el técnico no ve el maestro de técnicos. */
+/**
+ * Versión reducida para el móvil. El técnico no ve el maestro de técnicos: de
+ * sus compañeros baja solo el nombre, para elegir al ayudante en "Agregar
+ * visita". RUT, correo y teléfono se quedan en el servidor.
+ */
 export async function cargarReferenciasTecnico(): Promise<Referencias> {
-  const [clientes, sucursales, motivos, problemas, trabajos] = await Promise.all([
+  const [clientes, sucursales, tecnicos, motivos, problemas, trabajos] = await Promise.all([
     listarClientes(),
     listarSucursales(),
+    listarTecnicos(),
     listarMotivos(),
     listarProblemas(),
     listarTrabajos(),
   ]);
-  return { rol: "TECNICO", clientes, sucursales, tecnicos: [], motivos, problemas, trabajos };
+  const companeros = tecnicos
+    .filter((t) => t.activo)
+    .map((t) => ({
+      id: t.id,
+      nombreCompleto: t.nombreCompleto,
+      nombres: t.nombres,
+      apellidoPaterno: t.apellidoPaterno,
+      apellidoMaterno: null,
+      rut: "",
+      email: "",
+      telefono: null,
+      activo: true,
+    }));
+  return { rol: "TECNICO", clientes, sucursales, tecnicos: companeros, motivos, problemas, trabajos };
 }

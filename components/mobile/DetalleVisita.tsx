@@ -46,7 +46,16 @@ const SHEETS: Record<
   },
 };
 
-export default function DetalleVisita({ visita, historial }: { visita: Visita; historial: HistorialVista }) {
+export default function DetalleVisita({
+  visita,
+  historial,
+  esAyudante = false,
+}: {
+  visita: Visita;
+  historial: HistorialVista;
+  /** Quien mira va de ayudante: ve la visita, pero el acta es del asignado. */
+  esAyudante?: boolean;
+}) {
   const router = useRouter();
   const { toast, aviso } = useToast();
   const [pendiente, startTransition] = useTransition();
@@ -79,6 +88,11 @@ export default function DetalleVisita({ visita, historial }: { visita: Visita; h
     { k: "Estado", v: ESTADO_VISITA_LABEL[visita.estado] },
     { k: "Fecha", v: visita.fechaProgramada },
   ];
+  if (esAyudante) {
+    filas.push({ k: "Técnico a cargo", v: visita.tecnico?.nombreCompleto ?? "—" });
+  } else if (visita.tecnicoAyudante) {
+    filas.push({ k: "Ayudante", v: visita.tecnicoAyudante.nombreCompleto });
+  }
   if (visita.indicacionesAcceso) filas.push({ k: "Acceso", v: visita.indicacionesAcceso });
   if (reagenda) {
     filas.push({
@@ -130,6 +144,7 @@ export default function DetalleVisita({ visita, historial }: { visita: Visita; h
         <div className="flex items-center gap-2.5">
           <div className="text-xs tabular-nums tracking-[.08em] opacity-66">{visita.folio}</div>
           <Tag variant={ESTADO_VISITA_TAG[visita.estado]}>{ESTADO_VISITA_LABEL[visita.estado]}</Tag>
+          {esAyudante ? <Tag variant="neutral">Ayudante</Tag> : null}
         </div>
         <h1 className="font-extrabold text-[30px] leading-[1.06] tracking-[-.03em] mt-2.5 mb-0.5">{visita.sucursal?.nombre}</h1>
         <div className="text-sm opacity-60">{visita.cliente?.nombreFantasia}</div>
@@ -292,7 +307,14 @@ export default function DetalleVisita({ visita, historial }: { visita: Visita; h
         ) : null}
 
         {/* ── Acción principal ── */}
-        {abierta ? (
+        {esAyudante ? (
+          // Dos personas llenando la misma acta desde dos celulares se pisarían:
+          // el ayudante acompaña, el asignado registra y hace firmar.
+          <div className="mt-4.5 p-3.5 bg-[var(--color-surface)] border-l-4 border-[var(--color-text)] text-sm leading-[1.5]">
+            Vas como ayudante de <b>{visita.tecnico?.nombreCompleto ?? "otro técnico"}</b>. El acta la llena y la
+            hace firmar el técnico a cargo desde su celular.
+          </div>
+        ) : abierta ? (
           <>
             <button
               onClick={iniciar}

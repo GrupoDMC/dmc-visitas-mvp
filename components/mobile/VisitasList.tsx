@@ -20,7 +20,16 @@ const ESTADOS: EstadoVisita[] = [
   "CANCELADA_ADMIN",
 ];
 
-export default function VisitasList({ visitas, hoy }: { visitas: Visita[]; hoy: string }) {
+export default function VisitasList({
+  visitas,
+  hoy,
+  tecnicoId,
+}: {
+  visitas: Visita[];
+  hoy: string;
+  /** Quien mira: las visitas donde no es el asignado las tiene de ayudante. */
+  tecnicoId: number;
+}) {
   const router = useRouter();
   const { toast, aviso } = useToast();
   const [filtroAbierto, setFiltroAbierto] = useState(false);
@@ -72,7 +81,7 @@ export default function VisitasList({ visitas, hoy }: { visitas: Visita[]; hoy: 
   return (
     <div className="px-4 pt-5 pb-[26px] animate-fade-in">
       <h1 className="font-extrabold text-[28px] leading-[1.06] tracking-[-.03em] m-0 mb-1">Mis visitas</h1>
-      <p className="m-0 mb-3.5 text-[13px] opacity-66">asignadas a ti</p>
+      <p className="m-0 mb-3.5 text-[13px] opacity-66">asignadas a ti y en las que vas de ayudante</p>
 
       {/* Actas que se llenaron sin señal: hay que entrar a la visita para que se
           manden. Se avisa acá porque en la lista la visita se ve "en curso" y
@@ -181,6 +190,13 @@ export default function VisitasList({ visitas, hoy }: { visitas: Visita[]; hoy: 
                   <span className="tag tag-neutral border border-black/[.2] min-w-0 max-w-full">
                     <span className="truncate">{textoMotivos(v)}</span>
                   </span>
+                  {v.tecnicoId !== tecnicoId ? (
+                    <span className="tag tag-dark flex-none">Ayudante</span>
+                  ) : v.tecnicoAyudante ? (
+                    <span className="tag tag-neutral border border-black/[.2] min-w-0 flex-none max-w-[45%]">
+                      <span className="truncate">+ {v.tecnicoAyudante.nombreCompleto}</span>
+                    </span>
+                  ) : null}
                   {v.responsableNombre ? (
                     <span className="tag tag-neutral border border-black/[.2] min-w-0 flex-none max-w-[45%]">
                       <span className="truncate">{v.responsableNombre}</span>
@@ -194,7 +210,7 @@ export default function VisitasList({ visitas, hoy }: { visitas: Visita[]; hoy: 
       ))}
       {grupos.length === 0 ? <div className="py-8.5 text-center text-sm opacity-62">No hay visitas con ese estado.</div> : null}
 
-      {nueva ? <NuevaVisitaSheet hoy={hoy} onCerrar={() => setNueva(false)} onError={aviso} /> : null}
+      {nueva ? <NuevaVisitaSheet hoy={hoy} tecnicoId={tecnicoId} onCerrar={() => setNueva(false)} onError={aviso} /> : null}
       <Toast texto={toast} />
     </div>
   );

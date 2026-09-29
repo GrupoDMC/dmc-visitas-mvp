@@ -8,6 +8,7 @@ import {
   crearVisita,
   editarVisita,
   eliminarVisita,
+  getVisitaCompletaPorFolio,
   registrarEnvioActa,
   reprogramarVisita,
   type DatosVisita,
@@ -17,6 +18,7 @@ import {
   getPlantilla,
   guardarChecklist,
   guardarPlantilla,
+  listarMotivos,
   PLANTILLA_PROPIA,
   type BorradorChecklist,
   type ResumenChecklist,
@@ -25,6 +27,7 @@ import {
   atenderSolicitudPassword,
   descartarSolicitudPassword,
 } from "@/lib/data/solicitudes-password";
+import { algunoPideHora } from "@/lib/ui/motivos";
 import type { ChecklistPlantilla, EstadoProblema } from "@/lib/types";
 
 export interface ResultadoAdmin {
@@ -66,7 +69,12 @@ function comoError(err: unknown, contexto: string): ResultadoAdmin {
     return { ok: false, error: "Ese motivo ya no existe en el checklist. Elige otro." };
   }
   if (/ck_visita_hora_instalacion/i.test(texto)) {
-    return { ok: false, error: "En instalación la hora es obligatoria." };
+    // Solo pasa en una base sin la migración 007: el CHECK viejo todavía mira
+    // el código INSTALACION, que hoy es otro motivo.
+    return { ok: false, error: "La base todavía exige hora para este motivo. Falta correr la migración 007." };
+  }
+  if (/ck_visita_ayudante/i.test(texto)) {
+    return { ok: false, error: "El ayudante no puede ser el mismo técnico asignado." };
   }
   if (/ck_problema_otro_desc/i.test(texto)) {
     return { ok: false, error: "Un problema del tipo «Otro» necesita una descripción escrita." };
@@ -78,9 +86,9 @@ function comoError(err: unknown, contexto: string): ResultadoAdmin {
 // ── Visitas ─────────────────────────────────────────────────────────────────
 
 /** Basta con que una instalación esté entre los motivos marcados. */
-function incluyeInstalacion(datos: DatosVisita): boolean {
+async function incluyeInstalacion(datos: DatosVisita): Promise<boolean> {
   const marcados = datos.motivosCodigos?.length ? datos.motivosCodigos : [datos.motivoCodigo];
-  return marcados.includes("INSTALACION");
+  return algunoPideHora(marcados, await listarMotivos());
 }
 
 export async function crearVisitaAction(datos: DatosVisita): Promise<ResultadoAdmin> {
@@ -93,7 +101,10 @@ export async function crearVisitaAction(datos: DatosVisita): Promise<ResultadoAd
     return { ok: false, error: "Escribe qué se necesita hacer en la tienda." };
   }
   if (!datos.fechaProgramada) return { ok: false, error: "Elige la fecha programada." };
-  if (incluyeInstalacion(datos) && !datos.horaProgramada) {
+  if (datos.tecnicoAyudanteId && datos.tecnicoAyudanteId === datos.tecnicoId) {
+    return { ok: false, error: "El ayudante no puede ser el mismo técnico asignado." };
+  }
+  if (!datos.horaProgramada && (await incluyeInstalacion(datos))) {
     return { ok: false, error: "En instalación la hora es obligatoria." };
   }
 
@@ -115,7 +126,10 @@ export async function editarVisitaAction(folio: string, datos: DatosVisita): Pro
   if (!datos.trabajoSolicitado.trim()) {
     return { ok: false, error: "Escribe qué se necesita hacer en la tienda." };
   }
-  if (incluyeInstalacion(datos) && !datos.horaProgramada) {
+  if (datos.tecnicoAyudanteId && datos.tecnicoAyudanteId === datos.tecnicoId) {
+    return { ok: false, error: "El ayudante no puede ser el mismo técnico asignado." };
+  }
+  if (!datos.horaProgramada && (await incluyeInstalacion(datos))) {
     return { ok: false, error: "En instalación la hora es obligatoria." };
   }
 
@@ -135,13 +149,15 @@ export async function reprogramarVisitaAction(input: {
   tecnicoId: number;
   fecha: string;
   hora: string | null;
-  motivoCodigo: string;
 }): Promise<ResultadoAdmin> {
   const sesion = await sesionPanel();
   if (!sesion) return { ok: false, error: "No tienes permiso para reprogramar visitas." };
   if (!input.tecnicoId || !input.fecha) return { ok: false, error: "Elige el técnico y la nueva fecha." };
-  if (input.motivoCodigo === "INSTALACION" && !input.hora) {
-    return { ok: false, error: "En instalación la hora es obligatoria." };
+  if (!input.hora) {
+    const visita = await getVisitaCompletaPorFolio(input.folio);
+    if (visita && algunoPideHora(visita.motivosCodigos, await listarMotivos())) {
+      return { ok: false, error: "En instalación la hora es obligatoria." };
+    }
   }
 
   try {

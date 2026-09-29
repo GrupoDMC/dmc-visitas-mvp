@@ -256,6 +256,7 @@ export async function generarPdfActa(d: DatosPdfActa): Promise<Uint8Array> {
   h.dato("Fecha", visita.fechaProgramada);
   h.dato("Horario en tienda", ejec ? `${hhmm(ejec.horaInicio)} a ${hhmm(ejec.horaTermino)}` : "—");
   h.dato("Técnico", visita.tecnico?.nombreCompleto ?? "—");
+  if (visita.tecnicoAyudante) h.dato("Técnico ayudante", visita.tecnicoAyudante.nombreCompleto);
   // Los motivos que confirmó el técnico en terreno; si no hay, los agendados.
   const codigosMotivo = ejec?.motivosRealesCodigos?.length ? ejec.motivosRealesCodigos : visita.motivosCodigos;
   h.dato(

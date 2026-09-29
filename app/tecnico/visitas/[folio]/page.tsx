@@ -14,13 +14,15 @@ export default async function DetalleVisitaPage({ params }: { params: Promise<{ 
   if (!sesion?.tecnico) redirect("/login");
 
   const visita = await getVisitaCompletaPorFolio(folio);
-  if (!visita || visita.tecnicoId !== sesion.tecnico.id) notFound();
+  // El ayudante también la abre, pero solo para verla (ver DetalleVisita).
+  const esAyudante = visita?.tecnicoAyudanteId === sesion.tecnico.id;
+  if (!visita || (visita.tecnicoId !== sesion.tecnico.id && !esAyudante)) notFound();
 
   const historial = await getHistorialLocal(visita.sucursalId, visita.id);
 
   return (
     <MobileShell titulo="Visita" volverHref="/tecnico/visitas">
-      <DetalleVisita visita={visita} historial={historial} />
+      <DetalleVisita visita={visita} historial={historial} esAyudante={esAyudante} />
     </MobileShell>
   );
 }

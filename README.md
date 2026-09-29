@@ -56,7 +56,7 @@ sesión local a la base que quieras (la de producción incluida — lo que guard
 verdad).
 
 > [!WARNING]
-> Antes de levantar esta versión hay que aplicar **todas** las migraciones, de la `002` a la `006`.
+> Antes de levantar esta versión hay que aplicar **todas** las migraciones, de la `002` a la `007`.
 > Sin ellas la app **no arranca**: las consultas de visitas leen `dmc.visita_motivo` (002),
 > `dmc.visita.responsable_rut` (004) y `dmc.visita_interno` (006), el video del acta necesita
 > `dmc.visita_video` (003) y el checklist lee `dmc.catalogo_motivo_trabajo` (006). Ver
@@ -233,6 +233,7 @@ Sobre una base ya creada, los cambios van en archivos aparte y numerados:
 | [`sql/migracion-004-rut-responsable-visita.sql`](sql/migracion-004-rut-responsable-visita.sql) | `dmc.visita.responsable_rut`: el RUT de quien recibe se pide ya al agendar y llega precargado al acta |
 | [`sql/migracion-005-eliminar-visita.sql`](sql/migracion-005-eliminar-visita.sql) | `dmc.visita.activo` (borrado lógico), `dmc.visita_eliminacion` como auditoría y las vistas del panel excluyendo lo inactivo |
 | [`sql/migracion-006-motivo-trabajo-e-interno.sql`](sql/migracion-006-motivo-trabajo-e-interno.sql) | Trabajos asignados a cada motivo (`dmc.catalogo_motivo_trabajo`, `visita_trabajo.motivo_codigo`), checklist del comentario interno (`dmc.catalogo_interno`, `dmc.visita_interno`), `interno` en `visita_foto` / `visita_video` y `sucursal.codigo` opcional |
+| [`sql/migracion-007-hora-instalacion-y-ayudante.sql`](sql/migracion-007-hora-instalacion-y-ayudante.sql) | Quita `ck_visita_hora_instalacion` (la hora obligatoria la decide la app por el nombre «Instalación…» del motivo) y agrega `dmc.visita.tecnico_ayudante_id` para cuando van dos técnicos al local |
 
 ```bash
 sqlcmd -S <host>,<puerto> -d DMC_Contingencia -i sql/migracion-002-mejoras.sql
@@ -240,6 +241,7 @@ sqlcmd -S <host>,<puerto> -d DMC_Contingencia -i sql/migracion-003-video-y-cance
 sqlcmd -S <host>,<puerto> -d DMC_Contingencia -i sql/migracion-004-rut-responsable-visita.sql
 sqlcmd -S <host>,<puerto> -d DMC_Contingencia -i sql/migracion-005-eliminar-visita.sql
 sqlcmd -S <host>,<puerto> -d DMC_Contingencia -i sql/migracion-006-motivo-trabajo-e-interno.sql
+sqlcmd -S <host>,<puerto> -d DMC_Contingencia -i sql/migracion-007-hora-instalacion-y-ayudante.sql
 ```
 
 Son idempotentes: se pueden correr varias veces, y en orden.
@@ -377,8 +379,13 @@ Hecho:
   tiene el foco); se puede clonar una entrada con sus subdetalles y decidir por subdetalle si
   lleva cantidad o solo se marca. **Nada se borra**: quitar una entrada la deja `activo = 0`.
 - **Motivos múltiples** — una visita puede venir por varias cosas a la vez (`dmc.visita_motivo`).
-  `dmc.visita.motivo_codigo` sigue siendo el principal: de él cuelgan la FK y el CHECK de la hora en
-  instalación.
+  `dmc.visita.motivo_codigo` sigue siendo el principal: de él cuelga la FK.
+- **Hora obligatoria** — solo si alguno de los motivos marcados se llama «Instalación…» (antenas,
+  portillones, contadores, muebles). Se decide por el **nombre**, no por el código: el código es fijo
+  y el nombre se edita en el checklist (`lib/ui/motivos.ts`).
+- **Técnico ayudante** — `dmc.visita.tecnico_ayudante_id`, opcional, para cuando van dos al local.
+  El ayudante ve la visita en su celular marcada como «Ayudante», pero el acta la llena y la firma
+  el técnico asignado.
 - **Recuperación de contraseña** — sin servidor de correo: la solicitud queda en
   `dmc.solicitud_password` y el administrador la atiende en *Maestros › Usuarios › Contraseñas
   pedidas*, que es la pestaña vecina a la de las cuentas.

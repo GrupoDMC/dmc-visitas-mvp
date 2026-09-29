@@ -49,8 +49,12 @@ interface Filtro {
 // pantalla.
 const TODAS: Filtro = { where: "v.activo = 1", params: [] };
 
+/** Las del técnico asignado y también en las que va de ayudante. */
 function porTecnico(tecnicoId: number): Filtro {
-  return { where: "v.tecnico_id = @f_tecnico AND v.activo = 1", params: [["f_tecnico", sql.BigInt, tecnicoId]] };
+  return {
+    where: "(v.tecnico_id = @f_tecnico OR v.tecnico_ayudante_id = @f_tecnico) AND v.activo = 1",
+    params: [["f_tecnico", sql.BigInt, tecnicoId]],
+  };
 }
 
 function porFolio(folio: string): Filtro {
@@ -74,6 +78,7 @@ interface FilaVisita {
   cliente_id: number;
   sucursal_id: number;
   tecnico_id: number;
+  tecnico_ayudante_id: number | null;
   motivo_codigo: string;
   estado: EstadoVisita;
   fecha_programada: string;
@@ -111,6 +116,9 @@ interface FilaVisita {
   t_telefono: string | null;
   t_activo: boolean;
 
+  ta_nombre_completo: string | null;
+  ta_telefono: string | null;
+
   m_id: number | null;
   m_nombre: string | null;
   m_orden: number | null;
@@ -127,7 +135,8 @@ const MOTIVO_PENDIENTE = `
     ORDER BY h.ocurrido_en DESC, h.id DESC)`;
 
 const SELECT_VISITA = `
-  SELECT v.id, v.folio, v.cliente_id, v.sucursal_id, v.tecnico_id, v.motivo_codigo, v.estado,
+  SELECT v.id, v.folio, v.cliente_id, v.sucursal_id, v.tecnico_id, v.tecnico_ayudante_id,
+         v.motivo_codigo, v.estado,
          ${F_FECHA("v.fecha_programada")} AS fecha_programada,
          ${F_HORA("v.hora_programada")}   AS hora_programada,
          v.trabajo_solicitado, v.indicaciones_acceso, v.responsable_nombre,
@@ -147,11 +156,14 @@ const SELECT_VISITA = `
          t.apellido_materno AS t_apellido_materno, t.nombre_completo AS t_nombre_completo,
          t.email AS t_email, t.telefono AS t_telefono, t.activo AS t_activo,
 
+         ta.nombre_completo AS ta_nombre_completo, ta.telefono AS ta_telefono,
+
          cm.id AS m_id, cm.nombre AS m_nombre, cm.orden AS m_orden, cm.activo AS m_activo
     FROM dmc.visita   v
     JOIN dmc.cliente  c ON c.id = v.cliente_id
     JOIN dmc.sucursal s ON s.id = v.sucursal_id
     JOIN dmc.tecnico  t ON t.id = v.tecnico_id
+    LEFT JOIN dmc.tecnico ta ON ta.id = v.tecnico_ayudante_id
     LEFT JOIN dmc.catalogo_motivo cm ON cm.codigo = v.motivo_codigo`;
 
 interface FilaEjecucion {
@@ -401,6 +413,7 @@ async function cargar(filtro: Filtro): Promise<Visita[]> {
       clienteId: num(v.cliente_id),
       sucursalId: num(v.sucursal_id),
       tecnicoId: num(v.tecnico_id),
+      tecnicoAyudanteId: numONull(v.tecnico_ayudante_id),
       motivoCodigo: v.motivo_codigo,
       estado: v.estado,
       fechaProgramada: v.fecha_programada,
@@ -444,6 +457,14 @@ async function cargar(filtro: Filtro): Promise<Visita[]> {
         telefono: v.t_telefono,
         activo: Boolean(v.t_activo),
       },
+      tecnicoAyudante:
+        v.tecnico_ayudante_id != null
+          ? {
+              id: num(v.tecnico_ayudante_id),
+              nombreCompleto: v.ta_nombre_completo ?? "",
+              telefono: v.ta_telefono,
+            }
+          : undefined,
       motivosCodigos: codigosDe("PLAN", v.motivo_codigo),
       motivosNombres: codigosDe("PLAN", v.motivo_codigo).map(
         (c) =>
@@ -872,6 +893,8 @@ export interface DatosVisita {
   clienteId: number;
   sucursalId: number;
   tecnicoId: number;
+  /** El segundo técnico, si van dos. Nunca el mismo que `tecnicoId`. */
+  tecnicoAyudanteId?: number | null;
   /** El motivo principal: el que queda en dmc.visita.motivo_codigo. */
   motivoCodigo: string;
   /** Todos los motivos marcados. Si va vacio se asume solo el principal. */
@@ -892,10 +915,10 @@ export async function crearVisita(datos: DatosVisita, creadaPor: number | null):
   // El folio lo genera el DEFAULT de dmc.visita con la secuencia seq_folio_visita.
   const [fila] = await consultaCon<{ id: number; folio: string }>(
     `INSERT INTO dmc.visita
-       (cliente_id, sucursal_id, tecnico_id, motivo_codigo, fecha_programada, hora_programada,
-        trabajo_solicitado, indicaciones_acceso, responsable_nombre, responsable_rut,
+       (cliente_id, sucursal_id, tecnico_id, tecnico_ayudante_id, motivo_codigo, fecha_programada,
+        hora_programada, trabajo_solicitado, indicaciones_acceso, responsable_nombre, responsable_rut,
         responsable_telefono, problema_origen_id, creada_en_terreno, creada_por)
-     VALUES (@cliente, @sucursal, @tecnico, @motivo, @fecha, @hora, @trabajo, @acceso,
+     VALUES (@cliente, @sucursal, @tecnico, @ayudante, @motivo, @fecha, @hora, @trabajo, @acceso,
              @responsable, @rut, @telefono, @problema, @terreno, @creadaPor);
 
      SELECT id, folio FROM dmc.visita WHERE id = SCOPE_IDENTITY();`,
@@ -903,6 +926,7 @@ export async function crearVisita(datos: DatosVisita, creadaPor: number | null):
       ["cliente", sql.BigInt, datos.clienteId],
       ["sucursal", sql.BigInt, datos.sucursalId],
       ["tecnico", sql.BigInt, datos.tecnicoId],
+      ["ayudante", sql.BigInt, datos.tecnicoAyudanteId || null],
       ["motivo", sql.VarChar(40), datos.motivoCodigo],
       ["fecha", sql.Date, datos.fechaProgramada],
       ["hora", sql.VarChar(8), datos.horaProgramada || null],
@@ -1000,7 +1024,7 @@ export async function editarVisita(folio: string, datos: DatosVisita, usuarioId:
   await ejecutar(
     `UPDATE dmc.visita
         SET cliente_id = @cliente, sucursal_id = @sucursal, tecnico_id = @tecnico,
-            motivo_codigo = @motivo, fecha_programada = @fecha, hora_programada = @hora,
+            tecnico_ayudante_id = @ayudante, motivo_codigo = @motivo, fecha_programada = @fecha, hora_programada = @hora,
             trabajo_solicitado = @trabajo, indicaciones_acceso = @acceso,
             responsable_nombre = @responsable, responsable_rut = @rut,
             responsable_telefono = @telefono
@@ -1009,6 +1033,7 @@ export async function editarVisita(folio: string, datos: DatosVisita, usuarioId:
       ["cliente", sql.BigInt, datos.clienteId],
       ["sucursal", sql.BigInt, datos.sucursalId],
       ["tecnico", sql.BigInt, datos.tecnicoId],
+      ["ayudante", sql.BigInt, datos.tecnicoAyudanteId || null],
       ["motivo", sql.VarChar(40), datos.motivoCodigo],
       ["fecha", sql.Date, datos.fechaProgramada],
       ["hora", sql.VarChar(8), datos.horaProgramada || null],
@@ -1062,7 +1087,11 @@ export async function reprogramarVisita(input: {
   );
 
   await ejecutar(
-    `UPDATE dmc.visita SET tecnico_id = @tecnico, fecha_programada = @fecha, hora_programada = @hora
+    // Si el nuevo asignado era el ayudante, pasa a ir solo: no puede ser las dos cosas.
+    `UPDATE dmc.visita
+        SET tecnico_id = @tecnico, fecha_programada = @fecha, hora_programada = @hora,
+            tecnico_ayudante_id = CASE WHEN tecnico_ayudante_id = @tecnico THEN NULL
+                                       ELSE tecnico_ayudante_id END
       WHERE id = @id`,
     [
       ["tecnico", sql.BigInt, input.tecnicoId],

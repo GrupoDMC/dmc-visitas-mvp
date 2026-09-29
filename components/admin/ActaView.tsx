@@ -94,6 +94,7 @@ export default function ActaView({
     { k: "Sucursal", v: visita.sucursal?.nombre ?? "—" },
     { k: visita.motivosCodigos.length > 1 ? "Motivos de la visita" : "Motivo de la visita", v: textoMotivos(visita) },
     { k: "Técnico", v: visita.tecnico?.nombreCompleto ?? "—" },
+    { k: "Técnico ayudante", v: visita.tecnicoAyudante?.nombreCompleto ?? "Sin ayudante" },
     {
       k: "Responsable de tienda",
       v: visita.responsableNombre
@@ -797,6 +798,7 @@ function CorreoDialogo({
       `Informamos que la visita técnica en ${visita.sucursal?.nombre} (${visita.cliente?.nombreFantasia}) fue realizada el ${visita.fechaProgramada}.\n\n` +
       `Motivo: ${textoMotivosReales(visita)}\n` +
       `Técnico: ${visita.tecnico?.nombreCompleto}\n` +
+      (visita.tecnicoAyudante ? `Técnico ayudante: ${visita.tecnicoAyudante.nombreCompleto}\n` : "") +
       (ejec
         ? `Horario en tienda: ${hhmm(ejec.horaInicio)} a ${hhmm(ejec.horaTermino)}${duracion ? ` (${duracion} min)` : ""}\n\n`
         : "\n") +

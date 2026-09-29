@@ -255,10 +255,11 @@ CREATE TABLE dmc.visita (
     cliente_id            bigint        NOT NULL,
     sucursal_id           bigint        NOT NULL,
     tecnico_id            bigint        NOT NULL,
+    tecnico_ayudante_id   bigint        NULL,       -- segundo técnico cuando van dos al local
     motivo_codigo         varchar(40)   NOT NULL,   -- FK al catálogo editable (Lista 1)
     estado                varchar(16)   NOT NULL CONSTRAINT df_visita_estado DEFAULT ('PROGRAMADA'),
     fecha_programada      date          NOT NULL,
-    hora_programada       time(0)       NULL,       -- opcional salvo instalación
+    hora_programada       time(0)       NULL,       -- la app la exige en motivos «Instalación…»
     trabajo_solicitado    nvarchar(max) NOT NULL,
     indicaciones_acceso   nvarchar(max) NULL,
     responsable_nombre    nvarchar(120) NULL,
@@ -278,25 +279,30 @@ CREATE TABLE dmc.visita (
     CONSTRAINT fk_visita_cliente    FOREIGN KEY (cliente_id)    REFERENCES dmc.cliente  (id),
     CONSTRAINT fk_visita_sucursal   FOREIGN KEY (sucursal_id)   REFERENCES dmc.sucursal (id),
     CONSTRAINT fk_visita_tecnico    FOREIGN KEY (tecnico_id)    REFERENCES dmc.tecnico  (id),
+    CONSTRAINT fk_visita_ayudante   FOREIGN KEY (tecnico_ayudante_id) REFERENCES dmc.tecnico (id),
     CONSTRAINT fk_visita_motivo     FOREIGN KEY (motivo_codigo) REFERENCES dmc.catalogo_motivo (codigo),
     CONSTRAINT fk_visita_creada_por FOREIGN KEY (creada_por)    REFERENCES dmc.usuario  (id),
     -- CANCELADA_ADMIN la pone administracion desde el panel sobre una visita
     -- vieja o que ya no sirve; CANCELADA la deja el tecnico parado en la tienda.
     CONSTRAINT ck_visita_estado CHECK (estado IN
         ('PROGRAMADA','EN_CURSO','COMPLETADA','PENDIENTE','REAGENDADA','CANCELADA','CANCELADA_ADMIN')),
-    CONSTRAINT ck_visita_hora_instalacion CHECK (motivo_codigo <> 'INSTALACION' OR hora_programada IS NOT NULL)
+    -- La hora en instalación no va como CHECK: el código del motivo es fijo
+    -- pero su nombre se edita, y la app la decide por el nombre (migración 007).
+    CONSTRAINT ck_visita_ayudante CHECK (tecnico_ayudante_id IS NULL OR tecnico_ayudante_id <> tecnico_id)
 );
 GO
 CREATE INDEX ix_visita_fecha    ON dmc.visita (fecha_programada DESC);
 CREATE INDEX ix_visita_tecnico  ON dmc.visita (tecnico_id, fecha_programada DESC) INCLUDE (estado, sucursal_id);
+CREATE INDEX ix_visita_ayudante ON dmc.visita (tecnico_ayudante_id, fecha_programada DESC)
+    WHERE tecnico_ayudante_id IS NOT NULL;
 CREATE INDEX ix_visita_sucursal ON dmc.visita (sucursal_id, fecha_programada DESC);
 CREATE INDEX ix_visita_estado   ON dmc.visita (estado, fecha_programada DESC);
 CREATE INDEX ix_visita_activo   ON dmc.visita (activo) INCLUDE (fecha_programada, estado);
 GO
 
 -- Una visita puede tener varios motivos: motivo_codigo de arriba es el
--- principal (el primero marcado, del que cuelgan la FK y el CHECK de la hora
--- en instalación) y acá va la selección completa.
+-- principal (el primero marcado, del que cuelga la FK) y acá va la
+-- selección completa.
 --   ambito = PLAN  -> lo que marcó coordinación al agendar
 --   ambito = REAL  -> lo que confirmó el técnico en terreno
 CREATE TABLE dmc.visita_motivo (
