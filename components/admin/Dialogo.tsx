@@ -94,17 +94,13 @@ export default function Dialogo({
   const [verPass, setVerPass] = useState(false);
 
   useEffect(() => {
+    // Solo se cierra con la X: un clic fuera o un Escape descartaban el formulario.
     const previo = document.body.style.overflow;
     document.body.style.overflow = "hidden";
-    const onEsc = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onCerrar();
-    };
-    window.addEventListener("keydown", onEsc);
     return () => {
       document.body.style.overflow = previo;
-      window.removeEventListener("keydown", onEsc);
     };
-  }, [onCerrar]);
+  }, []);
 
   const nIncluidos = adjuntos?.filter((a) => a.incluido).length ?? 0;
 
@@ -114,10 +110,8 @@ export default function Dialogo({
       aria-modal="true"
       aria-label={titulo}
       className="fixed inset-0 z-[60] bg-[rgba(45,43,43,.5)] grid place-items-center p-6"
-      onClick={onCerrar}
     >
       <div
-        onClick={(e) => e.stopPropagation()}
         className="w-full max-w-[720px] max-h-[88vh] flex flex-col overflow-hidden bg-[var(--color-bg)] border-2 border-[var(--color-text)] animate-up-dlg"
       >
         <div className="flex-none flex items-center gap-3 px-5.5 py-4.5 border-b-2 border-[var(--color-divider)]">

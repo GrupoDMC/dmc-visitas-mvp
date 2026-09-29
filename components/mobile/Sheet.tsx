@@ -7,6 +7,9 @@ import { useEffect } from "react";
  * realizado", "Agregar un problema", la firma y los cambios de estado.
  * Ocupa el ancho de la columna (máx. 460px), entra desde abajo y bloquea el
  * scroll del documento mientras está abierta.
+ *
+ * Solo se cierra con la X: un toque fuera de la hoja o un Escape descartaban
+ * lo que se estaba llenando.
  */
 export default function Sheet({
   titulo,
@@ -23,15 +26,10 @@ export default function Sheet({
   useEffect(() => {
     const previo = document.body.style.overflow;
     document.body.style.overflow = "hidden";
-    const onEsc = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onEsc);
     return () => {
       document.body.style.overflow = previo;
-      window.removeEventListener("keydown", onEsc);
     };
-  }, [onClose]);
+  }, []);
 
   return (
     <div
@@ -39,10 +37,8 @@ export default function Sheet({
       aria-modal="true"
       aria-label={titulo}
       className="fixed inset-0 z-40 bg-[rgba(45,43,43,.5)] flex flex-col justify-end items-center"
-      onClick={onClose}
     >
       <div
-        onClick={(e) => e.stopPropagation()}
         className="w-full max-w-[460px] max-h-[94vh] overflow-y-auto bg-[var(--color-bg)] border-t-2 border-[var(--color-text)] animate-up-sheet"
       >
         <div className="sticky top-0 z-10 bg-[var(--color-bg)] flex items-center gap-2.5 px-4 py-3.5 border-b-2 border-[var(--color-divider)]">

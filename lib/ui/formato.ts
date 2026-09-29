@@ -47,11 +47,23 @@ export function rutDvCorrecto(v: string): boolean {
 /** Cualquier entrada → "+56 9 1234 5678". Descarta prefijos repetidos. */
 export function fmtTel(v: string): string {
   const original = String(v ?? "");
-  let d = original.replace(/\D/g, "");
-  if (d.startsWith("569")) d = d.slice(3);
-  else if (d.startsWith("56")) d = d.slice(2);
-  else if (d.startsWith("9") && d.length > 8) d = d.slice(1);
-  if (d === "9") d = "";
+  // Si el campo ya trae el prefijo "+56 9", lo que va detrás son los 8
+  // dígitos tal cual: sin esto, un 9 tecleado como primer dígito ("+56 9 9")
+  // se confundía con el propio prefijo y se borraba.
+  const prefijo = /^\s*\+\s*5\s*6\s*9(.*)$/;
+  let resto = original;
+  let conPrefijo = false;
+  for (let m = resto.match(prefijo); m; m = resto.match(prefijo)) {
+    resto = m[1];
+    conPrefijo = true;
+  }
+  let d = resto.replace(/\D/g, "");
+  if (!conPrefijo) {
+    if (d.startsWith("569")) d = d.slice(3);
+    else if (d.startsWith("56")) d = d.slice(2);
+    else if (d.startsWith("9") && d.length > 8) d = d.slice(1);
+    if (d === "9") d = "";
+  }
   d = d.slice(0, 8);
   if (!d) return original.trim() ? "+56 9 " : "";
   return "+56 9 " + d.slice(0, 4) + (d.length > 4 ? " " + d.slice(4) : "");

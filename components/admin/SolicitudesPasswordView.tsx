@@ -217,10 +217,8 @@ export default function SolicitudesPasswordView({
           aria-modal="true"
           aria-label="Asignar contraseña temporal"
           className="fixed inset-0 z-[60] bg-[rgba(45,43,43,.5)] grid place-items-center p-6"
-          onClick={() => setDialogo(null)}
         >
           <div
-            onClick={(e) => e.stopPropagation()}
             className="w-full max-w-[520px] bg-[var(--color-bg)] border-2 border-[var(--color-text)] animate-up-dlg"
           >
             <div className="px-5.5 py-4.5 border-b-2 border-[var(--color-divider)]">
