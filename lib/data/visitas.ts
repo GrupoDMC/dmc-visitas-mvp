@@ -13,6 +13,7 @@ import {
   type Ejecutor,
   type Parametro,
 } from "@/lib/data/sql";
+import { cancelarVisitasVencidas } from "@/lib/data/vencimiento";
 import type {
   EstadoProblema,
   EstadoVisita,
@@ -282,6 +283,9 @@ interface FilaReagendamiento {
 // ── Carga ───────────────────────────────────────────────────────────────────
 
 async function cargar(filtro: Filtro): Promise<Visita[]> {
+  // Antes de leer, lo vencido pasa a CANCELADA: así ni el panel ni el celular
+  // muestran abierta una visita que ya salió del plazo.
+  await cancelarVisitasVencidas();
   const ids = subconsultaIds(filtro);
   const p = () => filtro.params.map((x) => [...x] as Parametro);
 

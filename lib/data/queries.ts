@@ -1,6 +1,7 @@
 import "server-only";
 import { agrupar, consulta, consultaCon, num, sql, F_FECHA } from "@/lib/data/sql";
 import { inicioMes, inicioSemana, sumarDias } from "@/lib/ui/fecha";
+import { cancelarVisitasVencidas } from "@/lib/data/vencimiento";
 import type { EstadoProblema, EstadoVisita } from "@/lib/types";
 
 // Consultas agregadas del panel de coordinación. Donde el esquema ya trae una
@@ -34,6 +35,7 @@ export interface VisitaResumen {
 }
 
 export async function getVisitasRango(rango: Rango, hoy: string): Promise<VisitaResumen[]> {
+  await cancelarVisitasVencidas();
   const { desde, hasta } = rangoFechas(rango, hoy);
   const filas = await consultaCon<{
     id: number;
@@ -60,11 +62,13 @@ export async function getVisitasRango(rango: Rango, hoy: string): Promise<Visita
 }
 
 export async function contarVisitas(): Promise<number> {
+  await cancelarVisitasVencidas();
   const [f] = await consulta<{ n: number }>(`SELECT COUNT(*) AS n FROM dmc.visita WHERE activo = 1`);
   return num(f?.n ?? 0);
 }
 
 export async function contarReagendasPendientes(): Promise<number> {
+  await cancelarVisitasVencidas();
   const [f] = await consulta<{ n: number }>(
     `SELECT COUNT(*) AS n FROM dmc.visita WHERE estado IN ('REAGENDADA', 'PENDIENTE') AND activo = 1`
   );
@@ -91,6 +95,7 @@ export interface CumplimientoDia {
 }
 
 export async function getCumplimientoRango(desde: string, hasta: string): Promise<CumplimientoDia[]> {
+  await cancelarVisitasVencidas();
   const filas = await consultaCon<{ fecha: string; programadas: number; cerradas: number; pct: number }>(
     `SELECT ${F_FECHA("fecha_programada")} AS fecha, programadas, cerradas, ISNULL(pct, 0) AS pct
        FROM dmc.v_cumplimiento_dia
@@ -122,6 +127,7 @@ const ORDEN_ESTADOS: EstadoVisita[] = [
 ];
 
 export async function getEstadoHoyDistribucion(hoy: string): Promise<{ estado: EstadoVisita; n: number; pct: number }[]> {
+  await cancelarVisitasVencidas();
   const filas = await consultaCon<{ estado: EstadoVisita; n: number }>(
     `SELECT estado, COUNT(*) AS n FROM dmc.visita WHERE fecha_programada = @hoy AND activo = 1 GROUP BY estado`,
     [["hoy", sql.Date, hoy]]
@@ -166,6 +172,7 @@ export interface CargaTecnico {
 }
 
 export async function getCargaTecnico(hoy: string): Promise<CargaTecnico[]> {
+  await cancelarVisitasVencidas();
   const filas = await consultaCon<{
     tecnico_id: number;
     tecnico: string;

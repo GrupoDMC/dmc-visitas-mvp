@@ -383,6 +383,11 @@ Hecho:
 - **Hora obligatoria** — solo si alguno de los motivos marcados se llama «Instalación…» (antenas,
   portillones, contadores, muebles). Se decide por el **nombre**, no por el código: el código es fijo
   y el nombre se edita en el checklist (`lib/ui/motivos.ts`).
+- **Vencimiento de visitas** — una visita tiene el día asignado más **un día de tolerancia**. Pasado
+  eso, si sigue Programada, En curso o Reagendada, queda `CANCELADA` sola, con el motivo «Cancelada
+  automáticamente: el técnico no la completó en el plazo establecido…» en la bitácora. Las Pendientes
+  no se tocan (ya tienen acta). No hay cron: se revisa al leer visitas, como mucho cada 5 minutos
+  (`lib/data/vencimiento.ts`).
 - **Técnico ayudante** — `dmc.visita.tecnico_ayudante_id`, opcional, para cuando van dos al local.
   El ayudante ve la visita en su celular marcada como «Ayudante», pero el acta la llena y la firma
   el técnico asignado.
