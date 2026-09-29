@@ -103,10 +103,20 @@ export default function FormularioVisita({
   );
   const [respTel, setRespTel] = useState(fmtTel(visita.responsableTelefono ?? ""));
 
-  // 2 · Motivo y trabajo realizado. Son varios: el técnico marca todos los que
-  // correspondan, no solo el que traía agendado la visita.
-  const [motivosCodigos, setMotivosCodigos] = useState<string[]>(
-    () => visita.ejecucion?.motivosRealesCodigos?.filter(Boolean) ?? visita.motivosCodigos ?? [visita.motivoCodigo]
+  // 2 · Motivo y trabajo realizado. Los que agendó coordinación vienen ya
+  // marcados y no se pueden quitar; el técnico solo puede sumar otros.
+  // Ojo: al iniciar la visita la ejecución existe pero sin motivos reales, así
+  // que una lista vacía no cuenta como "ya confirmados".
+  const motivosAgendados = useMemo(
+    () => (visita.motivosCodigos?.length ? visita.motivosCodigos : [visita.motivoCodigo]).filter(Boolean),
+    [visita.motivosCodigos, visita.motivoCodigo]
+  );
+  const conAgendados = useCallback(
+    (codigos: string[]) => [...new Set([...motivosAgendados, ...codigos.filter(Boolean)])],
+    [motivosAgendados]
+  );
+  const [motivosCodigos, setMotivosCodigos] = useState<string[]>(() =>
+    conAgendados(visita.ejecucion?.motivosRealesCodigos ?? [])
   );
   const [obs, setObs] = useState("");
   const [trabajos, setTrabajos] = useState<TrabajoForm[]>([]);
@@ -226,7 +236,7 @@ export default function FormularioVisita({
     setRespNombre(b.respNombre ?? "");
     setRespRut(b.respRut ?? "");
     setRespTel(b.respTel ?? "");
-    if (b.motivosCodigos?.length) setMotivosCodigos(b.motivosCodigos);
+    if (b.motivosCodigos?.length) setMotivosCodigos(conAgendados(b.motivosCodigos));
     setObs(b.obs ?? "");
     setInterno(b.interno ?? "");
     setInternos(b.internos ?? []);
@@ -246,7 +256,7 @@ export default function FormularioVisita({
       ...(b.fotos ?? []).map((f) => f.id),
     ];
     autoId = Math.max(autoId, ...usados.map((n) => n + 1), 1);
-  }, []);
+  }, [conAgendados]);
 
   // Al entrar: recuperar lo que hubiera quedado a medias y ver si hay un acta
   // esperando señal. Gana la copia más nueva entre el celular y el servidor.
@@ -1100,13 +1110,17 @@ export default function FormularioVisita({
                             </svg>
                           </span>
                           <span className="flex-1 min-w-0 font-extrabold text-[15px] leading-[1.25]">{m.nombre}</span>
-                          <button
-                            type="button"
-                            onClick={() => desmarcarMotivo(m.codigo)}
-                            className="min-h-9 px-1 bg-transparent border-0 text-[var(--color-accent-active)] text-xs underline underline-offset-[3px] cursor-pointer flex-none"
-                          >
-                            Quitar
-                          </button>
+                          {motivosAgendados.includes(m.codigo) ? (
+                            <span className="text-[11px] tracking-[.09em] uppercase opacity-60 flex-none">Agendado</span>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => desmarcarMotivo(m.codigo)}
+                              className="min-h-9 px-1 bg-transparent border-0 text-[var(--color-accent-active)] text-xs underline underline-offset-[3px] cursor-pointer flex-none"
+                            >
+                              Quitar
+                            </button>
+                          )}
                         </div>
 
                         <div className="px-3.5 pb-3 flex flex-col gap-2">
