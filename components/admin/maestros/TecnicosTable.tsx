@@ -11,6 +11,7 @@ export default function TecnicosTable({ tecnicos }: { tecnicos: Tecnico[] }) {
     <MaestroTable<Tecnico>
       kicker="Maestros"
       title="Técnicos"
+      modulo="tecnicos"
       addLabel="Nuevo técnico"
       editLabel="Editar técnico"
       dialogoKicker="Maestro · técnico"

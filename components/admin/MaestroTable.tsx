@@ -6,6 +6,7 @@ import AdminHeader from "@/components/admin/AdminHeader";
 import FiltrosBar from "@/components/admin/FiltrosBar";
 import Dialogo, { type CampoDef, type FormValores } from "@/components/admin/Dialogo";
 import { Toast, useToast } from "@/components/ui/Toast";
+import { puede, useReferencias } from "@/lib/ui/referencias";
 
 export interface Column<T> {
   key: string;
@@ -31,6 +32,7 @@ export interface FieldConfig extends CampoDef {
 export default function MaestroTable<T extends { id: number }>({
   kicker,
   title,
+  modulo,
   pestanas,
   addLabel,
   editLabel,
@@ -48,6 +50,8 @@ export default function MaestroTable<T extends { id: number }>({
 }: {
   kicker: string;
   title: string;
+  /** El módulo de permisos: decide si se ofrecen "agregar" y "editar". */
+  modulo: string;
   /** Pestañas de la sección, si el maestro comparte pantalla con otra vista. */
   pestanas?: React.ReactNode;
   addLabel: string;
@@ -72,6 +76,9 @@ export default function MaestroTable<T extends { id: number }>({
 }) {
   const router = useRouter();
   const { toast, aviso } = useToast();
+  const ref = useReferencias();
+  const puedeCrear = puede(ref, `${modulo}.crear`);
+  const puedeEditar = puede(ref, `${modulo}.editar`);
   const [busqueda, setBusqueda] = useState("");
   const [dialogo, setDialogo] = useState<{ id: number | null; form: FormValores } | null>(null);
   const [guardando, setGuardando] = useState(false);
@@ -103,12 +110,14 @@ export default function MaestroTable<T extends { id: number }>({
   return (
     <>
       <AdminHeader kicker={kicker} title={title} pestanas={pestanas}>
-        <button onClick={() => setDialogo({ id: null, form: emptyRow })} className="btn btn-primary">
-          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4">
-            <path d="M12 5v14M5 12h14" />
-          </svg>
-          <span>{addLabel}</span>
-        </button>
+        {puedeCrear ? (
+          <button onClick={() => setDialogo({ id: null, form: emptyRow })} className="btn btn-primary">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4">
+              <path d="M12 5v14M5 12h14" />
+            </svg>
+            <span>{addLabel}</span>
+          </button>
+        ) : null}
       </AdminHeader>
 
       <div className="pb-10 animate-fade-in">
@@ -143,16 +152,18 @@ export default function MaestroTable<T extends { id: number }>({
                     </td>
                   ))}
                   <td className="text-right">
-                    <button
-                      onClick={() => setDialogo({ id: row.id, form: toFormValues(row) })}
-                      className="btn btn-icon w-8 h-8 border border-black/[.3]"
-                      aria-label={`Editar ${title.toLowerCase()}`}
-                    >
-                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <path d="M4 20h4l10-10-4-4L4 16v4z" />
-                        <path d="M14 6l4 4" />
-                      </svg>
-                    </button>
+                    {puedeEditar ? (
+                      <button
+                        onClick={() => setDialogo({ id: row.id, form: toFormValues(row) })}
+                        className="btn btn-icon w-8 h-8 border border-black/[.3]"
+                        aria-label={`Editar ${title.toLowerCase()}`}
+                      >
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path d="M4 20h4l10-10-4-4L4 16v4z" />
+                          <path d="M14 6l4 4" />
+                        </svg>
+                      </button>
+                    ) : null}
                   </td>
                 </tr>
               ))}

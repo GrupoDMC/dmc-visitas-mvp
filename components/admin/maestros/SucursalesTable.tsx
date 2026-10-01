@@ -32,6 +32,7 @@ export default function SucursalesTable({ sucursales, clientes }: { sucursales: 
     <MaestroTable<Sucursal>
       kicker="Maestros"
       title="Sucursales"
+      modulo="sucursales"
       addLabel="Nueva sucursal"
       editLabel="Editar sucursal"
       dialogoKicker="Maestro · sucursal"

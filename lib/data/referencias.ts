@@ -8,7 +8,7 @@ import type { Referencias } from "@/lib/ui/referencias";
  * Maestros y catálogos que los diálogos y tablas del panel necesitan tener
  * completos. Se carga una vez por petición en el layout y baja por contexto.
  */
-export async function cargarReferencias(rol: RolUsuario): Promise<Referencias> {
+export async function cargarReferencias(rol: RolUsuario, permisos: string[]): Promise<Referencias> {
   const [clientes, sucursales, tecnicos, motivos, problemas, trabajos] = await Promise.all([
     listarClientes(),
     listarSucursales(),
@@ -17,7 +17,7 @@ export async function cargarReferencias(rol: RolUsuario): Promise<Referencias> {
     listarProblemas(),
     listarTrabajos(),
   ]);
-  return { rol, clientes, sucursales, tecnicos, motivos, problemas, trabajos };
+  return { rol, permisos, clientes, sucursales, tecnicos, motivos, problemas, trabajos };
 }
 
 /**
@@ -47,5 +47,5 @@ export async function cargarReferenciasTecnico(): Promise<Referencias> {
       telefono: null,
       activo: true,
     }));
-  return { rol: "TECNICO", clientes, sucursales, tecnicos: companeros, motivos, problemas, trabajos };
+  return { rol: "TECNICO", permisos: [], clientes, sucursales, tecnicos: companeros, motivos, problemas, trabajos };
 }

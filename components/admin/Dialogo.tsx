@@ -50,6 +50,12 @@ export interface CampoDef {
    * campo no cambie de forma el día que pasa de seis a siete opciones.
    */
   buscable?: boolean;
+  /**
+   * El campo nace plegado: solo se ve su título y se abre al pincharlo. Para
+   * lo que casi nunca se llena y ocupaba una caja entera. Si ya trae un valor
+   * (al corregir una visita) aparece abierto.
+   */
+  plegable?: boolean;
 }
 
 export interface Adjunto {
@@ -77,6 +83,7 @@ export default function Dialogo({
   guardando = false,
   adjuntos,
   onToggleAdjunto,
+  children,
 }: {
   kicker: string;
   titulo: string;
@@ -90,8 +97,14 @@ export default function Dialogo({
   guardando?: boolean;
   adjuntos?: Adjunto[];
   onToggleAdjunto?: (i: number) => void;
+  /** Contenido propio del diálogo, debajo de los campos. */
+  children?: React.ReactNode;
 }) {
   const [verPass, setVerPass] = useState(false);
+  // Los plegables que ya traen algo escrito nacen abiertos.
+  const [desplegados, setDesplegados] = useState<string[]>(() =>
+    campos.filter((c) => c.plegable && String(form[c.k] ?? "")).map((c) => c.k)
+  );
 
   useEffect(() => {
     // Solo se cierra con la X: un clic fuera o un Escape descartaban el formulario.
@@ -136,9 +149,45 @@ export default function Dialogo({
             {campos.map((c) => {
               const valor = form[c.k];
               const texto = typeof valor === "boolean" ? "" : String(valor ?? "");
+              const abierto = !c.plegable || desplegados.includes(c.k);
+              const plegador = c.plegable ? (
+                <button
+                  type="button"
+                  aria-expanded={abierto}
+                  onClick={() =>
+                    setDesplegados((prev) => (abierto ? prev.filter((k) => k !== c.k) : [...prev, c.k]))
+                  }
+                  className="w-full flex items-center gap-2.5 min-h-10 px-3.5 bg-transparent border border-[var(--color-divider)] cursor-pointer text-[var(--color-text)] text-left hover:bg-black/5"
+                >
+                  <span className="text-[11px] tracking-[.11em] uppercase opacity-72">{c.label}</span>
+                  <svg
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2.2"
+                    className="ml-auto flex-none transition-transform"
+                    style={{ transform: `rotate(${abierto ? 180 : 0}deg)` }}
+                  >
+                    <path d="M6 9l6 6 6-6" />
+                  </svg>
+                </button>
+              ) : null;
+              if (!abierto) {
+                return (
+                  <div key={c.k} className="min-w-0" style={{ gridColumn: `span ${c.span ?? 1}` }}>
+                    {plegador}
+                  </div>
+                );
+              }
               return (
                 <div key={c.k} className="field min-w-0" style={{ gridColumn: `span ${c.span ?? 1}` }}>
-                  <label htmlFor={`dlg-${c.k}`}>{c.label}</label>
+                  {plegador ? (
+                    <div className="mb-2">{plegador}</div>
+                  ) : (
+                    <label htmlFor={`dlg-${c.k}`}>{c.label}</label>
+                  )}
 
                   {c.tipo === "select" ? (
                     c.buscable || (c.opciones?.length ?? 0) >= MINIMO_PARA_BUSCAR ? (
@@ -295,6 +344,8 @@ export default function Dialogo({
               );
             })}
           </div>
+
+          {children}
 
           {adjuntos && adjuntos.length > 0 ? (
             <div className="mt-5 border border-black/[.3]">

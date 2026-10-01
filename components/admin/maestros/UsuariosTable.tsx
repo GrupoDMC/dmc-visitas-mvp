@@ -3,20 +3,41 @@
 import MaestroTable from "@/components/admin/MaestroTable";
 import Tag from "@/components/Tag";
 import { guardarUsuarioAction } from "@/app/actions/maestros";
-import type { RolUsuario, Tecnico, Usuario } from "@/lib/types";
+import type { Rol, RolUsuario, Tecnico, Usuario } from "@/lib/types";
 
 const ROL_LABEL: Record<string, string> = { ADMIN: "Administrador", COORDINADOR: "Coordinador", TECNICO: "Técnico" };
+/** En el formulario, un rol del panel viaja como "R:<id>" junto a ADMIN y TECNICO. */
+const PREFIJO_ROL = "R:";
 const SIN_TECNICO = "—";
 
 export default function UsuariosTable({
   usuarios,
   tecnicos,
+  roles,
   pestanas,
 }: {
   usuarios: Usuario[];
   tecnicos: Tecnico[];
+  /** Los roles del panel. Vacío si la base no tiene la migración 008. */
+  roles: Rol[];
   pestanas?: React.ReactNode;
 }) {
+  const nombreRol = (u: Usuario) =>
+    (u.rol === "COORDINADOR" ? roles.find((r) => r.id === u.rolId)?.nombre : null) ?? ROL_LABEL[u.rol];
+  const opcionesRol = [
+    { v: "ADMIN", t: "Administrador · acceso total" },
+    ...(roles.length
+      ? roles.map((r) => ({ v: `${PREFIJO_ROL}${r.id}`, t: r.nombre }))
+      : [{ v: "COORDINADOR", t: "Coordinador" }]),
+    { v: "TECNICO", t: "Técnico · entra por el celular" },
+  ];
+  /** "R:5" → { rol: COORDINADOR, rolId: 5 }; el resto va tal cual. */
+  const leerRol = (valor: unknown): { rol: RolUsuario; rolId: number | null } => {
+    const v = String(valor);
+    return v.startsWith(PREFIJO_ROL)
+      ? { rol: "COORDINADOR", rolId: Number(v.slice(PREFIJO_ROL.length)) }
+      : { rol: v as RolUsuario, rolId: null };
+  };
   const nombreTecnico = (id: number | null) =>
     id ? tecnicos.find((t) => t.id === id)?.nombreCompleto ?? SIN_TECNICO : SIN_TECNICO;
 
@@ -24,14 +45,15 @@ export default function UsuariosTable({
     <MaestroTable<Usuario>
       kicker="Maestros · quién entra al sistema"
       title="Usuarios"
+      modulo="usuarios"
       pestanas={pestanas}
       addLabel="Nuevo usuario"
       editLabel="Editar usuario"
       dialogoKicker="Maestro · usuario"
-      nota="Si el rol es TÉCNICO, hay que vincularlo con un técnico de la lista. Las contraseñas se guardan cifradas: no se pueden consultar, solo reemplazar."
+      nota="El rol decide qué puede hacer la persona en el panel; se arma en la pestaña Roles y permisos. Si el rol es TÉCNICO, hay que vincularlo con un técnico de la lista. Las contraseñas se guardan cifradas: no se pueden consultar, solo reemplazar."
       phBusqueda="Buscar correo o rol…"
       rows={usuarios}
-      searchKeys={(u) => `${u.email} ${u.rol} ${nombreTecnico(u.tecnicoId)}`}
+      searchKeys={(u) => `${u.email} ${u.rol} ${nombreRol(u)} ${nombreTecnico(u.tecnicoId)}`}
       columns={[
         { key: "email", label: "Correo" },
         {
@@ -39,7 +61,7 @@ export default function UsuariosTable({
           label: "Rol",
           render: (u) => (
             <Tag variant={u.rol === "ADMIN" ? "outline" : u.rol === "COORDINADOR" ? "accent" : "neutral"}>
-              {ROL_LABEL[u.rol]}
+              {nombreRol(u)}
             </Tag>
           ),
         },
@@ -66,11 +88,7 @@ export default function UsuariosTable({
           k: "rol",
           label: "Rol",
           tipo: "select",
-          opciones: [
-            { v: "ADMIN", t: "Administrador" },
-            { v: "COORDINADOR", t: "Coordinador" },
-            { v: "TECNICO", t: "Técnico" },
-          ],
+          opciones: opcionesRol,
         },
         {
           k: "tecnicoId",
@@ -101,7 +119,7 @@ export default function UsuariosTable({
       }}
       toFormValues={(u) => ({
         email: u.email,
-        rol: u.rol,
+        rol: u.rol === "COORDINADOR" && u.rolId ? `${PREFIJO_ROL}${u.rolId}` : u.rol,
         tecnicoId: u.tecnicoId ? String(u.tecnicoId) : "",
         password: "",
         activo: u.activo,
@@ -109,13 +127,13 @@ export default function UsuariosTable({
       guardarAction={(id, f) =>
         guardarUsuarioAction(id, {
           email: String(f.email).trim().toLowerCase(),
-          rol: f.rol as RolUsuario,
+          ...leerRol(f.rol),
           tecnicoId: f.rol === "TECNICO" && f.tecnicoId ? Number(f.tecnicoId) : null,
           activo: f.activo !== false,
           password: String(f.password),
         })
       }
-      emptyRow={{ email: "", rol: "COORDINADOR", tecnicoId: "", password: "", activo: true }}
+      emptyRow={{ email: "", rol: roles[0] ? `${PREFIJO_ROL}${roles[0].id}` : "COORDINADOR", tecnicoId: "", password: "", activo: true }}
     />
   );
 }

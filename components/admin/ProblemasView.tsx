@@ -9,7 +9,7 @@ import VisitaDialogo, { type OrigenProblema } from "@/components/admin/VisitaDia
 import { Toast, useToast } from "@/components/ui/Toast";
 import { actualizarProblemaAction } from "@/app/actions/admin";
 import { ESTADO_PROBLEMA_LABEL, ESTADO_PROBLEMA_TAG, textoMotivos } from "@/lib/ui/estado";
-import { useReferencias } from "@/lib/ui/referencias";
+import { puede, useReferencias } from "@/lib/ui/referencias";
 import type { EstadoProblema } from "@/lib/types";
 
 interface Item {
@@ -59,7 +59,8 @@ const SIN_FILTROS: Filtros = { clienteId: "", fecha: "", tipo: "", estado: "" };
 
 export default function ProblemasView({ grupos }: { grupos: GrupoProblemas[] }) {
   const router = useRouter();
-  const { clientes, problemas: catalogoProblema } = useReferencias();
+  const ref = useReferencias();
+  const { clientes, problemas: catalogoProblema } = ref;
   const OPC_TIPOS = useMemo(() => catalogoProblema.map((t) => ({ v: t.codigo, t: t.nombre })), [catalogoProblema]);
   const nombreTipo = (codigo: string) => catalogoProblema.find((t) => t.codigo === codigo)?.nombre ?? codigo;
 
@@ -312,6 +313,7 @@ export default function ProblemasView({ grupos }: { grupos: GrupoProblemas[] }) 
                               })
                             }
                             className="btn btn-primary min-h-[34px] px-3 gap-2 text-[13px]"
+                            style={puede(ref, "visitas.crear") ? undefined : { display: "none" }}
                           >
                             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
                               <rect x="3" y="5" width="18" height="16" />
@@ -341,6 +343,7 @@ export default function ProblemasView({ grupos }: { grupos: GrupoProblemas[] }) 
                               setPendiente(abrir ? { estado: p.estado, tipo: p.tipoCodigo } : null);
                             }}
                             className="ml-auto min-h-[34px] flex items-center gap-2 px-3 bg-transparent border border-black/[.35] text-xs cursor-pointer text-[var(--color-text)] hover:bg-black/[.07]"
+                            style={puede(ref, "problemas.editar") ? undefined : { display: "none" }}
                           >
                             <span>{abierto ? "Ocultar" : "Cambiar estado o tipo"}</span>
                             <svg

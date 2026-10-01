@@ -234,6 +234,7 @@ Sobre una base ya creada, los cambios van en archivos aparte y numerados:
 | [`sql/migracion-005-eliminar-visita.sql`](sql/migracion-005-eliminar-visita.sql) | `dmc.visita.activo` (borrado lógico), `dmc.visita_eliminacion` como auditoría y las vistas del panel excluyendo lo inactivo |
 | [`sql/migracion-006-motivo-trabajo-e-interno.sql`](sql/migracion-006-motivo-trabajo-e-interno.sql) | Trabajos asignados a cada motivo (`dmc.catalogo_motivo_trabajo`, `visita_trabajo.motivo_codigo`), checklist del comentario interno (`dmc.catalogo_interno`, `dmc.visita_interno`), `interno` en `visita_foto` / `visita_video` y `sucursal.codigo` opcional |
 | [`sql/migracion-007-hora-instalacion-y-ayudante.sql`](sql/migracion-007-hora-instalacion-y-ayudante.sql) | Quita `ck_visita_hora_instalacion` (la hora obligatoria la decide la app por el nombre «Instalación…» del motivo) y agrega `dmc.visita.tecnico_ayudante_id` para cuando van dos técnicos al local |
+| [`sql/migracion-008-roles-y-permisos.sql`](sql/migracion-008-roles-y-permisos.sql) | Roles del panel con permisos por módulo y acción: `dmc.rol`, `dmc.rol_permiso` y `dmc.usuario.rol_id`. Crea el rol «Coordinador» con lo que un coordinador podía hacer hasta ahora y se lo asigna a los que ya existen. Sin ella la app arranca igual, pero no hay roles que administrar |
 
 ```bash
 sqlcmd -S <host>,<puerto> -d DMC_Contingencia -i sql/migracion-002-mejoras.sql
@@ -242,6 +243,7 @@ sqlcmd -S <host>,<puerto> -d DMC_Contingencia -i sql/migracion-004-rut-responsab
 sqlcmd -S <host>,<puerto> -d DMC_Contingencia -i sql/migracion-005-eliminar-visita.sql
 sqlcmd -S <host>,<puerto> -d DMC_Contingencia -i sql/migracion-006-motivo-trabajo-e-interno.sql
 sqlcmd -S <host>,<puerto> -d DMC_Contingencia -i sql/migracion-007-hora-instalacion-y-ayudante.sql
+sqlcmd -S <host>,<puerto> -d DMC_Contingencia -i sql/migracion-008-roles-y-permisos.sql
 ```
 
 Son idempotentes: se pueden correr varias veces, y en orden.

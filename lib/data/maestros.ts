@@ -1,6 +1,7 @@
 import "server-only";
 import { consulta, consultaCon, ejecutar, num, numONull, sql, F_TS } from "@/lib/data/sql";
 import { hashearPassword } from "@/lib/password";
+import { faltaMigracionRoles, rolesDeUsuarios } from "@/lib/data/roles";
 import { fmtRut, rutLimpio } from "@/lib/ui/formato";
 import type { Cliente, RolUsuario, Sucursal, Tecnico, Usuario } from "@/lib/types";
 
@@ -263,14 +264,20 @@ interface FilaUsuarioLista {
 }
 
 export async function listarUsuarios(): Promise<Usuario[]> {
-  const filas = await consulta<FilaUsuarioLista>(
-    `SELECT id, email, rol, tecnico_id, activo, ${F_TS("ultimo_acceso_en")} AS ultimo_acceso_en
-       FROM dmc.usuario ORDER BY email`
-  );
+  // El rol del panel va en una consulta aparte: así la lista sigue saliendo en
+  // una base que todavía no tiene la migración 008.
+  const [filas, roles] = await Promise.all([
+    consulta<FilaUsuarioLista>(
+      `SELECT id, email, rol, tecnico_id, activo, ${F_TS("ultimo_acceso_en")} AS ultimo_acceso_en
+         FROM dmc.usuario ORDER BY email`
+    ),
+    rolesDeUsuarios(),
+  ]);
   return filas.map((f) => ({
     id: num(f.id),
     email: f.email,
     rol: f.rol,
+    rolId: roles.get(num(f.id)) ?? null,
     tecnicoId: numONull(f.tecnico_id),
     activo: Boolean(f.activo),
     ultimoAccesoEn: f.ultimo_acceso_en,
@@ -280,6 +287,8 @@ export async function listarUsuarios(): Promise<Usuario[]> {
 export interface DatosUsuario {
   email: string;
   rol: RolUsuario;
+  /** El rol del panel (dmc.rol). Solo cuenta si `rol` es COORDINADOR. */
+  rolId?: number | null;
   tecnicoId: number | null;
   activo: boolean;
   /** Vacía al editar = deja la contraseña que ya tenía. */
@@ -287,6 +296,28 @@ export interface DatosUsuario {
 }
 
 export async function guardarUsuario(id: number | null, d: DatosUsuario): Promise<number> {
+  // ck_usuario_rol_id: solo las cuentas del panel llevan rol. Si la cuenta deja
+  // de ser del panel, el rol se suelta antes de cambiarle el tipo.
+  const rolId = d.rol === "COORDINADOR" ? d.rolId ?? null : null;
+  if (id !== null && rolId === null) await ponerRol(id, null);
+  const usuarioId = await guardarUsuarioBase(id, d);
+  if (rolId !== null) await ponerRol(usuarioId, rolId);
+  return usuarioId;
+}
+
+async function ponerRol(usuarioId: number, rolId: number | null): Promise<void> {
+  try {
+    await ejecutar(`UPDATE dmc.usuario SET rol_id = @rol WHERE id = @id`, [
+      ["rol", sql.BigInt, rolId],
+      ["id", sql.BigInt, usuarioId],
+    ]);
+  } catch (err) {
+    // Sin la migración 008 no hay columna: el usuario se guarda igual.
+    if (!faltaMigracionRoles(err)) throw err;
+  }
+}
+
+async function guardarUsuarioBase(id: number | null, d: DatosUsuario): Promise<number> {
   const email = d.email.trim().toLowerCase();
   // ck_usuario_tecnico: TECNICO exige tecnico_id, el resto lo exige nulo.
   const tecnicoId = d.rol === "TECNICO" ? d.tecnicoId : null;

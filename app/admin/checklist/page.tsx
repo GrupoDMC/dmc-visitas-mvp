@@ -7,10 +7,13 @@ import {
   listarTrabajos,
   PLANTILLA_PROPIA,
 } from "@/lib/data/catalogos";
+import SinAcceso from "@/components/admin/SinAcceso";
+import { sesionCon } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
 export default async function ChecklistPage() {
+  if (!(await sesionCon("checklist.ver"))) return <SinAcceso />;
   const [motivos, tipos, trabajos, internos, plantilla] = await Promise.all([
     listarMotivos(),
     listarProblemas(),

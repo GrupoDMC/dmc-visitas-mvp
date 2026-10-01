@@ -1,4 +1,5 @@
 import "server-only";
+import { cache } from "react";
 import { cookies } from "next/headers";
 import { COOKIE_EXPIRA, COOKIE_SESION, VIGENCIA_SESION, firmarToken, opcionesCookie, verificarToken } from "@/lib/session";
 import { esHashLegado, gastarTiempoDeVerificacion, hashearPassword, verificarPassword } from "@/lib/password";
@@ -8,11 +9,17 @@ import {
   getUsuarioPorId,
   registrarAcceso,
 } from "@/lib/data/usuarios";
+import { accesoDeUsuario } from "@/lib/data/roles";
+import { tiene } from "@/lib/permisos";
 import type { Tecnico, Usuario } from "@/lib/types";
 
 export interface Sesion {
   usuario: Usuario;
   tecnico: Tecnico | null;
+  /** Lo que puede hacer en el panel: "<módulo>.<acción>". Ver lib/permisos.ts. */
+  permisos: string[];
+  /** El nombre de su rol, para mostrarlo en el panel. */
+  rolNombre: string;
 }
 
 /**
@@ -68,9 +75,13 @@ export async function cerrarSesion(): Promise<void> {
 /**
  * Sesión del usuario actual, o null. Verifica la firma del token y vuelve a
  * leer el usuario en cada petición: si lo desactivan, la sesión muere sin
- * esperar a que expire la cookie.
+ * esperar a que expire la cookie. Lo mismo con los permisos: se leen del rol en
+ * cada petición, así que quitarle uno a un rol corre de inmediato.
+ *
+ * Va con `cache` para que el layout, la página y sus consultas compartan una
+ * sola lectura por petición.
  */
-export async function getSesion(): Promise<Sesion | null> {
+export const getSesion = cache(async function getSesion(): Promise<Sesion | null> {
   const store = await cookies();
   const token = await verificarToken(store.get(COOKIE_SESION)?.value);
   if (!token) return null;
@@ -78,11 +89,22 @@ export async function getSesion(): Promise<Sesion | null> {
   try {
     const registro = await getUsuarioPorId(token.uid);
     if (!registro || !registro.usuario.activo) return null;
-    return { usuario: registro.usuario, tecnico: registro.tecnico };
+    const acceso = await accesoDeUsuario(registro.usuario);
+    return { usuario: registro.usuario, tecnico: registro.tecnico, ...acceso };
   } catch (err) {
     // Base de datos caída: mejor tratar la sesión como ausente (el usuario cae
     // en /login) que reventar la página con un error sin explicación.
     console.error("[dmc] no se pudo leer la sesión desde SQL Server:", err);
     return null;
   }
+});
+
+/**
+ * La sesión de alguien del panel que tiene ese permiso, o null. Es la puerta
+ * de cada acción del servidor: que el botón no se muestre no impide llamarla.
+ */
+export async function sesionCon(permiso: string): Promise<Sesion | null> {
+  const sesion = await getSesion();
+  if (!sesion || sesion.usuario.rol === "TECNICO") return null;
+  return tiene(sesion.permisos, permiso) ? sesion : null;
 }

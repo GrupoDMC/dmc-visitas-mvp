@@ -22,7 +22,7 @@ import { algunoPideHora } from "@/lib/ui/motivos";
 import type { Visita } from "@/lib/types";
 
 /** Opciones de los selectores, derivadas de los maestros que baja el layout. */
-function opciones(ref: Referencias) {
+export function opciones(ref: Referencias) {
   return {
     clientes: ref.clientes.filter((c) => c.activo).map((c) => ({ v: String(c.id), t: c.nombreFantasia })),
     tecnicos: ref.tecnicos.filter((t) => t.activo).map((t) => ({ v: String(t.id), t: t.nombreCompleto })),
@@ -210,6 +210,7 @@ export default function VisitaDialogo({
       label: "Indicaciones de acceso (opcional)",
       span: 2,
       tipo: "area",
+      plegable: true,
       ph: "Ej: entrar por acceso de proveedores, estacionamiento -2, pedir credencial en control.",
     },
   ];

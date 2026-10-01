@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import AdminHeader from "@/components/admin/AdminHeader";
 import Confirmar, { type ConfirmarCfg } from "@/components/admin/Confirmar";
 import { Toast, useToast } from "@/components/ui/Toast";
+import { puede, useReferencias } from "@/lib/ui/referencias";
 import {
   guardarChecklistAction,
   guardarPlantillaChecklistAction,
@@ -172,6 +173,7 @@ export default function ChecklistEditor({
   const [confirmar, setConfirmar] = useState<ConfirmarCfg | null>(null);
   const [busqueda, setBusqueda] = useState("");
   const [guardando, setGuardando] = useState(false);
+  const soloLectura = !puede(useReferencias(), "checklist.editar");
   const [sucio, setSucio] = useState(false);
 
   /** Lo que hay ahora mismo en la base, para saber qué se está por desactivar. */
@@ -422,11 +424,13 @@ export default function ChecklistEditor({
   return (
     <>
       <AdminHeader kicker="Maestros · listas que ve el técnico en terreno" title="Checklist">
-        <button className="btn btn-primary" onClick={pedirGuardar} disabled={guardando || !sucio}>
+        <button className="btn btn-primary" onClick={pedirGuardar} disabled={guardando || !sucio || soloLectura}>
           <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4">
             <path d="M4 12l5 5L20 6" />
           </svg>
-          <span>{guardando ? "Guardando…" : sucio ? "Guardar cambios" : "Sin cambios"}</span>
+          <span>
+            {soloLectura ? "Solo lectura" : guardando ? "Guardando…" : sucio ? "Guardar cambios" : "Sin cambios"}
+          </span>
         </button>
       </AdminHeader>
 
@@ -683,7 +687,7 @@ export default function ChecklistEditor({
         </div>
 
         <div className="flex items-center gap-3.5 mt-6 pt-4.5 border-t border-[var(--color-divider-soft)] flex-wrap">
-          <button className="btn btn-primary" onClick={pedirGuardar} disabled={guardando || !sucio}>
+          <button className="btn btn-primary" onClick={pedirGuardar} disabled={guardando || !sucio || soloLectura}>
             <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4">
               <path d="M4 12l5 5L20 6" />
             </svg>

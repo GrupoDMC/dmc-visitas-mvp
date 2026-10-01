@@ -13,6 +13,7 @@ export default function ClientesTable({ clientes, sucursales }: { clientes: Clie
     <MaestroTable<Cliente>
       kicker="Maestros"
       title="Clientes"
+      modulo="clientes"
       addLabel="Nuevo cliente"
       editLabel="Editar cliente"
       dialogoKicker="Maestro · cliente"

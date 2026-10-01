@@ -15,7 +15,7 @@ import VisorFotos, { useVisorFotos } from "@/components/ui/VisorFotos";
 import { Toast, useToast } from "@/components/ui/Toast";
 import { enviarActaAction } from "@/app/actions/admin";
 import { ESTADO_PROBLEMA_LABEL, ESTADO_PROBLEMA_TAG, ESTADO_VISITA_LABEL, ESTADO_VISITA_TAG, textoMotivos, textoMotivosReales } from "@/lib/ui/estado";
-import { esAdmin, nombreProblema, nombreTrabajo, useReferencias } from "@/lib/ui/referencias";
+import { nombreProblema, nombreTrabajo, puede, useReferencias } from "@/lib/ui/referencias";
 import { reloj } from "@/lib/ui/video";
 import type { Visita } from "@/lib/types";
 
@@ -51,6 +51,7 @@ export default function ActaView({
   const { toast, aviso } = useToast();
   const [resumenAbierto, setResumenAbierto] = useState(false);
   const [trazaAbierta, setTrazaAbierta] = useState(false);
+  const [zonaAbierta, setZonaAbierta] = useState(false);
   const [dialogo, setDialogo] = useState<
     "correo" | "editar" | "reprogramar" | "cancelarAdmin" | "eliminar" | null
   >(null);
@@ -62,11 +63,12 @@ export default function ActaView({
   const cerrada = visita.estado === "COMPLETADA";
   const reprogramable = ["REAGENDADA", "PENDIENTE", "CANCELADA"].includes(visita.estado);
   const sinCerrar = !cerrada && visita.estado !== "CANCELADA";
-  // El cierre administrativo: solo el administrador, y solo sobre una visita
+  // El cierre administrativo: solo con el permiso, y solo sobre una visita
   // que está en curso o que todavía no se inicia. Una completada ya tiene acta
   // firmada y una cancelada no hay nada que cerrar.
   const cerrablePorAdmin =
-    esAdmin(ref) && (visita.estado === "PROGRAMADA" || visita.estado === "EN_CURSO");
+    puede(ref, "visitas.cancelar") && (visita.estado === "PROGRAMADA" || visita.estado === "EN_CURSO");
+  const eliminable = puede(ref, "visitas.eliminar");
   const duracion = ejec ? minutosEntre(ejec.horaInicio, ejec.horaTermino) : null;
   const firma = visita.firmas?.[0];
 
@@ -136,7 +138,7 @@ export default function ActaView({
         ) : null}
 
         <div className="ml-auto flex gap-2 flex-wrap">
-          {cerrada ? (
+          {cerrada && puede(ref, "visitas.enviar") ? (
             <button onClick={() => setDialogo("correo")} className="btn btn-primary min-h-[38px] px-3.5">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
                 <rect x="3" y="5" width="18" height="14" />
@@ -145,26 +147,13 @@ export default function ActaView({
               <span>Enviar por correo</span>
             </button>
           ) : null}
-          {reprogramable ? (
+          {reprogramable && puede(ref, "visitas.reprogramar") ? (
             <button onClick={() => setDialogo("reprogramar")} className="btn btn-primary min-h-[38px] px-3.5">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
                 <rect x="3" y="5" width="18" height="16" />
                 <path d="M8 3v4M16 3v4M3 11h18M12 15l2 2-2 2" />
               </svg>
               <span>Cambiar fecha y técnico</span>
-            </button>
-          ) : null}
-          {cerrablePorAdmin ? (
-            <button
-              onClick={() => setDialogo("cancelarAdmin")}
-              className="btn btn-secondary min-h-[38px] px-3.5"
-              title="Cerrar esta visita sin que llegue a hacerse"
-            >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
-                <circle cx="12" cy="12" r="8.5" />
-                <path d="M6 6l12 12" />
-              </svg>
-              <span>Cancelar por admin</span>
             </button>
           ) : null}
           <button onClick={() => setTrazaAbierta(true)} className="btn btn-secondary min-h-[38px] px-3.5">
@@ -251,6 +240,7 @@ export default function ActaView({
                   </div>
                 ))}
               </div>
+              {puede(ref, "visitas.editar") ? (
               <div className="px-5 py-4 border-b border-black/[.2] flex items-center gap-3 flex-wrap">
                 <button
                   onClick={() => setDialogo("editar")}
@@ -268,6 +258,7 @@ export default function ActaView({
                     : "Corrige los datos de arriba: cliente, sucursal, técnico, fecha, hora o el trabajo solicitado."}
                 </span>
               </div>
+              ) : null}
             </>
           ) : null}
 
@@ -452,7 +443,7 @@ export default function ActaView({
                         ) : (
                           <div className="pb-4" />
                         )}
-                        {p.estado !== "RESUELTO" ? (
+                        {p.estado !== "RESUELTO" && puede(ref, "visitas.crear") ? (
                           <div className="pb-4 -mt-1">
                             <button
                               onClick={() =>
@@ -573,14 +564,58 @@ export default function ActaView({
           ) : null}
         </div>
 
-        {esAdmin(ref) ? (
+        {cerrablePorAdmin || eliminable ? (
           <div className="mt-8 border border-[var(--color-accent-300)] bg-[var(--color-accent-100)]">
-            <div className="px-5 py-3.5 border-b border-[var(--color-accent-300)]">
-              <div className="font-extrabold text-[13px] tracking-[.06em] uppercase text-[var(--color-accent-800)]">
-                Zona de peligro
+            {/* Plegada: cancelar y eliminar no se aprietan de pasada. */}
+            <button
+              type="button"
+              aria-expanded={zonaAbierta}
+              onClick={() => setZonaAbierta((v) => !v)}
+              className="w-full flex items-center gap-2.5 px-5 py-3.5 bg-transparent border-0 cursor-pointer text-left text-[var(--color-accent-800)]"
+            >
+              <span className="font-extrabold text-[13px] tracking-[.06em] uppercase">Zona de peligro</span>
+              <span className="text-[13px] opacity-70 ml-auto">
+                {zonaAbierta
+                  ? ""
+                  : [cerrablePorAdmin ? "Cancelar por admin" : "", eliminable ? "Eliminar visita" : ""]
+                      .filter(Boolean)
+                      .join(" o ")}
+              </span>
+              <svg
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.2"
+                className="flex-none transition-transform"
+                style={{ transform: `rotate(${zonaAbierta ? 180 : 0}deg)` }}
+              >
+                <path d="M6 9l6 6 6-6" />
+              </svg>
+            </button>
+            {zonaAbierta && cerrablePorAdmin ? (
+              <div className="px-5 py-4 flex items-center gap-4 flex-wrap border-t border-[var(--color-accent-300)]">
+                <p className="m-0 flex-1 min-w-[240px] text-[13px] opacity-70">
+                  Cierra esta visita sin que llegue a hacerse. Queda «Cancelada por admin», deja de
+                  aparecerle al técnico y el motivo se guarda en la bitácora.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setDialogo("cancelarAdmin")}
+                  className="btn btn-secondary min-h-10 px-4 flex-none"
+                  style={{ borderColor: "var(--color-accent-800)", color: "var(--color-accent-800)" }}
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                    <circle cx="12" cy="12" r="8.5" />
+                    <path d="M6 6l12 12" />
+                  </svg>
+                  <span>Cancelar por admin</span>
+                </button>
               </div>
-            </div>
-            <div className="px-5 py-4 flex items-center gap-4 flex-wrap">
+            ) : null}
+            {zonaAbierta && eliminable ? (
+            <div className="px-5 py-4 flex items-center gap-4 flex-wrap border-t border-[var(--color-accent-300)]">
               <p className="m-0 flex-1 min-w-[240px] text-[13px] opacity-70">
                 Elimina esta visita del panel, del celular del técnico y de los gráficos de
                 coordinación. No borra el acta de la base: pide escribir el folio para confirmar y
@@ -599,6 +634,7 @@ export default function ActaView({
                 <span>Eliminar visita</span>
               </button>
             </div>
+            ) : null}
           </div>
         ) : null}
       </div>

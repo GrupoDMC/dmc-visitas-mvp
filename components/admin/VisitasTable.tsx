@@ -5,10 +5,11 @@ import { useRouter } from "next/navigation";
 import Tag from "@/components/Tag";
 import AdminHeader from "@/components/admin/AdminHeader";
 import FiltrosBar, { type ChipFiltro } from "@/components/admin/FiltrosBar";
-import VisitaDialogo, { CancelarAdminDialogo } from "@/components/admin/VisitaDialogos";
+import VisitaDialogo from "@/components/admin/VisitaDialogos";
+import VisitasMasivasDialogo from "@/components/admin/VisitasMasivasDialogo";
 import { Toast, useToast } from "@/components/ui/Toast";
 import { ESTADO_VISITA_LABEL, ESTADO_VISITA_TAG, textoMotivos } from "@/lib/ui/estado";
-import { esAdmin, useReferencias } from "@/lib/ui/referencias";
+import { puede, useReferencias } from "@/lib/ui/referencias";
 import type { Visita, EstadoVisita } from "@/lib/types";
 
 const ESTADOS: EstadoVisita[] = [
@@ -20,11 +21,6 @@ const ESTADOS: EstadoVisita[] = [
   "CANCELADA",
   "CANCELADA_ADMIN",
 ];
-
-/** Las que el administrador todavía puede cerrar por su cuenta. */
-function cerrablePorAdmin(v: Visita): boolean {
-  return v.estado === "PROGRAMADA" || v.estado === "EN_CURSO";
-}
 
 interface Filtros {
   estado: string;
@@ -61,7 +57,6 @@ export default function VisitasTable({
   const router = useRouter();
   const ref = useReferencias();
   const { tecnicos, problemas: catalogoProblema } = ref;
-  const admin = esAdmin(ref);
   const { toast, aviso } = useToast();
   const [busqueda, setBusqueda] = useState("");
   const [f, setF] = useState<Filtros>({
@@ -71,8 +66,7 @@ export default function VisitasTable({
     tipo: tipoInicial ?? "",
   });
   const [nueva, setNueva] = useState(false);
-  /** La visita que el administrador está por cerrar desde el listado. */
-  const [cancelando, setCancelando] = useState<Visita | null>(null);
+  const [masivas, setMasivas] = useState(false);
 
   const fechas = useMemo(
     () => [...new Set(visitas.map((v) => v.fechaProgramada))].sort().reverse(),
@@ -117,13 +111,21 @@ export default function VisitasTable({
   return (
     <>
       <AdminHeader kicker={kicker} title={title}>
-        {permiteCrear ? (
-          <button onClick={() => setNueva(true)} className="btn btn-primary">
-            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4">
-              <path d="M12 5v14M5 12h14" />
-            </svg>
-            <span>Nueva visita</span>
-          </button>
+        {permiteCrear && puede(ref, "visitas.crear") ? (
+          <>
+            <button onClick={() => setMasivas(true)} className="btn btn-secondary">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                <path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" />
+              </svg>
+              <span>Visitas masivas</span>
+            </button>
+            <button onClick={() => setNueva(true)} className="btn btn-primary">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4">
+                <path d="M12 5v14M5 12h14" />
+              </svg>
+              <span>Nueva visita</span>
+            </button>
+          </>
         ) : null}
       </AdminHeader>
 
@@ -191,7 +193,7 @@ export default function VisitasTable({
                 <th>Motivo</th>
                 <th>Estado</th>
                 {mostrarMotivo ? <th>Motivo del técnico</th> : null}
-                <th style={{ width: admin ? 84 : 44 }} />
+                <th style={{ width: 44 }} />
               </tr>
             </thead>
             <tbody>
@@ -237,24 +239,6 @@ export default function VisitasTable({
                     </td>
                   ) : null}
                   <td className="text-right whitespace-nowrap">
-                    {/* Cerrar la visita vieja desde el propio listado: es donde
-                        se la encuentra, no entrando una por una al acta. */}
-                    {admin && cerrablePorAdmin(v) ? (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setCancelando(v);
-                        }}
-                        className="btn btn-icon w-8 h-8 border border-black/[.3] mr-1.5"
-                        aria-label={`Cancelar por admin ${v.folio}`}
-                        title="Cancelar por admin"
-                      >
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                          <circle cx="12" cy="12" r="8.5" />
-                          <path d="M6 6l12 12" />
-                        </svg>
-                      </button>
-                    ) : null}
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
@@ -293,13 +277,12 @@ export default function VisitasTable({
         />
       ) : null}
 
-      {cancelando ? (
-        <CancelarAdminDialogo
-          visita={cancelando}
-          onCerrar={() => setCancelando(null)}
-          onHecho={(mensaje) => {
+      {masivas ? (
+        <VisitasMasivasDialogo
+          onCerrar={() => setMasivas(false)}
+          onHecho={(mensaje, creadas) => {
             aviso(mensaje);
-            router.refresh();
+            if (creadas > 0) router.refresh();
           }}
         />
       ) : null}

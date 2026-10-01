@@ -25,6 +25,8 @@ export interface Referencias {
    * ofrecer un botón que el servidor va a rechazar igual.
    */
   rol: RolUsuario;
+  /** Lo que puede hacer quien está mirando: "<módulo>.<acción>". Ver lib/permisos.ts. */
+  permisos: string[];
   clientes: Cliente[];
   sucursales: Sucursal[];
   tecnicos: Tecnico[];
@@ -35,6 +37,7 @@ export interface Referencias {
 
 export const REFERENCIAS_VACIAS: Referencias = {
   rol: "TECNICO",
+  permisos: [],
   clientes: [],
   sucursales: [],
   tecnicos: [],
@@ -53,9 +56,12 @@ export function useReferencias(): Referencias {
   return useContext(Contexto);
 }
 
-/** ¿Quien está mirando es administrador? */
-export function esAdmin(ref: Referencias): boolean {
-  return ref.rol === "ADMIN";
+/**
+ * ¿Quien está mirando tiene ese permiso? Sirve para no ofrecer un botón que el
+ * servidor va a rechazar igual; la comprobación de verdad está en la acción.
+ */
+export function puede(ref: Referencias, permiso: string): boolean {
+  return ref.permisos.includes(permiso);
 }
 
 /** Nombre legible de un tipo de problema; si ya no está en el catálogo, su código. */

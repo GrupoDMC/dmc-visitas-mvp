@@ -107,11 +107,35 @@ CREATE TABLE dmc.tecnico (
 GO
 -- Todos los técnicos salen desde la oficina central: no se asigna zona.
 
+-- Roles del panel y qué puede hacer cada uno. Un permiso es "<módulo>.<acción>";
+-- la lista de permisos que existen vive en la app (lib/permisos.ts).
+CREATE TABLE dmc.rol (
+    id              bigint         IDENTITY(1,1) NOT NULL,
+    nombre          nvarchar(60)   NOT NULL,
+    descripcion     nvarchar(240)  NULL,
+    es_sistema      bit            NOT NULL CONSTRAINT df_rol_sistema DEFAULT (0),
+    creado_en       datetime2(0)   NOT NULL CONSTRAINT df_rol_creado DEFAULT (SYSDATETIME()),
+    actualizado_en  datetime2(0)   NOT NULL CONSTRAINT df_rol_actualizado DEFAULT (SYSDATETIME()),
+    CONSTRAINT pk_rol        PRIMARY KEY (id),
+    CONSTRAINT uq_rol_nombre UNIQUE (nombre)
+);
+GO
+CREATE TABLE dmc.rol_permiso (
+    rol_id   bigint       NOT NULL,
+    permiso  varchar(60)  NOT NULL,
+    CONSTRAINT pk_rol_permiso     PRIMARY KEY (rol_id, permiso),
+    CONSTRAINT fk_rol_permiso_rol FOREIGN KEY (rol_id) REFERENCES dmc.rol (id) ON DELETE CASCADE
+);
+GO
+
 CREATE TABLE dmc.usuario (
     id                bigint         IDENTITY(1,1) NOT NULL,
     email             nvarchar(160)  NOT NULL,
     password_hash     nvarchar(200)  NOT NULL,
     rol               varchar(12)    NOT NULL,
+    -- El rol del panel. Solo las cuentas COORDINADOR: el ADMIN puede todo y el
+    -- TECNICO entra por el celular.
+    rol_id            bigint         NULL,
     tecnico_id        bigint         NULL,
     activo            bit            NOT NULL CONSTRAINT df_usuario_activo DEFAULT (1),
     ultimo_acceso_en  datetime2(0)   NULL,
@@ -120,6 +144,8 @@ CREATE TABLE dmc.usuario (
     CONSTRAINT pk_usuario         PRIMARY KEY (id),
     CONSTRAINT uq_usuario_email   UNIQUE (email),
     CONSTRAINT fk_usuario_tecnico FOREIGN KEY (tecnico_id) REFERENCES dmc.tecnico (id),
+    CONSTRAINT fk_usuario_rol     FOREIGN KEY (rol_id) REFERENCES dmc.rol (id),
+    CONSTRAINT ck_usuario_rol_id  CHECK (rol_id IS NULL OR rol = 'COORDINADOR'),
     CONSTRAINT ck_usuario_rol     CHECK (rol IN ('ADMIN','COORDINADOR','TECNICO')),
     CONSTRAINT ck_usuario_tecnico CHECK (
         (rol =  'TECNICO' AND tecnico_id IS NOT NULL) OR
@@ -1060,12 +1086,33 @@ INSERT INTO dmc.tecnico (rut, nombres, apellido_paterno, apellido_materno, email
  ('14.007.663-5', N'Ignacio', N'Salas',   N'Muñoz',  N'ignacio.salas@grupodmc.cl',      '+56 9 3391 5540', 0);
 GO
 
+/* El rol «Coordinador»: todo menos cancelar por admin, eliminar visitas y
+   administrar roles. Es de sistema: se le editan los permisos, no se borra. */
+INSERT INTO dmc.rol (nombre, descripcion, es_sistema)
+VALUES (N'Coordinador', N'Agenda, corrige y reprograma visitas, y mantiene los maestros.', 1);
+
+INSERT INTO dmc.rol_permiso (rol_id, permiso)
+SELECT (SELECT id FROM dmc.rol WHERE nombre = N'Coordinador'), x.permiso
+FROM (VALUES
+        ('panel.ver'),
+        ('visitas.ver'), ('visitas.crear'), ('visitas.editar'), ('visitas.reprogramar'), ('visitas.enviar'),
+        ('reagendas.ver'),
+        ('problemas.ver'), ('problemas.editar'),
+        ('tecnicos.ver'), ('tecnicos.crear'), ('tecnicos.editar'),
+        ('usuarios.ver'), ('usuarios.crear'), ('usuarios.editar'), ('usuarios.contrasenas'),
+        ('clientes.ver'), ('clientes.crear'), ('clientes.editar'),
+        ('sucursales.ver'), ('sucursales.crear'), ('sucursales.editar'),
+        ('checklist.ver'), ('checklist.editar')
+) AS x(permiso);
+GO
+
 /* Hashes de ejemplo. En producción los genera la aplicación (bcrypt / Argon2);
    aquí se guarda un SHA2_512 en hexadecimal solo para poblar la tabla. */
-INSERT INTO dmc.usuario (email, password_hash, rol, tecnico_id, activo)
+INSERT INTO dmc.usuario (email, password_hash, rol, rol_id, tecnico_id, activo)
 SELECT x.email,
        CONCAT(N'sha512$', CONVERT(varchar(200), x.h, 2)),
        x.rol,
+       CASE WHEN x.rol = 'COORDINADOR' THEN (SELECT id FROM dmc.rol WHERE nombre = N'Coordinador') END,
        (SELECT t.id FROM dmc.tecnico t WHERE t.email = x.email),
        x.activo
 FROM (VALUES

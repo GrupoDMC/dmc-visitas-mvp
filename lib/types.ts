@@ -60,9 +60,23 @@ export interface Usuario {
   id: number;
   email: string;
   rol: RolUsuario;
+  /** El rol del panel (dmc.rol). Solo lo llevan las cuentas COORDINADOR. */
+  rolId?: number | null;
   tecnicoId: number | null;
   activo: boolean;
   ultimoAccesoEn: string | null;
+}
+
+/** Un rol del panel con lo que puede hacer. Ver lib/permisos.ts. */
+export interface Rol {
+  id: number;
+  nombre: string;
+  descripcion: string | null;
+  /** No se puede eliminar; sus permisos sí se editan. */
+  esSistema: boolean;
+  /** Cuántos usuarios lo tienen asignado. */
+  usuarios: number;
+  permisos: string[];
 }
 
 export interface CatalogoMotivo {

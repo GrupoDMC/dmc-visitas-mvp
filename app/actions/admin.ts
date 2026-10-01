@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { getSesion } from "@/lib/auth";
+import { sesionCon } from "@/lib/auth";
 import {
   actualizarProblema,
   cancelarVisitaPorAdmin,
@@ -35,26 +35,6 @@ export interface ResultadoAdmin {
   error?: string;
   /** Folio de la visita creada, para poder saltar a su acta. */
   folio?: string;
-}
-
-/** Coordinación y administración pueden operar el panel; el técnico no. */
-async function sesionPanel() {
-  const sesion = await getSesion();
-  if (!sesion || sesion.usuario.rol === "TECNICO") return null;
-  return sesion;
-}
-
-/**
- * Cerrar una visita por las malas es solo del administrador.
- *
- * Coordinación agenda, corrige y reprograma; dar por terminada una visita que
- * nunca se hizo es una decisión de otro orden y queda con nombre y apellido en
- * la bitácora.
- */
-async function sesionAdmin() {
-  const sesion = await getSesion();
-  if (!sesion || sesion.usuario.rol !== "ADMIN") return null;
-  return sesion;
 }
 
 function revalidarPanel(folio?: string) {
@@ -92,7 +72,7 @@ async function incluyeInstalacion(datos: DatosVisita): Promise<boolean> {
 }
 
 export async function crearVisitaAction(datos: DatosVisita): Promise<ResultadoAdmin> {
-  const sesion = await sesionPanel();
+  const sesion = await sesionCon("visitas.crear");
   if (!sesion) return { ok: false, error: "No tienes permiso para crear visitas." };
   if (!datos.clienteId || !datos.sucursalId || !datos.tecnicoId) {
     return { ok: false, error: "Cliente, sucursal y técnico asignado son obligatorios." };
@@ -117,8 +97,75 @@ export async function crearVisitaAction(datos: DatosVisita): Promise<ResultadoAd
   }
 }
 
+export interface ResultadoMasivo {
+  ok: boolean;
+  error?: string;
+  /** Folios de las visitas que sí quedaron creadas. */
+  folios: string[];
+  /** Sucursales cuya visita no se pudo crear, para reintentar solo esas. */
+  fallidas: number[];
+}
+
+/**
+ * "Visitas masivas": la ruta de un técnico, un local por visita.
+ *
+ * Cada elemento ya viene resuelto desde el diálogo (lo común más lo propio del
+ * local). Se valida todo antes de escribir nada; si después falla alguna en la
+ * base, las anteriores quedan creadas y se devuelve cuáles faltaron.
+ */
+export async function crearVisitasMasivasAction(visitas: DatosVisita[]): Promise<ResultadoMasivo> {
+  const falla = (error: string): ResultadoMasivo => ({
+    ok: false,
+    error,
+    folios: [],
+    fallidas: visitas.map((v) => v.sucursalId),
+  });
+
+  const sesion = await sesionCon("visitas.crear");
+  if (!sesion) return falla("No tienes permiso para crear visitas.");
+  if (visitas.length === 0) return falla("Agrega al menos un local a la ruta.");
+  if (new Set(visitas.map((v) => v.sucursalId)).size !== visitas.length) {
+    return falla("Hay un local repetido en la ruta.");
+  }
+
+  const motivos = await listarMotivos();
+  for (const datos of visitas) {
+    if (!datos.clienteId || !datos.sucursalId || !datos.tecnicoId) {
+      return falla("Cliente, sucursal y técnico asignado son obligatorios.");
+    }
+    if (!datos.motivoCodigo) return falla("Marca al menos un motivo de la visita.");
+    if (!datos.trabajoSolicitado.trim()) {
+      return falla("Escribe qué se necesita hacer: para todos o en cada local.");
+    }
+    if (!datos.fechaProgramada) return falla("Elige la fecha programada.");
+    if (datos.tecnicoAyudanteId && datos.tecnicoAyudanteId === datos.tecnicoId) {
+      return falla("El ayudante no puede ser el mismo técnico asignado.");
+    }
+    const marcados = datos.motivosCodigos?.length ? datos.motivosCodigos : [datos.motivoCodigo];
+    if (!datos.horaProgramada && algunoPideHora(marcados, motivos)) {
+      return falla("En instalación la hora es obligatoria en cada local.");
+    }
+  }
+
+  const folios: string[] = [];
+  const fallidas: number[] = [];
+  let error: string | undefined;
+  for (const datos of visitas) {
+    try {
+      const visita = await crearVisita({ ...datos, problemaOrigenId: null, creadaEnTerreno: false }, sesion.usuario.id);
+      folios.push(visita.folio);
+    } catch (err) {
+      fallidas.push(datos.sucursalId);
+      error = comoError(err, "crearVisitasMasivas").error;
+    }
+  }
+
+  if (folios.length > 0) revalidarPanel();
+  return { ok: fallidas.length === 0, error, folios, fallidas };
+}
+
 export async function editarVisitaAction(folio: string, datos: DatosVisita): Promise<ResultadoAdmin> {
-  const sesion = await sesionPanel();
+  const sesion = await sesionCon("visitas.editar");
   if (!sesion) return { ok: false, error: "No tienes permiso para editar visitas." };
   if (!datos.clienteId || !datos.sucursalId || !datos.tecnicoId) {
     return { ok: false, error: "Cliente, sucursal y técnico asignado son obligatorios." };
@@ -150,7 +197,7 @@ export async function reprogramarVisitaAction(input: {
   fecha: string;
   hora: string | null;
 }): Promise<ResultadoAdmin> {
-  const sesion = await sesionPanel();
+  const sesion = await sesionCon("visitas.reprogramar");
   if (!sesion) return { ok: false, error: "No tienes permiso para reprogramar visitas." };
   if (!input.tecnicoId || !input.fecha) return { ok: false, error: "Elige el técnico y la nueva fecha." };
   if (!input.hora) {
@@ -189,9 +236,9 @@ export async function cancelarVisitaAdminAction(input: {
   folio: string;
   motivo: string;
 }): Promise<ResultadoAdmin> {
-  const sesion = await sesionAdmin();
+  const sesion = await sesionCon("visitas.cancelar");
   if (!sesion) {
-    return { ok: false, error: "Solo un administrador puede cerrar una visita por su cuenta." };
+    return { ok: false, error: "No tienes permiso para cancelar visitas por admin." };
   }
   const motivo = input.motivo.trim();
   if (motivo.length < 10) {
@@ -218,7 +265,7 @@ export async function cancelarVisitaAdminAction(input: {
  * A diferencia de "Cancelar por admin", esto vale sobre cualquier estado
  * (incluida una COMPLETADA): es para una visita que nunca debió existir —el
  * cliente de prueba, el ensayo del técnico— y no para una que se hizo pero ya
- * no sirve. Solo un administrador, y solo si escribe el folio de nuevo: es la
+ * no sirve. Solo quien tenga el permiso, y solo si escribe el folio de nuevo: es la
  * traba contra el clic accidental. Queda con nombre y apellido en
  * dmc.visita_eliminacion.
  */
@@ -226,9 +273,9 @@ export async function eliminarVisitaAction(input: {
   folio: string;
   confirmacionFolio: string;
 }): Promise<ResultadoAdmin> {
-  const sesion = await sesionAdmin();
+  const sesion = await sesionCon("visitas.eliminar");
   if (!sesion) {
-    return { ok: false, error: "Solo un administrador puede eliminar una visita." };
+    return { ok: false, error: "No tienes permiso para eliminar visitas." };
   }
 
   try {
@@ -250,7 +297,7 @@ export async function actualizarProblemaAction(input: {
   estado: EstadoProblema;
   tipoCodigo: string;
 }): Promise<ResultadoAdmin> {
-  const sesion = await sesionPanel();
+  const sesion = await sesionCon("problemas.editar");
   if (!sesion) return { ok: false, error: "No tienes permiso para cambiar problemas." };
 
   try {
@@ -272,7 +319,7 @@ export async function enviarActaAction(input: {
   cuerpo?: string;
   adjuntos: number;
 }): Promise<ResultadoAdmin> {
-  const sesion = await sesionPanel();
+  const sesion = await sesionCon("visitas.enviar");
   if (!sesion) return { ok: false, error: "No tienes permiso para enviar actas." };
   if (!input.para.includes("@")) return { ok: false, error: "Escribe el correo del destinatario." };
   if (!input.asunto.trim()) return { ok: false, error: "El asunto no puede ir vacío." };
@@ -336,7 +383,7 @@ function repetidos(nombres: string[]): string | null {
 }
 
 export async function guardarChecklistAction(borrador: BorradorChecklist): Promise<ResultadoChecklist> {
-  const sesion = await sesionPanel();
+  const sesion = await sesionCon("checklist.editar");
   if (!sesion) return { ok: false, error: "No tienes permiso para editar el checklist." };
 
   const choque =
@@ -366,7 +413,7 @@ export async function guardarChecklistAction(borrador: BorradorChecklist): Promi
 
 /** Guarda la lista actual como la plantilla propia del panel. */
 export async function guardarPlantillaChecklistAction(): Promise<ResultadoChecklist> {
-  const sesion = await sesionPanel();
+  const sesion = await sesionCon("checklist.editar");
   if (!sesion) return { ok: false, error: "No tienes permiso para editar el checklist." };
   try {
     const plantilla = await guardarPlantilla(PLANTILLA_PROPIA, sesion.usuario.id);
@@ -378,7 +425,7 @@ export async function guardarPlantillaChecklistAction(): Promise<ResultadoCheckl
 
 /** Deja las tres listas exactamente como quedaron en la plantilla propia. */
 export async function reiniciarChecklistAction(): Promise<ResultadoChecklist> {
-  const sesion = await sesionPanel();
+  const sesion = await sesionCon("checklist.editar");
   if (!sesion) return { ok: false, error: "No tienes permiso para editar el checklist." };
   try {
     const resumen = await aplicarPlantilla(PLANTILLA_PROPIA);
@@ -397,7 +444,7 @@ export async function atenderSolicitudPasswordAction(
   id: number,
   passwordTemporal: string
 ): Promise<ResultadoAdmin> {
-  const sesion = await sesionPanel();
+  const sesion = await sesionCon("usuarios.contrasenas");
   if (!sesion) return { ok: false, error: "No tienes permiso para asignar contraseñas." };
   if (passwordTemporal.trim().length < 8) {
     return { ok: false, error: "La contraseña temporal debe tener al menos 8 caracteres." };
@@ -418,7 +465,7 @@ export async function atenderSolicitudPasswordAction(
 }
 
 export async function descartarSolicitudPasswordAction(id: number): Promise<ResultadoAdmin> {
-  const sesion = await sesionPanel();
+  const sesion = await sesionCon("usuarios.contrasenas");
   if (!sesion) return { ok: false, error: "No tienes permiso para cerrar solicitudes." };
   try {
     if (!(await descartarSolicitudPassword(id, sesion.usuario.id))) {

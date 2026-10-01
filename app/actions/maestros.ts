@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { getSesion } from "@/lib/auth";
+import { sesionCon } from "@/lib/auth";
 import {
   guardarCliente,
   guardarSucursal,
@@ -12,7 +12,10 @@ import {
   type DatosSucursal,
   type DatosTecnico,
   type DatosUsuario,
+  listarUsuarios,
 } from "@/lib/data/maestros";
+import { eliminarRol, guardarRol, listarRoles, type DatosRol } from "@/lib/data/roles";
+import { normalizarPermisos, tiene } from "@/lib/permisos";
 import { mensajeRut, rutCompleto } from "@/lib/ui/formato";
 import type { RolUsuario } from "@/lib/types";
 
@@ -23,10 +26,9 @@ export interface ResultadoMaestro {
   error?: string;
 }
 
-/** Coordinación y administración pueden operar los maestros; el técnico no. */
-async function permitido(): Promise<boolean> {
-  const sesion = await getSesion();
-  return !!sesion && sesion.usuario.rol !== "TECNICO";
+/** Agregar y editar son permisos distintos: `id` null es un alta. */
+function sesionMaestro(modulo: string, id: number | null) {
+  return sesionCon(`${modulo}.${id === null ? "crear" : "editar"}`);
 }
 
 /**
@@ -47,6 +49,8 @@ function mensajeDeError(err: unknown, contexto: string): string {
   if (/uq_sucursal_cliente_nombre/i.test(texto)) return "Ese cliente ya tiene una sucursal con ese nombre.";
   if (/uq_usuario_tecnico/i.test(texto)) return "Ese técnico ya está vinculado a otro usuario.";
   if (/ck_usuario_tecnico/i.test(texto)) return "Un usuario TÉCNICO necesita un técnico vinculado, y los demás roles no pueden tenerlo.";
+  if (/uq_rol_nombre/i.test(texto)) return "Ya existe un rol con ese nombre.";
+  if (/fk_usuario_rol/i.test(texto)) return "Ese rol ya no existe. Recarga la página y elige otro.";
   if (/duplicate|unique/i.test(texto)) return "Ya existe un registro con esos datos.";
   console.error(`[dmc] ${contexto}:`, err);
   return "No se pudo guardar. Revisa los datos e inténtalo otra vez.";
@@ -57,7 +61,7 @@ function revalidar() {
 }
 
 export async function guardarClienteAction(id: number | null, datos: DatosCliente): Promise<ResultadoMaestro> {
-  if (!(await permitido())) return { ok: false, error: "No tienes permiso para editar clientes." };
+  if (!(await sesionMaestro("clientes", id))) return { ok: false, error: "No tienes permiso para editar clientes." };
   if (!datos.razonSocial.trim() || !datos.rut.trim()) {
     return { ok: false, error: "Razón social y RUT son obligatorios." };
   }
@@ -72,7 +76,7 @@ export async function guardarClienteAction(id: number | null, datos: DatosClient
 }
 
 export async function guardarSucursalAction(id: number | null, datos: DatosSucursal): Promise<ResultadoMaestro> {
-  if (!(await permitido())) return { ok: false, error: "No tienes permiso para editar sucursales." };
+  if (!(await sesionMaestro("sucursales", id))) return { ok: false, error: "No tienes permiso para editar sucursales." };
   if (!datos.nombre.trim() || !datos.clienteId) {
     return { ok: false, error: "Nombre y cliente son obligatorios." };
   }
@@ -86,7 +90,7 @@ export async function guardarSucursalAction(id: number | null, datos: DatosSucur
 }
 
 export async function guardarTecnicoAction(id: number | null, datos: DatosTecnico): Promise<ResultadoMaestro> {
-  if (!(await permitido())) return { ok: false, error: "No tienes permiso para editar técnicos." };
+  if (!(await sesionMaestro("tecnicos", id))) return { ok: false, error: "No tienes permiso para editar técnicos." };
   if (!datos.nombres.trim() || !datos.rut.trim() || !datos.email.trim()) {
     return { ok: false, error: "Nombre, RUT y correo son obligatorios." };
   }
@@ -104,8 +108,29 @@ export async function guardarUsuarioAction(
   id: number | null,
   datos: DatosUsuario & { rol: RolUsuario }
 ): Promise<ResultadoMaestro> {
-  if (!(await permitido())) return { ok: false, error: "No tienes permiso para editar usuarios." };
+  const sesion = await sesionMaestro("usuarios", id);
+  if (!sesion) return { ok: false, error: "No tienes permiso para editar usuarios." };
   if (!datos.email.includes("@")) return { ok: false, error: "Escribe un correo válido." };
+
+  // Quien no es administrador no puede fabricarse más acceso del que tiene:
+  // ni tocar cuentas de administrador, ni cambiarse el rol, ni dar un rol que
+  // pueda más que él.
+  if (sesion.usuario.rol !== "ADMIN") {
+    const actual = id === null ? null : (await listarUsuarios()).find((u) => u.id === id) ?? null;
+    if (datos.rol === "ADMIN" || actual?.rol === "ADMIN") {
+      return { ok: false, error: "Solo un administrador puede crear o editar cuentas de administrador." };
+    }
+    const cambiaRol = !actual || actual.rol !== datos.rol || (actual.rolId ?? null) !== (datos.rolId ?? null);
+    if (id === sesion.usuario.id && cambiaRol) {
+      return { ok: false, error: "No puedes cambiar tu propio rol." };
+    }
+    if (cambiaRol && datos.rol === "COORDINADOR") {
+      const rol = (await listarRoles())?.find((r) => r.id === datos.rolId);
+      if (rol && !rol.permisos.every((p) => tiene(sesion.permisos, p))) {
+        return { ok: false, error: `El rol «${rol.nombre}» tiene permisos que tú no tienes: no lo puedes asignar.` };
+      }
+    }
+  }
   if (datos.rol === "TECNICO" && !datos.tecnicoId) {
     return { ok: false, error: "Un usuario TÉCNICO necesita técnico vinculado." };
   }
@@ -121,6 +146,49 @@ export async function guardarUsuarioAction(
     await guardarUsuario(id, datos);
   } catch (err) {
     return { ok: false, error: mensajeDeError(err, "guardarUsuario") };
+  }
+  revalidar();
+  return { ok: true };
+}
+
+// ── Roles y permisos ────────────────────────────────────────────────────────
+
+/** Crea un rol o cambia su nombre y lo que puede hacer. */
+export async function guardarRolAction(id: number | null, datos: DatosRol): Promise<ResultadoMaestro> {
+  const sesion = await sesionCon("usuarios.roles");
+  if (!sesion) return { ok: false, error: "No tienes permiso para administrar roles." };
+  const nombre = datos.nombre.trim();
+  if (!nombre) return { ok: false, error: "El rol necesita un nombre." };
+  if (/^(administrador|t[eé]cnico)$/i.test(nombre)) {
+    return { ok: false, error: "Ese nombre es de un rol fijo del sistema. Elige otro." };
+  }
+  const permisos = normalizarPermisos(datos.permisos);
+  if (permisos.length === 0) return { ok: false, error: "Marca al menos un permiso: un rol vacío no puede ver nada." };
+
+  try {
+    // Quien no es administrador solo da o quita los permisos que él tiene.
+    if (sesion.usuario.rol !== "ADMIN") {
+      const previos = id === null ? [] : (await listarRoles())?.find((r) => r.id === id)?.permisos ?? [];
+      const tocados = [...permisos.filter((p) => !previos.includes(p)), ...previos.filter((p) => !permisos.includes(p))];
+      if (tocados.some((p) => !tiene(sesion.permisos, p))) {
+        return { ok: false, error: "Solo puedes dar o quitar permisos que tú también tienes." };
+      }
+    }
+    await guardarRol(id, { nombre, descripcion: datos.descripcion, permisos });
+  } catch (err) {
+    return { ok: false, error: mensajeDeError(err, "guardarRol") };
+  }
+  revalidar();
+  return { ok: true };
+}
+
+export async function eliminarRolAction(id: number): Promise<ResultadoMaestro> {
+  if (!(await sesionCon("usuarios.roles"))) return { ok: false, error: "No tienes permiso para administrar roles." };
+  try {
+    const fallo = await eliminarRol(id);
+    if (fallo) return { ok: false, error: fallo };
+  } catch (err) {
+    return { ok: false, error: mensajeDeError(err, "eliminarRol") };
   }
   revalidar();
   return { ok: true };
