@@ -158,13 +158,29 @@ function TiendasDialogo({
     .filter((s): s is Sucursal => Boolean(s))
     .sort((a, b) => `${nombreCliente(a.clienteId)} ${a.nombre}`.localeCompare(`${nombreCliente(b.clienteId)} ${b.nombre}`));
 
-  // Las sucursales del cliente elegido que todavía no están en la lista. Si
-  // una ya es de otro mall se avisa: agregarla acá la saca de allá.
+  /** El mall en el que ya está la sucursal, si es otro que este. */
+  const otroMall = (s: Sucursal) =>
+    s.mallId && s.mallId !== mall.id ? malls.find((m) => m.id === s.mallId)?.nombre ?? "otro mall" : null;
+
+  // Una sucursal está en un solo mall: si ya es de otro no entra a la lista,
+  // y se dice ahí mismo, sin esperar a guardar.
+  function agregar(id: number) {
+    const s = sucursales.find((x) => x.id === id);
+    if (!s) return;
+    const otro = otroMall(s);
+    if (otro) {
+      return onHecho(`${nombreCliente(s.clienteId)} · ${s.nombre} ya está en ${otro}. Quítala de ese mall primero.`, false);
+    }
+    setIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
+  }
+
+  // Las sucursales del cliente elegido que todavía no están en la lista. Las
+  // que ya son de otro mall se muestran marcadas, pero no se pueden agregar.
   const libres = sucursales
     .filter((s) => s.activo && String(s.clienteId) === clienteSel && !ids.includes(s.id))
     .map((s) => {
-      const otro = s.mallId && s.mallId !== mall.id ? malls.find((m) => m.id === s.mallId)?.nombre : null;
-      return { v: String(s.id), t: otro ? `${s.nombre} · hoy en ${otro}` : s.nombre };
+      const otro = otroMall(s);
+      return { v: String(s.id), t: otro ? `${s.nombre} · ya en ${otro}` : s.nombre };
     });
 
   // Búsqueda por palabra: todas las sucursales, de cualquier cliente, que la
@@ -190,7 +206,7 @@ function TiendasDialogo({
       kicker="Maestro · tiendas del mall"
       titulo={mall.nombre}
       cta="Guardar tiendas"
-      nota="Cada tienda es una sucursal de un cliente. Si todavía no existe, créala primero en Maestros › Sucursales. Una sucursal está en un solo mall: al agregarla acá sale del que tenía."
+      nota="Cada tienda es una sucursal de un cliente. Si todavía no existe, créala primero en Maestros › Sucursales. Una sucursal está en un solo mall: si ya está en otro, hay que quitarla de ese antes de agregarla acá."
       campos={[]}
       form={{}}
       onCampo={() => {}}
@@ -230,18 +246,18 @@ function TiendasDialogo({
             {encontradas.length ? (
               <div className="max-h-56 overflow-y-auto border-t border-black/[.18]">
                 {encontradas.map((s) => {
-                  const otro = s.mallId && s.mallId !== mall.id ? malls.find((m) => m.id === s.mallId)?.nombre : null;
+                  const otro = otroMall(s);
                   return (
                     <div key={s.id} className="flex items-center gap-2 px-3.5 py-2 border-b border-black/[.18] last:border-b-0">
                       <div className="flex-1 min-w-0">
                         <div className="text-[14px] truncate">
                           {nombreCliente(s.clienteId)} · {s.nombre}
                         </div>
-                        <div className="text-[11px] opacity-66 truncate">{otro ? `Hoy en ${otro} · ${s.direccion}` : s.direccion}</div>
+                        <div className="text-[11px] opacity-66 truncate">{otro ? `Ya en ${otro} · ${s.direccion}` : s.direccion}</div>
                       </div>
                       <button
                         type="button"
-                        onClick={() => setIds((prev) => [...prev, s.id])}
+                        onClick={() => agregar(s.id)}
                         className="btn btn-icon w-8 h-8 flex-none border border-black/[.3]"
                         aria-label={`Agregar ${s.nombre} al mall`}
                         title="Agregar al mall"
@@ -275,7 +291,7 @@ function TiendasDialogo({
                 valor=""
                 opciones={libres}
                 onChange={(v) => {
-                  if (v) setIds((prev) => [...prev, Number(v)]);
+                  if (v) agregar(Number(v));
                 }}
                 placeholder={libres.length ? "Elige y se agrega al mall…" : "No quedan sucursales por agregar"}
                 ariaLabel="Agregar tienda"

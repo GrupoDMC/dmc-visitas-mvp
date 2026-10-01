@@ -13,6 +13,7 @@ import {
   guardarUsuario,
   ponerTiendasDeMall,
   RutRepetido,
+  TiendaEnOtroMall,
   type DatosCliente,
   type DatosMall,
   type DatosSucursal,
@@ -47,6 +48,9 @@ function mensajeDeError(err: unknown, contexto: string): string {
     return err.donde === "cliente"
       ? `El RUT ${err.rut} ya está registrado en otra empresa. El RUT es único: busca esa empresa y edítala.`
       : `El RUT ${err.rut} ya está registrado en otra persona. El RUT es único: busca a esa persona y edítala.`;
+  }
+  if (err instanceof TiendaEnOtroMall) {
+    return `Ya está en otro mall: ${err.tiendas.join(", ")}. Una sucursal está en un solo mall: quítala de ese primero.`;
   }
   if (faltaMigracionNotas(err)) {
     return "Falta aplicar la migración 009 en la base de datos. Avísale al administrador.";

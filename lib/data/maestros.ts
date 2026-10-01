@@ -221,23 +221,43 @@ export async function guardarMall(id: number | null, d: DatosMall): Promise<numb
   return id;
 }
 
+/** Una sucursal está en un solo mall: no se saca de uno por agregarla a otro. */
+export class TiendaEnOtroMall extends Error {
+  constructor(public readonly tiendas: string[]) {
+    super(`Sucursales que ya están en otro mall: ${tiendas.join(", ")}`);
+    this.name = "TiendaEnOtroMall";
+  }
+}
+
 /**
  * Deja en el mall exactamente esas tiendas: las que ya no vienen se sueltan y
- * las que vienen quedan en él, aunque estuvieran en otro mall.
+ * las que vienen quedan en él. Si alguna ya está en otro mall no se guarda nada.
  */
 export async function ponerTiendasDeMall(mallId: number, sucursalIds: number[]): Promise<void> {
   // Los ids van como JSON: la lista no tiene largo fijo y así sigue siendo un parámetro.
+  const params: Parameters<typeof ejecutar>[1] = [
+    ["mall", sql.BigInt, mallId],
+    ["ids", sql.NVarChar(sql.MAX), JSON.stringify(sucursalIds)],
+  ];
+  const ajenas = await consultaCon<{ nombre: string; mall: string }>(
+    `SELECT s.nombre, m.nombre AS mall
+       FROM dmc.sucursal s
+       JOIN (SELECT CAST([value] AS bigint) AS id FROM OPENJSON(@ids)) t ON t.id = s.id
+       JOIN dmc.mall m ON m.id = s.mall_id
+      WHERE s.mall_id <> @mall
+      ORDER BY s.nombre`,
+    params
+  );
+  if (ajenas.length) throw new TiendaEnOtroMall(ajenas.map((a) => `${a.nombre} (${a.mall})`));
+  // Solo entran las que están sin mall: si otro la tomó entre medio, no se le quita.
   await ejecutar(
     `UPDATE s
         SET mall_id = CASE WHEN t.id IS NULL THEN NULL ELSE @mall END
        FROM dmc.sucursal s
        LEFT JOIN (SELECT CAST([value] AS bigint) AS id FROM OPENJSON(@ids)) t ON t.id = s.id
       WHERE (s.mall_id = @mall AND t.id IS NULL)
-         OR (t.id IS NOT NULL AND (s.mall_id IS NULL OR s.mall_id <> @mall))`,
-    [
-      ["mall", sql.BigInt, mallId],
-      ["ids", sql.NVarChar(sql.MAX), JSON.stringify(sucursalIds)],
-    ]
+         OR (t.id IS NOT NULL AND s.mall_id IS NULL)`,
+    params
   );
 }
 
