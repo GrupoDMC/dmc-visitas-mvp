@@ -64,15 +64,19 @@ export default function ActaView({
   const ejecutada = visita.estado !== "PROGRAMADA";
   const cerrada = visita.estado === "COMPLETADA";
   const reprogramable = ["REAGENDADA", "PENDIENTE", "CANCELADA"].includes(visita.estado);
-  const sinCerrar = !cerrada && visita.estado !== "CANCELADA";
+  // Una visita eliminada solo la abre el administrador, y solo para mirarla:
+  // no se corrige, no se envía ni se agenda nada desde ella.
+  const eliminada = visita.eliminacion;
+  const permite = (permiso: string) => !eliminada && puede(ref, permiso);
+  const sinCerrar = !eliminada && !cerrada && visita.estado !== "CANCELADA";
   // El cierre administrativo: solo con el permiso, y solo sobre una visita
   // que está en curso o que todavía no se inicia. Una completada ya tiene acta
   // firmada y una cancelada no hay nada que cerrar.
   const cerrablePorAdmin =
-    puede(ref, "visitas.cancelar") && (visita.estado === "PROGRAMADA" || visita.estado === "EN_CURSO");
-  const eliminable = puede(ref, "visitas.eliminar");
+    permite("visitas.cancelar") && (visita.estado === "PROGRAMADA" || visita.estado === "EN_CURSO");
+  const eliminable = permite("visitas.eliminar");
   // En curso la tiene tomada un técnico: liberarla la devuelve a programada.
-  const liberable = puede(ref, "visitas.liberar") && visita.estado === "EN_CURSO";
+  const liberable = permite("visitas.liberar") && visita.estado === "EN_CURSO";
   const tomadaPor = nombreDeQuienLaTomo(visita);
   const duracion = ejec ? minutosEntre(ejec.horaInicio, ejec.horaTermino) : null;
   const firma = visita.firmas?.[0];
@@ -130,6 +134,7 @@ export default function ActaView({
           </svg>
           <span>Volver a visitas</span>
         </Link>
+        {eliminada ? <Tag variant="dark">Eliminada</Tag> : null}
         <Tag variant={ESTADO_VISITA_TAG[visita.estado]}>{ESTADO_VISITA_LABEL[visita.estado]}</Tag>
         <div className="text-[11px] tracking-[.08em] uppercase opacity-62 tabular-nums">{sello}</div>
         {enviada ? (
@@ -144,7 +149,7 @@ export default function ActaView({
         ) : null}
 
         <div className="ml-auto flex gap-2 flex-wrap">
-          {cerrada && puede(ref, "visitas.enviar") ? (
+          {cerrada && permite("visitas.enviar") ? (
             <button onClick={() => setDialogo("correo")} className="btn btn-primary min-h-[38px] px-3.5">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
                 <rect x="3" y="5" width="18" height="14" />
@@ -153,7 +158,7 @@ export default function ActaView({
               <span>Enviar por correo</span>
             </button>
           ) : null}
-          {reprogramable && puede(ref, "visitas.reprogramar") ? (
+          {reprogramable && permite("visitas.reprogramar") ? (
             <button onClick={() => setDialogo("reprogramar")} className="btn btn-primary min-h-[38px] px-3.5">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
                 <rect x="3" y="5" width="18" height="16" />
@@ -179,7 +184,7 @@ export default function ActaView({
             <span>Trazabilidad</span>
           </button>
           {/* El PDF es el acta que va al cliente: sin comentario interno. */}
-          {cerrada ? (
+          {cerrada && !eliminada ? (
             <a
               href={`/api/visita/acta/${encodeURIComponent(visita.folio)}`}
               download={`Acta ${visita.folio}.pdf`}
@@ -193,6 +198,15 @@ export default function ActaView({
           ) : null}
         </div>
       </div>
+
+      {eliminada ? (
+        <div className="mx-7 mt-5 px-4 py-3.5 bg-[var(--color-accent-200)] border-l-4 border-[var(--color-accent)] text-[13px] text-[var(--color-accent-800)]">
+          Esta visita está eliminada
+          {eliminada.en ? ` desde el ${eliminada.en.slice(0, 10)} a las ${hhmm(eliminada.en)}` : ""} · la eliminó{" "}
+          {eliminada.por}. Solo la ve el administrador: para los demás roles y para el técnico no existe, y no cuenta en
+          el panel, los gráficos ni los problemas.
+        </div>
+      ) : null}
 
       {sinCerrar ? (
         <div className="mx-7 mt-5 px-4 py-3.5 bg-[var(--color-accent-200)] border-l-4 border-[var(--color-accent)] text-[13px] text-[var(--color-accent-800)]">
@@ -258,7 +272,7 @@ export default function ActaView({
                   </div>
                 ))}
               </div>
-              {puede(ref, "visitas.editar") ? (
+              {permite("visitas.editar") ? (
               <div className="px-5 py-4 border-b border-black/[.2] flex items-center gap-3 flex-wrap">
                 <button
                   onClick={() => setDialogo("editar")}
@@ -461,7 +475,7 @@ export default function ActaView({
                         ) : (
                           <div className="pb-4" />
                         )}
-                        {p.estado !== "RESUELTO" && puede(ref, "visitas.crear") ? (
+                        {p.estado !== "RESUELTO" && permite("visitas.crear") ? (
                           <div className="pb-4 -mt-1">
                             <button
                               onClick={() =>

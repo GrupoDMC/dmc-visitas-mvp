@@ -601,7 +601,7 @@ export function EliminarVisitaDialogo({
       kicker="Operación · eliminar visita"
       titulo={`Eliminar ${visita.folio}`}
       cta="Eliminar visita"
-      nota="No se borra de la base: queda inactiva y registrada en la auditoría de eliminaciones, con tu usuario y la fecha. Pero desaparece del panel, del celular del técnico y de los gráficos de coordinación, y no hay forma de deshacerlo desde acá — si hace falta recuperarla, hay que pedirlo directo en la base de datos."
+      nota="No se borra de la base: queda inactiva y registrada en la auditoría de eliminaciones, con tu usuario y la fecha. Pero desaparece del panel, del celular del técnico, de los problemas y de los gráficos de coordinación —solo el administrador la sigue viendo, con el filtro «Eliminadas»—, y no hay forma de deshacerlo desde acá — si hace falta recuperarla, hay que pedirlo directo en la base de datos."
       campos={campos}
       form={form}
       onCampo={(k, v) => setForm((prev) => ({ ...prev, [k]: v }))}

@@ -30,12 +30,19 @@ interface Filtros {
   tipo: string;
 }
 
+/**
+ * No es un estado: es la opción del filtro que le muestra al administrador las
+ * visitas eliminadas. Nadie más la tiene, y sin elegirla no aparecen.
+ */
+const ELIMINADAS = "ELIMINADAS";
+
 const SIN_FILTROS: Filtros = { estado: "TODAS", fecha: "", tecnicoId: "", tipo: "" };
 
 export default function VisitasTable({
   kicker,
   title,
   visitas,
+  eliminadas,
   estadoInicial,
   fechaInicial,
   tecnicoInicial,
@@ -48,6 +55,8 @@ export default function VisitasTable({
   kicker: string;
   title: string;
   visitas: Visita[];
+  /** Las eliminadas. Solo le llegan al administrador; para el resto, undefined. */
+  eliminadas?: Visita[];
   estadoInicial?: string;
   fechaInicial?: string;
   tecnicoInicial?: string;
@@ -76,8 +85,10 @@ export default function VisitasTable({
 
   const filtradas = useMemo(() => {
     const q = busqueda.trim().toLowerCase();
-    return visitas.filter((v) => {
-      if (f.estado !== "TODAS" && v.estado !== f.estado) return false;
+    // Las eliminadas van en su propia lista: nunca se mezclan con las vigentes.
+    const verEliminadas = f.estado === ELIMINADAS;
+    return (verEliminadas ? eliminadas ?? [] : visitas).filter((v) => {
+      if (!verEliminadas && f.estado !== "TODAS" && v.estado !== f.estado) return false;
       if (f.fecha && v.fechaProgramada !== f.fecha) return false;
       // Filtrar por técnico trae también las visitas en las que va de ayudante.
       if (f.tecnicoId && String(v.tecnicoId) !== f.tecnicoId && String(v.tecnicoAyudanteId) !== f.tecnicoId) {
@@ -88,14 +99,16 @@ export default function VisitasTable({
       const hay = `${v.folio} ${v.sucursal?.nombre ?? ""} ${v.cliente?.nombreFantasia ?? ""} ${v.tecnico?.nombreCompleto ?? ""} ${v.tecnicoAyudante?.nombreCompleto ?? ""} ${v.motivosNombres.join(" ")}`;
       return hay.toLowerCase().includes(q);
     });
-  }, [visitas, busqueda, f]);
+  }, [visitas, eliminadas, busqueda, f]);
 
+  // La fecha con margen de días ("desde → hasta") necesita el doble de ancho.
+  const hayMargen = filtradas.some((v) => v.fechaHasta);
   const mostrarMotivo = conMotivoTecnico || f.estado === "REAGENDADA" || f.estado === "PENDIENTE";
 
   const chips: ChipFiltro[] = [];
   if (f.estado !== "TODAS") {
     chips.push({
-      label: `Estado: ${ESTADO_VISITA_LABEL[f.estado as EstadoVisita]}`,
+      label: f.estado === ELIMINADAS ? "Eliminadas" : `Estado: ${ESTADO_VISITA_LABEL[f.estado as EstadoVisita]}`,
       onQuitar: () => setF((p) => ({ ...p, estado: "TODAS" })),
     });
   }
@@ -148,6 +161,7 @@ export default function VisitasTable({
               opciones: [
                 { v: "TODAS", t: "Todos los estados" },
                 ...ESTADOS.map((e) => ({ v: e, t: ESTADO_VISITA_LABEL[e] })),
+                ...(eliminadas ? [{ v: ELIMINADAS, t: `Eliminadas (${eliminadas.length})` }] : []),
               ],
               onChange: (v) => setF((p) => ({ ...p, estado: v })),
             },
@@ -181,8 +195,22 @@ export default function VisitasTable({
           ]}
         />
 
-        <div className="px-7">
-          <table className="table">
+        {/* Anchos fijos: las columnas de texto se reparten lo que sobra y se
+            cortan con "…", así el botón de ver nunca se sale de la pantalla. */}
+        <div className="px-7 overflow-x-auto">
+          <table className="table table-fixed min-w-[980px]">
+            <colgroup>
+              <col style={{ width: 124 }} />
+              <col style={{ width: hayMargen ? 200 : 108 }} />
+              <col style={{ width: 80 }} />
+              <col />
+              <col />
+              <col />
+              <col />
+              <col style={{ width: 164 }} />
+              {mostrarMotivo ? <col /> : null}
+              <col style={{ width: 52 }} />
+            </colgroup>
             <thead>
               <tr>
                 <th>Folio</th>
@@ -194,7 +222,7 @@ export default function VisitasTable({
                 <th>Motivo</th>
                 <th>Estado</th>
                 {mostrarMotivo ? <th>Motivo del técnico</th> : null}
-                <th style={{ width: 44 }} />
+                <th />
               </tr>
             </thead>
             <tbody>
@@ -210,14 +238,13 @@ export default function VisitasTable({
                     {v.horaProgramada ?? "Sin hora"}
                   </td>
                   <td>
-                    <Recorte ancho={170} texto={v.cliente?.nombreFantasia} />
+                    <Recorte texto={v.cliente?.nombreFantasia} />
                   </td>
                   <td className="opacity-70">
-                    <Recorte ancho={190} texto={v.sucursal?.nombre} />
+                    <Recorte texto={v.sucursal?.nombre} />
                   </td>
                   <td className="opacity-70">
                     <Recorte
-                      ancho={170}
                       texto={
                         v.tecnicoAyudante
                           ? `${v.tecnico?.nombreCompleto ?? ""} + ${v.tecnicoAyudante.nombreCompleto}`
@@ -226,15 +253,18 @@ export default function VisitasTable({
                     />
                   </td>
                   <td className="opacity-70">
-                    <Recorte ancho={210} texto={textoMotivos(v)} />
+                    <Recorte texto={textoMotivos(v)} />
                   </td>
                   <td>
-                    <Tag variant={ESTADO_VISITA_TAG[v.estado]}>{ESTADO_VISITA_LABEL[v.estado]}</Tag>
+                    {v.eliminacion ? (
+                      <Tag variant="dark">Eliminada</Tag>
+                    ) : (
+                      <Tag variant={ESTADO_VISITA_TAG[v.estado]}>{ESTADO_VISITA_LABEL[v.estado]}</Tag>
+                    )}
                   </td>
                   {mostrarMotivo ? (
                     <td className="opacity-70">
                       <Recorte
-                        ancho={260}
                         texto={v.motivoPendiente ?? v.reagendamientos?.[0]?.motivo ?? "Sin motivo registrado"}
                       />
                     </td>
@@ -300,9 +330,9 @@ export default function VisitasTable({
  * Así todas las filas quedan de la misma altura; el texto completo sale al
  * pasar el mouse y, entero, en el acta.
  */
-function Recorte({ texto, ancho }: { texto: string | null | undefined; ancho: number }) {
+function Recorte({ texto }: { texto: string | null | undefined }) {
   return (
-    <span className="block truncate" style={{ maxWidth: ancho }} title={texto ?? undefined}>
+    <span className="block truncate" title={texto ?? undefined}>
       {texto}
     </span>
   );

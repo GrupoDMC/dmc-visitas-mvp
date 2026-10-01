@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSesion } from "@/lib/auth";
-import { getDuenosDeVideo,getVideoMeta, getVideoTramo } from "@/lib/data/videos";
+import { getDuenosDeVideo, getVideoMeta, getVideoTramo } from "@/lib/data/videos";
+import { esEvidenciaDeEliminada } from "@/lib/data/visitas";
 
 // Sirve el video que el técnico grabó en terreno. Los bytes viven en
 // dmc.visita_video.contenido: no hay almacenamiento de archivos contratado.
@@ -52,6 +53,11 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     if (!sesion.tecnico || !duenos.includes(sesion.tecnico.id)) {
       return new NextResponse("No encontrado", { status: 404 });
     }
+  }
+
+  // La evidencia de una visita eliminada solo la ve el administrador.
+  if (sesion.usuario.rol !== "ADMIN" && (await esEvidenciaDeEliminada("video", id))) {
+    return new NextResponse("No encontrado", { status: 404 });
   }
 
   // Primero el tipo y el largo, sin leer un byte del clip: con eso se resuelve
