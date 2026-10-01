@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { sinTildes } from "@/lib/ui/formato";
 import { useRouter } from "next/navigation";
 import AdminHeader from "@/components/admin/AdminHeader";
 import FiltrosBar from "@/components/admin/FiltrosBar";
@@ -93,9 +94,9 @@ export default function MaestroTable<T extends { id: number }>({
   const [guardando, setGuardando] = useState(false);
 
   const filtradas = useMemo(() => {
-    const q = busqueda.trim().toLowerCase();
+    const q = sinTildes(busqueda.trim());
     if (!q) return rows;
-    return rows.filter((r) => searchKeys(r).toLowerCase().includes(q));
+    return rows.filter((r) => sinTildes(searchKeys(r)).includes(q));
   }, [rows, busqueda, searchKeys]);
 
   async function guardar() {

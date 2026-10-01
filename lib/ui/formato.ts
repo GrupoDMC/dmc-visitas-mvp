@@ -113,3 +113,8 @@ export function mensajeRut(v: string): string | null {
   if (!rutDvCorrecto(v)) return "Ese RUT no es válido: revisa el dígito verificador.";
   return null;
 }
+
+/** Para buscar sin tildes ni mayúsculas: «egana» también encuentra «Egaña». */
+export function sinTildes(texto: string): string {
+  return String(texto ?? "").toLowerCase().normalize("NFD").replace(/\p{Diacritic}/gu, "");
+}

@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { sinTildes } from "@/lib/ui/formato";
 import type { FormValores } from "@/components/admin/Dialogo";
 import { useRouter } from "next/navigation";
 import Tag from "@/components/Tag";
@@ -87,7 +88,7 @@ export default function VisitasTable({
   );
 
   const filtradas = useMemo(() => {
-    const q = busqueda.trim().toLowerCase();
+    const q = sinTildes(busqueda.trim());
     // Las eliminadas van en su propia lista: nunca se mezclan con las vigentes.
     const verEliminadas = f.estado === ELIMINADAS;
     return (verEliminadas ? eliminadas ?? [] : visitas).filter((v) => {
@@ -100,7 +101,7 @@ export default function VisitasTable({
       if (f.tipo && !(v.problemas ?? []).some((p) => p.tipoCodigo === f.tipo)) return false;
       if (!q) return true;
       const hay = `${v.folio} ${v.sucursal?.nombre ?? ""} ${v.cliente?.nombreFantasia ?? ""} ${v.tecnico?.nombreCompleto ?? ""} ${v.tecnicoAyudante?.nombreCompleto ?? ""} ${v.motivosNombres.join(" ")}`;
-      return hay.toLowerCase().includes(q);
+      return sinTildes(hay).includes(q);
     });
   }, [visitas, eliminadas, busqueda, f]);
 

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { sinTildes } from "@/lib/ui/formato";
 import { useRouter } from "next/navigation";
 import MaestroTable from "@/components/admin/MaestroTable";
 import Dialogo from "@/components/admin/Dialogo";
@@ -118,11 +119,6 @@ export default function MallsTable({
   );
 }
 
-/** Para comparar sin tildes ni mayúsculas: «egana» también encuentra «Egaña». */
-function sinTildes(texto: string): string {
-  return texto.toLowerCase().normalize("NFD").replace(/\p{Diacritic}/gu, "");
-}
-
 /**
  * "Tiendas del mall": las sucursales que están en él.
  *
@@ -214,22 +210,20 @@ function TiendasDialogo({
       onGuardar={guardar}
       guardando={guardando}
     >
+      {/* Dos bloques separados: arriba se busca y agrega, abajo queda lo que ya está en el mall. */}
       <div className="border border-black/[.3]">
-        <div className="flex items-center gap-2.5 px-3.5 py-2.5 bg-[var(--color-surface)] border-b border-[var(--color-divider-soft)]">
-          <div className="font-extrabold text-[11px] tracking-[.11em] uppercase">Tiendas del mall</div>
-          <div className="ml-auto text-[11px] tracking-[.06em] uppercase opacity-66 tabular-nums">
-            {tiendas.length} {tiendas.length === 1 ? "tienda" : "tiendas"}
-          </div>
+        <div className="px-4 py-3 bg-[var(--color-surface)] border-b border-[var(--color-divider-soft)]">
+          <div className="font-extrabold text-[11px] tracking-[.11em] uppercase">Agregar tiendas</div>
         </div>
 
-        <label className="flex items-center gap-2 px-3.5 py-2.5 text-[13px] cursor-pointer border-b border-[var(--color-divider-soft)]">
+        <label className="flex items-center gap-2.5 px-4 py-3 text-[13px] cursor-pointer border-b border-[var(--color-divider-soft)]">
           <input type="checkbox" checked={porPalabra} onChange={(e) => setPorPalabra(e.target.checked)} />
           Buscar por palabra en todas las sucursales
         </label>
 
         {porPalabra ? (
-          <div className="border-b border-[var(--color-divider-soft)]">
-            <div className="field min-w-0 px-3.5 py-3.5">
+          <div>
+            <div className="field min-w-0 px-4 py-4">
               <label htmlFor="mt-palabra">Palabra en el nombre de la sucursal</label>
               <input
                 id="mt-palabra"
@@ -241,39 +235,44 @@ function TiendasDialogo({
               />
             </div>
             {palabra && encontradas.length === 0 ? (
-              <div className="px-3.5 pb-3.5 text-[13px] opacity-66">Ninguna sucursal por agregar con esa palabra.</div>
+              <div className="px-4 pb-4 text-[13px] opacity-66">Ninguna sucursal por agregar con esa palabra.</div>
             ) : null}
             {encontradas.length ? (
-              <div className="max-h-56 overflow-y-auto border-t border-black/[.18]">
-                {encontradas.map((s) => {
-                  const otro = otroMall(s);
-                  return (
-                    <div key={s.id} className="flex items-center gap-2 px-3.5 py-2 border-b border-black/[.18] last:border-b-0">
-                      <div className="flex-1 min-w-0">
-                        <div className="text-[14px] truncate">
-                          {nombreCliente(s.clienteId)} · {s.nombre}
+              <div className="px-4 pb-4">
+                <div className="mb-2 text-[11px] tracking-[.06em] uppercase opacity-66 tabular-nums">
+                  {encontradas.length} {encontradas.length === 1 ? "resultado" : "resultados"}
+                </div>
+                <div className="max-h-60 overflow-y-auto border border-black/[.18]">
+                  {encontradas.map((s) => {
+                    const otro = otroMall(s);
+                    return (
+                      <div key={s.id} className="flex items-center gap-3 px-4 py-3 border-b border-black/[.18] last:border-b-0">
+                        <div className="flex-1 min-w-0">
+                          <div className="text-[14px] truncate">
+                            {nombreCliente(s.clienteId)} · {s.nombre}
+                          </div>
+                          <div className="mt-0.5 text-[11px] opacity-66 truncate">{otro ? `Ya en ${otro} · ${s.direccion}` : s.direccion}</div>
                         </div>
-                        <div className="text-[11px] opacity-66 truncate">{otro ? `Ya en ${otro} · ${s.direccion}` : s.direccion}</div>
+                        <button
+                          type="button"
+                          onClick={() => agregar(s.id)}
+                          className="btn btn-icon w-8 h-8 flex-none border border-black/[.3]"
+                          aria-label={`Agregar ${s.nombre} al mall`}
+                          title="Agregar al mall"
+                        >
+                          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4">
+                            <path d="M12 5v14M5 12h14" />
+                          </svg>
+                        </button>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => agregar(s.id)}
-                        className="btn btn-icon w-8 h-8 flex-none border border-black/[.3]"
-                        aria-label={`Agregar ${s.nombre} al mall`}
-                        title="Agregar al mall"
-                      >
-                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4">
-                          <path d="M12 5v14M5 12h14" />
-                        </svg>
-                      </button>
-                    </div>
-                  );
-                })}
+                    );
+                  })}
+                </div>
               </div>
             ) : null}
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 px-3.5 py-3.5 border-b border-[var(--color-divider-soft)]">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 px-4 py-4">
             <div className="field min-w-0">
               <label htmlFor="mt-cliente">Cliente</label>
               <SelectBuscable
@@ -299,20 +298,29 @@ function TiendasDialogo({
             </div>
           </div>
         )}
+      </div>
+
+      <div className="mt-6 border border-black/[.3]">
+        <div className="flex items-center gap-2.5 px-4 py-3 bg-[var(--color-surface)] border-b border-[var(--color-divider-soft)]">
+          <div className="font-extrabold text-[11px] tracking-[.11em] uppercase">Tiendas del mall</div>
+          <div className="ml-auto text-[11px] tracking-[.06em] uppercase opacity-66 tabular-nums">
+            {tiendas.length} {tiendas.length === 1 ? "tienda" : "tiendas"}
+          </div>
+        </div>
 
         {tiendas.length === 0 ? (
-          <div className="px-3.5 py-5 text-[13px] opacity-66">
+          <div className="px-4 py-5 text-[13px] opacity-66">
             Este mall todavía no tiene tiendas. Elige el cliente y ve agregando sus sucursales.
           </div>
         ) : null}
 
         {tiendas.map((s) => (
-          <div key={s.id} className="flex items-center gap-2 px-3.5 py-2 border-b border-black/[.18] last:border-b-0">
+          <div key={s.id} className="flex items-center gap-3 px-4 py-3 border-b border-black/[.18] last:border-b-0">
             <div className="flex-1 min-w-0">
               <div className="text-[14px] truncate">
                 {nombreCliente(s.clienteId)} · {s.nombre}
               </div>
-              <div className="text-[11px] opacity-66 truncate">{s.direccion}</div>
+              <div className="mt-0.5 text-[11px] opacity-66 truncate">{s.direccion}</div>
             </div>
             {!s.activo ? <span className="tag tag-neutral flex-none">Inactiva</span> : null}
             <button

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import SelectBuscable from "@/components/ui/SelectBuscable";
-import { fmtRut, fmtTel, mensajeRut } from "@/lib/ui/formato";
+import { fmtRut, fmtTel, mensajeRut, sinTildes } from "@/lib/ui/formato";
 
 export type CampoTipo =
   | "text"
@@ -442,8 +442,8 @@ function CasillasMultiples({
 }) {
   const [busqueda, setBusqueda] = useState("");
   const marcados = leerChecks(valor);
-  const q = busqueda.trim().toLowerCase();
-  const visibles = q ? opciones.filter((o) => o.t.toLowerCase().includes(q)) : opciones;
+  const q = sinTildes(busqueda.trim());
+  const visibles = q ? opciones.filter((o) => sinTildes(o.t).includes(q)) : opciones;
 
   function alternar(codigo: string) {
     onCambiar(

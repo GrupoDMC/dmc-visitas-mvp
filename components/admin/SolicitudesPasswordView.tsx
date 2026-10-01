@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { sinTildes } from "@/lib/ui/formato";
 import { useRouter } from "next/navigation";
 import AdminHeader from "@/components/admin/AdminHeader";
 import Confirmar, { type ConfirmarCfg } from "@/components/admin/Confirmar";
@@ -38,11 +39,11 @@ export default function SolicitudesPasswordView({
   const [entregada, setEntregada] = useState<{ email: string; clave: string } | null>(null);
 
   const filtradas = useMemo(() => {
-    const q = busqueda.trim().toLowerCase();
+    const q = sinTildes(busqueda.trim());
     return solicitudes.filter((s) => {
       if (soloPendientes && s.estado !== "PENDIENTE") return false;
       if (!q) return true;
-      return `${s.email} ${s.mensaje ?? ""}`.toLowerCase().includes(q);
+      return sinTildes(`${s.email} ${s.mensaje ?? ""}`).includes(q);
     });
   }, [solicitudes, busqueda, soloPendientes]);
 

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { sinTildes } from "@/lib/ui/formato";
 import { useRouter } from "next/navigation";
 import AdminHeader from "@/components/admin/AdminHeader";
 import Confirmar, { type ConfirmarCfg } from "@/components/admin/Confirmar";
@@ -215,10 +216,10 @@ export default function ChecklistEditor({
     set(fn);
   }, []);
 
-  const filtro = busqueda.trim().toLowerCase();
+  const filtro = sinTildes(busqueda.trim());
   const coincide = useCallback(
     (nombre: string, extras: string[] = []) =>
-      !filtro || [nombre, ...extras].some((t) => t.toLowerCase().includes(filtro)),
+      !filtro || [nombre, ...extras].some((t) => sinTildes(t).includes(filtro)),
     [filtro]
   );
 

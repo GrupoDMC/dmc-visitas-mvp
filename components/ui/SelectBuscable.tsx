@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { sinTildes } from "@/lib/ui/formato";
 
 export interface OpcionSelect {
   v: string;
@@ -48,9 +49,9 @@ export default function SelectBuscable({
   const elegida = opciones.find((o) => o.v === valor) ?? null;
 
   const filtradas = useMemo(() => {
-    const q = texto.trim().toLowerCase();
+    const q = sinTildes(texto.trim());
     if (!q) return opciones;
-    return opciones.filter((o) => o.t.toLowerCase().includes(q));
+    return opciones.filter((o) => sinTildes(o.t).includes(q));
   }, [opciones, texto]);
 
   // Un clic fuera cierra la lista y descarta lo tecleado sin elegir.
