@@ -1,6 +1,6 @@
 import "server-only";
 import { listarMotivos, listarProblemas, listarTrabajos } from "@/lib/data/catalogos";
-import { listarClientes, listarSucursales, listarTecnicos } from "@/lib/data/maestros";
+import { listarClientes, listarMalls, listarSucursales, listarTecnicos } from "@/lib/data/maestros";
 import type { RolUsuario } from "@/lib/types";
 import type { Referencias } from "@/lib/ui/referencias";
 
@@ -9,15 +9,16 @@ import type { Referencias } from "@/lib/ui/referencias";
  * completos. Se carga una vez por petición en el layout y baja por contexto.
  */
 export async function cargarReferencias(rol: RolUsuario, permisos: string[]): Promise<Referencias> {
-  const [clientes, sucursales, tecnicos, motivos, problemas, trabajos] = await Promise.all([
+  const [clientes, malls, sucursales, tecnicos, motivos, problemas, trabajos] = await Promise.all([
     listarClientes(),
+    listarMalls(),
     listarSucursales(),
     listarTecnicos(),
     listarMotivos(),
     listarProblemas(),
     listarTrabajos(),
   ]);
-  return { rol, permisos, clientes, sucursales, tecnicos, motivos, problemas, trabajos };
+  return { rol, permisos, clientes, malls, sucursales, tecnicos, motivos, problemas, trabajos };
 }
 
 /**
@@ -47,5 +48,6 @@ export async function cargarReferenciasTecnico(): Promise<Referencias> {
       telefono: null,
       activo: true,
     }));
-  return { rol: "TECNICO", permisos: [], clientes, sucursales, tecnicos: companeros, motivos, problemas, trabajos };
+  // El celular agenda por cliente y sucursal: los malls son del panel.
+  return { rol: "TECNICO", permisos: [], clientes, malls: [], sucursales, tecnicos: companeros, motivos, problemas, trabajos };
 }

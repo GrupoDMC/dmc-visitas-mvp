@@ -26,6 +26,7 @@ import type { Visita } from "@/lib/types";
 export function opciones(ref: Referencias) {
   return {
     clientes: ref.clientes.filter((c) => c.activo).map((c) => ({ v: String(c.id), t: c.nombreFantasia })),
+    malls: ref.malls.filter((m) => m.activo).map((m) => ({ v: String(m.id), t: m.nombre })),
     tecnicos: ref.tecnicos.filter((t) => t.activo).map((t) => ({ v: String(t.id), t: t.nombreCompleto })),
     motivos: ref.motivos.map((m) => ({ v: m.codigo, t: m.nombre })),
     sucursalesDe: (clienteId: string) => {
@@ -173,12 +174,18 @@ function valoresIniciales(opc: Opciones, visita?: Visita, origen?: OrigenProblem
 export default function VisitaDialogo({
   visita,
   origen,
+  onPorMall,
   onCerrar,
   onHecho,
 }: {
   /** Presente cuando se está corrigiendo una visita ya creada. */
   visita?: Visita;
   origen?: OrigenProblema;
+  /**
+   * Marcaron «Mall» en vez de cliente y sucursal: las tiendas de un mall son
+   * una lista, así que sigue en el diálogo de la ruta. Recibe lo ya escrito.
+   */
+  onPorMall?: (form: FormValores) => void;
   onCerrar: () => void;
   onHecho: (mensaje: string, folio?: string) => void;
 }) {
@@ -200,7 +207,14 @@ export default function VisitaDialogo({
 
   const campos: CampoDef[] = [
     // Los tres se escriben y filtran: son los catálogos que crecen.
-    { k: "clienteId", label: "Cliente", tipo: "select", buscable: true, opciones: opc.clientes },
+    {
+      k: "clienteId",
+      label: "Cliente",
+      tipo: "select",
+      buscable: true,
+      opciones: opc.clientes,
+      casilla: !visita && !origen && onPorMall && opc.malls.length ? { k: "porMall", label: "Mall" } : undefined,
+    },
     {
       k: "sucursalId",
       label: "Sucursal",
@@ -263,6 +277,10 @@ export default function VisitaDialogo({
   ];
 
   function onCampo(k: string, valor: string | boolean) {
+    if (k === "porMall") {
+      if (valor === true) onPorMall?.(form);
+      return;
+    }
     setForm((prev) => {
       if (k === "clienteId") {
         const primera = opc.sucursalesDe(String(valor))[0]?.v ?? "";

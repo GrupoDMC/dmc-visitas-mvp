@@ -4,12 +4,16 @@ import { revalidatePath } from "next/cache";
 import { sesionCon } from "@/lib/auth";
 import {
   faltaMigracionNotas,
+  faltaMigracionMalls,
   guardarCliente,
+  guardarMall,
   guardarSucursal,
   guardarTecnico,
   guardarUsuario,
+  ponerTiendasDeMall,
   RutRepetido,
   type DatosCliente,
+  type DatosMall,
   type DatosSucursal,
   type DatosTecnico,
   type DatosUsuario,
@@ -46,7 +50,12 @@ function mensajeDeError(err: unknown, contexto: string): string {
   if (faltaMigracionNotas(err)) {
     return "Falta aplicar la migración 009 en la base de datos. Avísale al administrador.";
   }
+  if (faltaMigracionMalls(err)) {
+    return "Falta aplicar la migración 011 en la base de datos. Avísale al administrador.";
+  }
   const texto = err instanceof Error ? err.message : String(err);
+  if (/uq_mall_nombre/i.test(texto)) return "Ya existe un mall con ese nombre.";
+  if (/fk_sucursal_mall/i.test(texto)) return "Ese mall ya no existe. Recarga la página.";
   if (/uq_\w*rut/i.test(texto)) return "Ya existe un registro con ese RUT.";
   if (/uq_\w*email|uq_usuario_email/i.test(texto)) return "Ya existe un registro con ese correo.";
   if (/uq_sucursal_codigo/i.test(texto)) return "Ya existe una sucursal con ese código.";
@@ -78,6 +87,34 @@ export async function guardarClienteAction(id: number | null, datos: DatosClient
     await guardarCliente(id, datos);
   } catch (err) {
     return { ok: false, error: mensajeDeError(err, "guardarCliente") };
+  }
+  revalidar();
+  return { ok: true };
+}
+
+export async function guardarMallAction(id: number | null, datos: DatosMall): Promise<ResultadoMaestro> {
+  if (!(await sesionMaestro("malls", id))) return { ok: false, error: "No tienes permiso para editar malls." };
+  if (!datos.nombre.trim() || !datos.direccion.trim()) {
+    return { ok: false, error: "Nombre y dirección son obligatorios." };
+  }
+  try {
+    await guardarMall(id, datos);
+  } catch (err) {
+    return { ok: false, error: mensajeDeError(err, "guardarMall") };
+  }
+  revalidar();
+  return { ok: true };
+}
+
+/** Las tiendas del mall: la lista completa, tal como quedó en el diálogo. */
+export async function guardarTiendasMallAction(mallId: number, sucursalIds: number[]): Promise<ResultadoMaestro> {
+  if (!(await sesionCon("malls.editar"))) return { ok: false, error: "No tienes permiso para editar malls." };
+  const ids = [...new Set(sucursalIds)].filter((x) => Number.isInteger(x) && x > 0);
+  if (!mallId || ids.length !== sucursalIds.length) return { ok: false, error: "La lista de tiendas no es válida." };
+  try {
+    await ponerTiendasDeMall(mallId, ids);
+  } catch (err) {
+    return { ok: false, error: mensajeDeError(err, "ponerTiendasDeMall") };
   }
   revalidar();
   return { ok: true };

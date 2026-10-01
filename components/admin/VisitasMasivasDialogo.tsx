@@ -44,11 +44,20 @@ function tienePropio(l: LocalRuta): boolean {
  * hacer— y abajo los locales. Cada local se puede desplegar para ponerle su
  * contacto, su hora o un detalle distinto: lo escrito en el local le gana a lo
  * masivo, y lo que queda vacío toma lo de arriba. Sale una visita por local.
+ *
+ * Los locales se eligen por cliente y sucursal o, con la casilla «Mall», de
+ * entre las tiendas de un mall. Las dos formas se pueden mezclar en una ruta.
  */
 export default function VisitasMasivasDialogo({
+  porMall: porMallInicial = false,
+  inicial,
   onCerrar,
   onHecho,
 }: {
+  /** Abre eligiendo las tiendas de un mall en vez de cliente y sucursal. */
+  porMall?: boolean;
+  /** Lo ya escrito en "Nueva visita" cuando se llega desde su casilla «Mall». */
+  inicial?: FormValores;
   onCerrar: () => void;
   /** `creadas` indica cuántas visitas quedaron en la base, aunque haya fallado alguna. */
   onHecho: (mensaje: string, creadas: number) => void;
@@ -59,12 +68,17 @@ export default function VisitasMasivasDialogo({
     tecnicoId: opc.tecnicos[0]?.v ?? "",
     ayudanteId: "",
     motivoCodigo: escribirChecks([opc.motivos[0]?.v ?? ""]),
-    fecha: hoyISO(),
-    margen: false,
-    fechaHasta: "",
-    trabajo: "",
-    acceso: "",
+    fecha: inicial?.fecha ?? hoyISO(),
+    margen: inicial?.margen ?? false,
+    fechaHasta: inicial?.fechaHasta ?? "",
+    trabajo: inicial?.trabajo ?? "",
+    acceso: inicial?.acceso ?? "",
+    ...(inicial
+      ? { tecnicoId: inicial.tecnicoId, ayudanteId: inicial.ayudanteId, motivoCodigo: inicial.motivoCodigo }
+      : {}),
   }));
+  const [porMall, setPorMall] = useState(porMallInicial && opc.malls.length > 0);
+  const [mallSel, setMallSel] = useState(opc.malls[0]?.v ?? "");
   const [clienteSel, setClienteSel] = useState(opc.clientes[0]?.v ?? "");
   const [locales, setLocales] = useState<LocalRuta[]>([]);
   const [guardando, setGuardando] = useState(false);
@@ -76,12 +90,22 @@ export default function VisitasMasivasDialogo({
     ...opc.tecnicos.filter((t) => t.v !== String(form.tecnicoId)),
   ];
 
-  // Solo las sucursales del cliente elegido que todavía no están en la ruta.
+  // Solo las sucursales del cliente (o las tiendas del mall) elegido que
+  // todavía no están en la ruta. En un mall hay tiendas de varios clientes:
+  // ahí cada una se nombra con el suyo.
   const sucursalesLibres = ref.sucursales
     .filter(
-      (s) => s.activo && String(s.clienteId) === clienteSel && !locales.some((l) => l.sucursalId === String(s.id))
+      (s) =>
+        s.activo &&
+        (porMall ? String(s.mallId ?? "") === mallSel : String(s.clienteId) === clienteSel) &&
+        !locales.some((l) => l.sucursalId === String(s.id))
     )
-    .map((s) => ({ v: String(s.id), t: s.nombre }));
+    .map((s) => ({
+      v: String(s.id),
+      t: porMall
+        ? `${ref.clientes.find((c) => c.id === s.clienteId)?.nombreFantasia ?? ""} · ${s.nombre}`
+        : s.nombre,
+    }));
 
   const campos: CampoDef[] = [
     { k: "tecnicoId", label: "Técnico asignado", tipo: "select", buscable: true, opciones: opc.tecnicos },
@@ -135,22 +159,20 @@ export default function VisitasMasivasDialogo({
     });
   }
 
-  function agregar(sucursalId: string) {
-    if (!sucursalId) return;
-    setLocales((prev) => [
-      ...prev,
-      {
-        sucursalId,
-        clienteId: clienteSel,
-        abierto: false,
-        responsable: "",
-        respRut: "",
-        respTelefono: "",
-        hora: "",
-        trabajo: "",
-        acceso: "",
-      },
-    ]);
+  function agregar(...sucursalIds: string[]) {
+    const nuevos = sucursalIds.filter(Boolean).map((sucursalId) => ({
+      sucursalId,
+      // El cliente sale de la sucursal: en un mall cada tienda tiene el suyo.
+      clienteId: String(ref.sucursales.find((s) => String(s.id) === sucursalId)?.clienteId ?? clienteSel),
+      abierto: false,
+      responsable: "",
+      respRut: "",
+      respTelefono: "",
+      hora: "",
+      trabajo: "",
+      acceso: "",
+    }));
+    setLocales((prev) => [...prev, ...nuevos.filter((n) => !prev.some((l) => l.sucursalId === n.sucursalId))]);
   }
 
   function cambiar(sucursalId: string, cambios: Partial<LocalRuta>) {
@@ -241,31 +263,71 @@ export default function VisitasMasivasDialogo({
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 px-3.5 py-3.5 border-b border-[var(--color-divider-soft)]">
           <div className="field min-w-0">
-            <label htmlFor="vm-cliente">Cliente</label>
+            <div className="flex items-start gap-2">
+              <label htmlFor="vm-cliente">{porMall ? "Mall" : "Cliente"}</label>
+              {opc.malls.length ? (
+                <button
+                  type="button"
+                  role="checkbox"
+                  aria-checked={porMall}
+                  onClick={() => setPorMall((v) => !v)}
+                  className="ml-auto flex-none flex items-center gap-1.5 p-0 bg-transparent border-0 cursor-pointer text-[var(--color-text)] text-[11px] tracking-[.06em] uppercase"
+                  style={{ opacity: porMall ? 1 : 0.72 }}
+                >
+                  <span className="w-3.5 h-3.5 flex-none border-2 border-current grid place-items-center">
+                    {porMall ? (
+                      <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="4">
+                        <path d="M4 12l5 5L20 6" />
+                      </svg>
+                    ) : null}
+                  </span>
+                  <span>Mall</span>
+                </button>
+              ) : null}
+            </div>
             <SelectBuscable
               id="vm-cliente"
-              valor={clienteSel}
-              opciones={opc.clientes}
-              onChange={setClienteSel}
-              ariaLabel="Cliente"
+              valor={porMall ? mallSel : clienteSel}
+              opciones={porMall ? opc.malls : opc.clientes}
+              onChange={porMall ? setMallSel : setClienteSel}
+              ariaLabel={porMall ? "Mall" : "Cliente"}
             />
           </div>
           <div className="field min-w-0">
-            <label htmlFor="vm-sucursal">Agregar sucursal</label>
+            <label htmlFor="vm-sucursal">{porMall ? "Agregar tienda" : "Agregar sucursal"}</label>
             <SelectBuscable
               id="vm-sucursal"
               valor=""
               opciones={sucursalesLibres}
               onChange={agregar}
-              placeholder={sucursalesLibres.length ? "Elige y se agrega a la ruta…" : "No quedan sucursales por agregar"}
-              ariaLabel="Agregar sucursal"
+              placeholder={
+                sucursalesLibres.length
+                  ? "Elige y se agrega a la ruta…"
+                  : porMall
+                    ? "No quedan tiendas por agregar"
+                    : "No quedan sucursales por agregar"
+              }
+              ariaLabel={porMall ? "Agregar tienda" : "Agregar sucursal"}
             />
           </div>
+          {porMall && sucursalesLibres.length > 1 ? (
+            <div className="sm:col-span-2 -mt-1">
+              <button
+                type="button"
+                onClick={() => agregar(...sucursalesLibres.map((s) => s.v))}
+                className="btn btn-secondary min-h-9 px-3 text-[13px]"
+              >
+                Agregar las {sucursalesLibres.length} tiendas del mall
+              </button>
+            </div>
+          ) : null}
         </div>
 
         {locales.length === 0 ? (
           <div className="px-3.5 py-5 text-[13px] opacity-66">
-            Todavía no hay locales. Elige el cliente y ve agregando las sucursales que va a visitar el técnico.
+            {porMall
+              ? "Todavía no hay locales. Elige el mall y ve agregando las tiendas que va a visitar el técnico."
+              : "Todavía no hay locales. Elige el cliente y ve agregando las sucursales que va a visitar el técnico."}
           </div>
         ) : null}
 

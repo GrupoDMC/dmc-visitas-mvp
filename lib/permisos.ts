@@ -80,6 +80,15 @@ export const MODULOS: ModuloPermiso[] = [
     ],
   },
   {
+    clave: "malls",
+    label: "Malls",
+    acciones: [
+      { clave: "ver", label: "Ver malls" },
+      { clave: "crear", label: "Agregar malls" },
+      { clave: "editar", label: "Editar malls y sus tiendas" },
+    ],
+  },
+  {
     clave: "sucursales",
     label: "Sucursales",
     acciones: [

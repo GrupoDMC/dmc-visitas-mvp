@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import type { FormValores } from "@/components/admin/Dialogo";
 import { useRouter } from "next/navigation";
 import Tag from "@/components/Tag";
 import AdminHeader from "@/components/admin/AdminHeader";
@@ -76,7 +77,9 @@ export default function VisitasTable({
     tipo: tipoInicial ?? "",
   });
   const [nueva, setNueva] = useState(false);
-  const [masivas, setMasivas] = useState(false);
+  // Con `porMall` el diálogo de la ruta abre eligiendo tiendas de un mall, y
+  // con `inicial` trae lo que ya se había escrito en "Nueva visita".
+  const [masivas, setMasivas] = useState<{ porMall: boolean; inicial?: FormValores } | null>(null);
 
   const fechas = useMemo(
     () => [...new Set(visitas.map((v) => v.fechaProgramada))].sort().reverse(),
@@ -127,7 +130,7 @@ export default function VisitasTable({
       <AdminHeader kicker={kicker} title={title}>
         {permiteCrear && puede(ref, "visitas.crear") ? (
           <>
-            <button onClick={() => setMasivas(true)} className="btn btn-secondary">
+            <button onClick={() => setMasivas({ porMall: false })} className="btn btn-secondary">
               <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
                 <path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" />
               </svg>
@@ -300,6 +303,10 @@ export default function VisitasTable({
 
       {nueva ? (
         <VisitaDialogo
+          onPorMall={(inicial) => {
+            setNueva(false);
+            setMasivas({ porMall: true, inicial });
+          }}
           onCerrar={() => setNueva(false)}
           onHecho={(mensaje, folio) => {
             aviso(mensaje);
@@ -310,7 +317,9 @@ export default function VisitasTable({
 
       {masivas ? (
         <VisitasMasivasDialogo
-          onCerrar={() => setMasivas(false)}
+          porMall={masivas.porMall}
+          inicial={masivas.inicial}
+          onCerrar={() => setMasivas(null)}
           onHecho={(mensaje, creadas) => {
             aviso(mensaje);
             if (creadas > 0) router.refresh();

@@ -3,9 +3,9 @@ import { consulta, consultaCon, ejecutar, num, numONull, sql, F_TS } from "@/lib
 import { hashearPassword } from "@/lib/password";
 import { faltaMigracionRoles, rolesDeUsuarios } from "@/lib/data/roles";
 import { fmtRut, rutLimpio } from "@/lib/ui/formato";
-import type { Cliente, RolUsuario, Sucursal, Tecnico, Usuario } from "@/lib/types";
+import type { Cliente, Mall, RolUsuario, Sucursal, Tecnico, Usuario } from "@/lib/types";
 
-// Maestros: dmc.cliente, dmc.sucursal, dmc.tecnico y dmc.usuario.
+// Maestros: dmc.cliente, dmc.mall, dmc.sucursal, dmc.tecnico y dmc.usuario.
 // Lectura para las tablas del panel y escritura para sus diálogos de alta/edición.
 
 /** El RUT no distingue de quién es: una empresa o una persona, pero uno solo. */
@@ -134,11 +134,96 @@ export async function guardarCliente(id: number | null, d: DatosCliente): Promis
   return id;
 }
 
+// ── Malls ───────────────────────────────────────────────────────────────────
+
+/**
+ * ¿El error es que la base todavía no tiene la migración 011?
+ *
+ * Los malls bajan con las referencias del panel entero: sin la migración el
+ * panel tiene que seguir abriendo, solo que sin malls.
+ */
+export function faltaMigracionMalls(err: unknown): boolean {
+  const texto = err instanceof Error ? err.message : String(err);
+  return /invalid object name 'dmc\.mall'|invalid column name 'mall_id'/i.test(texto);
+}
+
+interface FilaMall {
+  id: number;
+  nombre: string;
+  direccion: string;
+  activo: boolean;
+}
+
+export async function listarMalls(): Promise<Mall[]> {
+  let filas: FilaMall[];
+  try {
+    filas = await consulta<FilaMall>(`SELECT id, nombre, direccion, activo FROM dmc.mall ORDER BY nombre`);
+  } catch (err) {
+    if (!faltaMigracionMalls(err)) throw err;
+    return [];
+  }
+  return filas.map((f) => ({
+    id: num(f.id),
+    nombre: f.nombre,
+    direccion: f.direccion,
+    activo: Boolean(f.activo),
+  }));
+}
+
+export interface DatosMall {
+  nombre: string;
+  direccion: string;
+  activo: boolean;
+}
+
+export async function guardarMall(id: number | null, d: DatosMall): Promise<number> {
+  const params: Parametros = [
+    ["nombre", sql.NVarChar(120), d.nombre],
+    ["direccion", sql.NVarChar(180), d.direccion],
+    ["activo", sql.Bit, d.activo],
+  ];
+  if (id === null) {
+    const [fila] = await consultaCon<{ id: number }>(
+      `INSERT INTO dmc.mall (nombre, direccion, activo)
+       OUTPUT INSERTED.id AS id
+       VALUES (@nombre, @direccion, @activo)`,
+      params
+    );
+    return num(fila.id);
+  }
+  await ejecutar(
+    `UPDATE dmc.mall SET nombre = @nombre, direccion = @direccion, activo = @activo WHERE id = @id`,
+    [...params, ["id", sql.BigInt, id]]
+  );
+  return id;
+}
+
+/**
+ * Deja en el mall exactamente esas tiendas: las que ya no vienen se sueltan y
+ * las que vienen quedan en él, aunque estuvieran en otro mall.
+ */
+export async function ponerTiendasDeMall(mallId: number, sucursalIds: number[]): Promise<void> {
+  // Los ids van como JSON: la lista no tiene largo fijo y así sigue siendo un parámetro.
+  await ejecutar(
+    `UPDATE s
+        SET mall_id = CASE WHEN t.id IS NULL THEN NULL ELSE @mall END
+       FROM dmc.sucursal s
+       LEFT JOIN (SELECT CAST([value] AS bigint) AS id FROM OPENJSON(@ids)) t ON t.id = s.id
+      WHERE (s.mall_id = @mall AND t.id IS NULL)
+         OR (t.id IS NOT NULL AND (s.mall_id IS NULL OR s.mall_id <> @mall))`,
+    [
+      ["mall", sql.BigInt, mallId],
+      ["ids", sql.NVarChar(sql.MAX), JSON.stringify(sucursalIds)],
+    ]
+  );
+}
+
 // ── Sucursales ──────────────────────────────────────────────────────────────
 
 interface FilaSucursal {
   id: number;
   cliente_id: number;
+  mall_id?: number | null;
   nombre: string;
   codigo: string | null;
   direccion: string;
@@ -151,15 +236,25 @@ interface FilaSucursal {
 }
 
 export async function listarSucursales(): Promise<Sucursal[]> {
-  const filas = await consultaConNotas<FilaSucursal>(
-    (extra) =>
-      `SELECT id, cliente_id, nombre, codigo, direccion, comuna, region, telefono, activo${extra}
-         FROM dmc.sucursal ORDER BY nombre`,
-    ", motivo_inactivo, notas"
-  );
+  // El mall es de la migración 011: sin ella la lista sale igual, sin malls.
+  const leer = (mall: string) =>
+    consultaConNotas<FilaSucursal>(
+      (extra) =>
+        `SELECT id, cliente_id, nombre, codigo, direccion, comuna, region, telefono, activo${mall}${extra}
+           FROM dmc.sucursal ORDER BY nombre`,
+      ", motivo_inactivo, notas"
+    );
+  let filas: FilaSucursal[];
+  try {
+    filas = await leer(", mall_id");
+  } catch (err) {
+    if (!faltaMigracionMalls(err)) throw err;
+    filas = await leer("");
+  }
   return filas.map((f) => ({
     id: num(f.id),
     clienteId: num(f.cliente_id),
+    mallId: numONull(f.mall_id ?? null),
     nombre: f.nombre,
     codigo: f.codigo,
     direccion: f.direccion,

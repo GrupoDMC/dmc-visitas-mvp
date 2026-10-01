@@ -3,7 +3,7 @@
 import MaestroTable from "@/components/admin/MaestroTable";
 import Tag from "@/components/Tag";
 import { guardarSucursalAction } from "@/app/actions/maestros";
-import type { Cliente, Sucursal } from "@/lib/types";
+import type { Cliente, Mall, Sucursal } from "@/lib/types";
 
 // Las 16 regiones de Chile, de norte a sur.
 const REGIONES = [
@@ -25,8 +25,17 @@ const REGIONES = [
   "Magallanes y de la Antártica Chilena",
 ];
 
-export default function SucursalesTable({ sucursales, clientes }: { sucursales: Sucursal[]; clientes: Cliente[] }) {
+export default function SucursalesTable({
+  sucursales,
+  clientes,
+  malls,
+}: {
+  sucursales: Sucursal[];
+  clientes: Cliente[];
+  malls: Mall[];
+}) {
   const nombreCliente = (id: number) => clientes.find((c) => c.id === id)?.nombreFantasia ?? "—";
+  const nombreMall = (id?: number | null) => malls.find((m) => m.id === id)?.nombre ?? "";
 
   return (
     <MaestroTable<Sucursal>
@@ -36,13 +45,14 @@ export default function SucursalesTable({ sucursales, clientes }: { sucursales: 
       addLabel="Nueva sucursal"
       editLabel="Editar sucursal"
       dialogoKicker="Maestro · sucursal"
-      nota="La sucursal siempre pertenece a un cliente y no se puede dejar sin él."
-      phBusqueda="Buscar sucursal, comuna, código…"
+      nota="La sucursal siempre pertenece a un cliente y no se puede dejar sin él. El mall se asigna desde Maestros › Malls."
+      phBusqueda="Buscar sucursal, comuna, mall, código…"
       rows={sucursales}
-      searchKeys={(s) => `${s.nombre} ${s.codigo ?? ""} ${s.comuna} ${s.direccion} ${nombreCliente(s.clienteId)}`}
+      searchKeys={(s) => `${s.nombre} ${s.codigo ?? ""} ${s.comuna} ${s.direccion} ${nombreCliente(s.clienteId)} ${nombreMall(s.mallId)}`}
       columns={[
         { key: "nombre", label: "Sucursal" },
         { key: "cliente", label: "Cliente", render: (s) => nombreCliente(s.clienteId) },
+        { key: "mall", label: "Mall", render: (s) => nombreMall(s.mallId) || "—" },
         { key: "codigo", label: "Código", render: (s) => s.codigo ?? "—" },
         { key: "direccion", label: "Dirección" },
         { key: "comuna", label: "Comuna" },

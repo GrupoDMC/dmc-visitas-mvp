@@ -61,6 +61,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
               pendientes: tiene(sesion.permisos, "usuarios.contrasenas") ? accesos : 0,
             },
             { href: "/admin/clientes", label: "Clientes", n: referencias.clientes.length },
+            { href: "/admin/malls", label: "Malls", n: referencias.malls.length },
             { href: "/admin/sucursales", label: "Sucursales", n: referencias.sucursales.length },
             {
               href: "/admin/checklist",

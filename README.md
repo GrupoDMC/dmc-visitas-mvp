@@ -212,7 +212,7 @@ El esquema completo vive en [`sql/dmc_contingencia_sqlserver.sql`](sql/dmc_conti
 
 | Grupo | Tablas |
 | --- | --- |
-| Maestros | `cliente`, `sucursal`, `tecnico`, `usuario` |
+| Maestros | `cliente`, `mall`, `sucursal`, `tecnico`, `usuario` |
 | Catálogos | `catalogo_motivo`, `catalogo_problema` (+ `_opcion`), `catalogo_trabajo` (+ `_subtrabajo`) |
 | Visitas | `visita`, `visita_ejecucion`, `visita_estado_historial`, `reagendamiento`, `visita_trabajo` (+ `_subtrabajo`), `visita_foto`, `visita_firma` |
 | Problemas | `problema`, `problema_item`, `problema_historial`, `problema_visita_resolucion` |
@@ -237,6 +237,7 @@ Sobre una base ya creada, los cambios van en archivos aparte y numerados:
 | [`sql/migracion-008-roles-y-permisos.sql`](sql/migracion-008-roles-y-permisos.sql) | Roles del panel con permisos por módulo y acción: `dmc.rol`, `dmc.rol_permiso` y `dmc.usuario.rol_id`. Crea el rol «Coordinador» con lo que un coordinador podía hacer hasta ahora y se lo asigna a los que ya existen. Sin ella la app arranca igual, pero no hay roles que administrar |
 | [`sql/migracion-009-notas-y-motivo-inactivo.sql`](sql/migracion-009-notas-y-motivo-inactivo.sql) | `notas` en `dmc.cliente` y `dmc.sucursal`, y `motivo_inactivo` en las dos: el porqué que el panel exige al desactivar un cliente o una sucursal. Sin ella la app arranca igual, pero clientes y sucursales no se pueden guardar |
 | [`sql/migracion-010-margen-de-dias.sql`](sql/migracion-010-margen-de-dias.sql) | `dmc.visita.fecha_hasta`: el margen de días de una visita, que se puede hacer cualquier día entre `fecha_programada` y `fecha_hasta`. Sin ella la app arranca igual, pero no se puede agendar con margen |
+| [`sql/migracion-011-malls.sql`](sql/migracion-011-malls.sql) | `dmc.mall` y `dmc.sucursal.mall_id`: los malls y las tiendas que hay en cada uno, para agendar de una vez las tiendas de un mall. Agrega los permisos `malls.*` a cada rol según lo que ya podía hacer con las sucursales. Sin ella la app arranca igual, pero Maestros › Malls queda vacío y no se puede guardar |
 
 ```bash
 sqlcmd -S <host>,<puerto> -d DMC_Contingencia -i sql/migracion-002-mejoras.sql
@@ -248,6 +249,7 @@ sqlcmd -S <host>,<puerto> -d DMC_Contingencia -i sql/migracion-007-hora-instalac
 sqlcmd -S <host>,<puerto> -d DMC_Contingencia -i sql/migracion-008-roles-y-permisos.sql
 sqlcmd -S <host>,<puerto> -d DMC_Contingencia -i sql/migracion-009-notas-y-motivo-inactivo.sql
 sqlcmd -S <host>,<puerto> -d DMC_Contingencia -i sql/migracion-010-margen-de-dias.sql
+sqlcmd -S <host>,<puerto> -d DMC_Contingencia -i sql/migracion-011-malls.sql
 ```
 
 Son idempotentes: se pueden correr varias veces, y en orden.
@@ -326,7 +328,7 @@ app/
   api/salud/        Diagnóstico de conexión, protegido por token
 components/
   admin/            Tablas, diálogos, editor de checklist, vista de acta
-  admin/maestros/   Tablas de clientes, sucursales, técnicos y usuarios
+  admin/maestros/   Tablas de clientes, malls, sucursales, técnicos y usuarios
   mobile/           Shell móvil, sheets (cámara, firma, nueva visita), formulario
   ui/               Compartidos (Toast, Tag)
 lib/
@@ -337,7 +339,7 @@ lib/
   db/               config.ts (getSqlConfig) + pool.ts (getPool)
   data/             Capa de consultas a SQL Server
     sql.ts            Helpers: parámetros, CONVERT de fechas, agrupación
-    maestros.ts       cliente, sucursal, tecnico, usuario (lectura y escritura)
+    maestros.ts       cliente, mall, sucursal, tecnico, usuario (lectura y escritura)
     catalogos.ts      Las tres listas + restauración del catálogo de fábrica
     visitas.ts        Visitas con todas sus hijas + mutaciones
     queries.ts        Agregados del panel (usa las vistas v_* del esquema)

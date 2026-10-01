@@ -47,6 +47,7 @@ export default function MaestroTable<T extends { id: number }>({
   guardarAction,
   emptyRow,
   validar,
+  accionFila,
 }: {
   kicker: string;
   title: string;
@@ -73,6 +74,8 @@ export default function MaestroTable<T extends { id: number }>({
    * repetidos (un RUT que ya está en la fila que se está editando).
    */
   validar?: (form: FormValores, id: number | null) => string | null;
+  /** Un botón propio del maestro en cada fila, antes del lápiz. */
+  accionFila?: (row: T) => React.ReactNode;
 }) {
   const router = useRouter();
   const { toast, aviso } = useToast();
@@ -140,7 +143,7 @@ export default function MaestroTable<T extends { id: number }>({
                     {c.label}
                   </th>
                 ))}
-                <th style={{ width: 44 }} />
+                <th style={{ width: accionFila ? 88 : 44 }} />
               </tr>
             </thead>
             <tbody>
@@ -151,7 +154,8 @@ export default function MaestroTable<T extends { id: number }>({
                       {c.render ? c.render(row) : String((row as unknown as Record<string, unknown>)[c.key] ?? "")}
                     </td>
                   ))}
-                  <td className="text-right max-lg:sticky max-lg:right-0 max-lg:bg-[var(--color-bg)]">
+                  <td className="text-right whitespace-nowrap max-lg:sticky max-lg:right-0 max-lg:bg-[var(--color-bg)]">
+                    {accionFila ? <span className="inline-block mr-1.5 align-top">{accionFila(row)}</span> : null}
                     {puedeEditar ? (
                       <button
                         onClick={() => setDialogo({ id: row.id, form: toFormValues(row) })}

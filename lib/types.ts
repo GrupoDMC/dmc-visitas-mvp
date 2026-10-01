@@ -35,9 +35,19 @@ export interface Cliente {
   notas?: string | null;
 }
 
+/** Un centro comercial. Sus tiendas son las sucursales con ese `mallId`. */
+export interface Mall {
+  id: number;
+  nombre: string;
+  direccion: string;
+  activo: boolean;
+}
+
 export interface Sucursal {
   id: number;
   clienteId: number;
+  /** El mall donde está la tienda. Null = no está en ninguno. */
+  mallId?: number | null;
   nombre: string;
   /** Código interno de la sucursal. Opcional. */
   codigo: string | null;

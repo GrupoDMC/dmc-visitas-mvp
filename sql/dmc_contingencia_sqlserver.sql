@@ -67,9 +67,23 @@ CREATE TABLE dmc.cliente (
 );
 GO
 
+-- El centro comercial. Sus tiendas son sucursales con mall_id (migración 011).
+CREATE TABLE dmc.mall (
+    id              bigint        IDENTITY(1,1) NOT NULL,
+    nombre          nvarchar(120) NOT NULL,
+    direccion       nvarchar(180) NOT NULL,
+    activo          bit           NOT NULL CONSTRAINT df_mall_activo DEFAULT (1),
+    creado_en       datetime2(0)  NOT NULL CONSTRAINT df_mall_creado DEFAULT (SYSDATETIME()),
+    actualizado_en  datetime2(0)  NOT NULL CONSTRAINT df_mall_actualizado DEFAULT (SYSDATETIME()),
+    CONSTRAINT pk_mall        PRIMARY KEY (id),
+    CONSTRAINT uq_mall_nombre UNIQUE (nombre)
+);
+GO
+
 CREATE TABLE dmc.sucursal (
     id              bigint        IDENTITY(1,1) NOT NULL,
     cliente_id      bigint        NOT NULL,
+    mall_id         bigint        NULL,         -- el mall donde está la tienda, si está en uno (migración 011)
     nombre          nvarchar(120) NOT NULL,
     codigo          varchar(20)   NULL,         -- código interno opcional
     direccion       nvarchar(180) NOT NULL,
@@ -83,10 +97,13 @@ CREATE TABLE dmc.sucursal (
     actualizado_en  datetime2(0)  NOT NULL CONSTRAINT df_sucursal_actualizado DEFAULT (SYSDATETIME()),
     CONSTRAINT pk_sucursal                PRIMARY KEY (id),
     CONSTRAINT uq_sucursal_cliente_nombre UNIQUE (cliente_id, nombre),
-    CONSTRAINT fk_sucursal_cliente FOREIGN KEY (cliente_id) REFERENCES dmc.cliente (id)
+    CONSTRAINT fk_sucursal_cliente FOREIGN KEY (cliente_id) REFERENCES dmc.cliente (id),
+    CONSTRAINT fk_sucursal_mall    FOREIGN KEY (mall_id)    REFERENCES dmc.mall (id)
 );
 GO
 CREATE INDEX ix_sucursal_cliente ON dmc.sucursal (cliente_id) WHERE activo = 1;
+GO
+CREATE INDEX ix_sucursal_mall ON dmc.sucursal (mall_id) WHERE mall_id IS NOT NULL;
 GO
 -- El código es opcional: único solo entre las sucursales que lo tienen.
 CREATE UNIQUE INDEX uq_sucursal_codigo ON dmc.sucursal (codigo) WHERE codigo IS NOT NULL;
@@ -804,6 +821,12 @@ BEGIN
     UPDATE c SET actualizado_en = SYSDATETIME() FROM dmc.cliente c JOIN inserted i ON i.id = c.id;
 END;
 GO
+CREATE OR ALTER TRIGGER dmc.tg_mall_actualizado ON dmc.mall AFTER UPDATE AS
+BEGIN
+    SET NOCOUNT ON;
+    UPDATE m SET actualizado_en = SYSDATETIME() FROM dmc.mall m JOIN inserted i ON i.id = m.id;
+END;
+GO
 CREATE OR ALTER TRIGGER dmc.tg_sucursal_actualizado ON dmc.sucursal AFTER UPDATE AS
 BEGIN
     SET NOCOUNT ON;
@@ -1108,6 +1131,7 @@ FROM (VALUES
         ('usuarios.ver'), ('usuarios.crear'), ('usuarios.editar'), ('usuarios.contrasenas'),
         ('clientes.ver'), ('clientes.crear'), ('clientes.editar'),
         ('sucursales.ver'), ('sucursales.crear'), ('sucursales.editar'),
+        ('malls.ver'), ('malls.crear'), ('malls.editar'),
         ('checklist.ver'), ('checklist.editar')
 ) AS x(permiso);
 GO
