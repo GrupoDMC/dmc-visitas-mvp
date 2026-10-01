@@ -9,7 +9,8 @@ import { ESTADO_VISITA_BARRA, ESTADO_VISITA_LABEL, ESTADO_VISITA_TAG, textoMotiv
 import { actasEnCola, haceCuanto, sacarDeCola, type ActaEnCola } from "@/lib/ui/borrador";
 import { estaCancelada } from "@/lib/ui/estado";
 import { diaDeVisita } from "@/lib/ui/fecha";
-import type { EstadoVisita, Visita } from "@/lib/types";
+import { useReferencias } from "@/lib/ui/referencias";
+import type { EstadoVisita, Mall, Visita } from "@/lib/types";
 
 const ESTADOS: EstadoVisita[] = [
   "PROGRAMADA",
@@ -41,6 +42,9 @@ export default function VisitasList({
   const [filtroAbierto, setFiltroAbierto] = useState(false);
   const [estado, setEstado] = useState<string>("");
   const [nueva, setNueva] = useState(false);
+  const ref = useReferencias();
+  /** Los malls desplegados, como "<fecha>-<mall>": nacen plegados. */
+  const [abiertos, setAbiertos] = useState<string[]>([]);
   /** Actas terminadas que quedaron esperando señal en este celular. */
   const [pendientes, setPendientes] = useState<ActaEnCola[]>([]);
 
@@ -82,9 +86,68 @@ export default function VisitasList({
           fecha === hoy
             ? "Hoy"
             : new Date(`${fecha}T00:00:00`).toLocaleDateString("es-CL", { weekday: "long", day: "numeric", month: "short" }),
-        items: items.sort((a, b) => (a.horaProgramada ?? "99:99").localeCompare(b.horaProgramada ?? "99:99")),
+        n: items.length,
+        bloques: enBloques(
+          items.sort((a, b) => (a.horaProgramada ?? "99:99").localeCompare(b.horaProgramada ?? "99:99"))
+        ),
       }));
-  }, [filtradas, hoy]);
+
+    // Las tiendas de un mismo mall van juntas en un bloque desplegable, puesto
+    // donde cae su primera visita del día; las demás quedan sueltas.
+    function enBloques(items: Visita[]): { mall: Mall | null; visitas: Visita[] }[] {
+      const bloques: { mall: Mall | null; visitas: Visita[] }[] = [];
+      for (const v of items) {
+        const mallId = ref.sucursales.find((s) => s.id === v.sucursalId)?.mallId;
+        const mall = (mallId && ref.malls.find((m) => m.id === mallId)) || null;
+        const bloque = mall ? bloques.find((b) => b.mall?.id === mall.id) : undefined;
+        if (bloque) bloque.visitas.push(v);
+        else bloques.push({ mall, visitas: [v] });
+      }
+      return bloques;
+    }
+  }, [filtradas, hoy, ref.sucursales, ref.malls]);
+
+  const tarjeta = (v: Visita) => (
+    <button
+      key={v.id}
+      onClick={() => router.push(`/tecnico/visitas/${v.folio}`)}
+      className="block w-full min-w-0 text-left bg-[var(--color-surface)] border border-[var(--color-divider)] px-3.5 pt-3.5 pb-3 hover:bg-[#e2e0e0]"
+      style={{ borderLeft: `5px solid ${ESTADO_VISITA_BARRA[v.estado]}` }}
+    >
+      <div className="flex items-baseline gap-2.5">
+        <span className="font-extrabold text-[19px] tabular-nums">{v.horaProgramada ?? "—"}</span>
+        <span className="text-[11px] tabular-nums tracking-[.06em] opacity-62">{v.folio}</span>
+        <Tag variant={ESTADO_VISITA_TAG[v.estado]} className="ml-auto">
+          {ESTADO_VISITA_LABEL[v.estado]}
+        </Tag>
+      </div>
+      <div className="font-extrabold text-[17px] leading-[1.2] mt-2.5 truncate">{v.sucursal?.nombre}</div>
+      <div className="text-[13px] opacity-60 mt-0.5 truncate">{v.cliente?.nombreFantasia}</div>
+      <div className="text-[13px] opacity-60 truncate">{v.sucursal?.direccion}</div>
+      {/* Todo en una línea y cortado con "…": un motivo largo ya no
+          agranda la tarjeta y la lista queda pareja. */}
+      <div className="flex gap-1.5 mt-2.5 min-w-0">
+        <span className="tag tag-neutral border border-black/[.2] min-w-0 max-w-full">
+          <span className="truncate">{textoMotivos(v)}</span>
+        </span>
+        {v.fechaHasta ? (
+          <span className="tag tag-accent flex-none tabular-nums">Hasta {diaCorto(v.fechaHasta)}</span>
+        ) : null}
+        {v.tecnicoId !== tecnicoId ? (
+          <span className="tag tag-dark flex-none">Ayudante</span>
+        ) : v.tecnicoAyudante ? (
+          <span className="tag tag-neutral border border-black/[.2] min-w-0 flex-none max-w-[45%]">
+            <span className="truncate">+ {v.tecnicoAyudante.nombreCompleto}</span>
+          </span>
+        ) : null}
+        {v.responsableNombre ? (
+          <span className="tag tag-neutral border border-black/[.2] min-w-0 flex-none max-w-[45%]">
+            <span className="truncate">{v.responsableNombre}</span>
+          </span>
+        ) : null}
+      </div>
+    </button>
+  );
 
   return (
     <div className="px-4 pt-5 pb-[26px] animate-fade-in">
@@ -172,50 +235,56 @@ export default function VisitasList({
         <div key={g.fecha} className="mb-6">
           <div className="flex items-center gap-2 pb-2 border-b-2 border-[var(--color-divider)]">
             <div className="font-extrabold text-xs tracking-[.1em] uppercase capitalize">{g.titulo}</div>
-            <div className="text-xs tabular-nums opacity-60">{g.items.length}</div>
+            <div className="text-xs tabular-nums opacity-60">{g.n}</div>
           </div>
           <div className="flex flex-col gap-3 mt-3">
-            {g.items.map((v) => (
-              <button
-                key={v.id}
-                onClick={() => router.push(`/tecnico/visitas/${v.folio}`)}
-                className="block w-full min-w-0 text-left bg-[var(--color-surface)] border border-[var(--color-divider)] px-3.5 pt-3.5 pb-3 hover:bg-[#e2e0e0]"
-                style={{ borderLeft: `5px solid ${ESTADO_VISITA_BARRA[v.estado]}` }}
-              >
-                <div className="flex items-baseline gap-2.5">
-                  <span className="font-extrabold text-[19px] tabular-nums">{v.horaProgramada ?? "—"}</span>
-                  <span className="text-[11px] tabular-nums tracking-[.06em] opacity-62">{v.folio}</span>
-                  <Tag variant={ESTADO_VISITA_TAG[v.estado]} className="ml-auto">
-                    {ESTADO_VISITA_LABEL[v.estado]}
-                  </Tag>
+            {g.bloques.map((b) => {
+              if (!b.mall) return tarjeta(b.visitas[0]);
+              const clave = `${g.fecha}-${b.mall.id}`;
+              const abierto = abiertos.includes(clave);
+              const porHacer = b.visitas.filter(
+                (v) => v.estado === "PROGRAMADA" || v.estado === "EN_CURSO" || v.estado === "PENDIENTE"
+              ).length;
+              return (
+                <div
+                  key={clave}
+                  className="border border-[var(--color-divider)] border-l-[5px] border-l-[var(--color-accent)] bg-[var(--color-surface)]"
+                >
+                  <button
+                    type="button"
+                    aria-expanded={abierto}
+                    onClick={() => setAbiertos((prev) => (abierto ? prev.filter((k) => k !== clave) : [...prev, clave]))}
+                    className="w-full min-h-[64px] flex items-center gap-3 px-3.5 py-3 bg-transparent border-0 cursor-pointer text-[var(--color-text)] text-left"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="font-extrabold text-[17px] leading-[1.2] truncate">{b.mall.nombre}</div>
+                      <div className="text-[13px] opacity-60 mt-0.5 truncate">{b.mall.direccion}</div>
+                      <div className="text-[11px] tracking-[.06em] uppercase opacity-66 mt-1.5 tabular-nums">
+                        {b.visitas.length} {b.visitas.length === 1 ? "visita" : "visitas"}
+                        {porHacer > 0 ? ` · ${porHacer} por hacer` : " · todas cerradas"}
+                      </div>
+                    </div>
+                    <svg
+                      width="20"
+                      height="20"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2.2"
+                      className="flex-none transition-transform"
+                      style={{ transform: `rotate(${abierto ? 180 : 0}deg)` }}
+                    >
+                      <path d="M6 9l6 6 6-6" />
+                    </svg>
+                  </button>
+                  {abierto ? (
+                    <div className="flex flex-col gap-2.5 px-2.5 pb-2.5 pt-2.5 border-t border-[var(--color-divider-soft)] bg-[var(--color-bg)]">
+                      {b.visitas.map(tarjeta)}
+                    </div>
+                  ) : null}
                 </div>
-                <div className="font-extrabold text-[17px] leading-[1.2] mt-2.5 truncate">{v.sucursal?.nombre}</div>
-                <div className="text-[13px] opacity-60 mt-0.5 truncate">{v.cliente?.nombreFantasia}</div>
-                <div className="text-[13px] opacity-60 truncate">{v.sucursal?.direccion}</div>
-                {/* Todo en una línea y cortado con "…": un motivo largo ya no
-                    agranda la tarjeta y la lista queda pareja. */}
-                <div className="flex gap-1.5 mt-2.5 min-w-0">
-                  <span className="tag tag-neutral border border-black/[.2] min-w-0 max-w-full">
-                    <span className="truncate">{textoMotivos(v)}</span>
-                  </span>
-                  {v.fechaHasta ? (
-                    <span className="tag tag-accent flex-none tabular-nums">Hasta {diaCorto(v.fechaHasta)}</span>
-                  ) : null}
-                  {v.tecnicoId !== tecnicoId ? (
-                    <span className="tag tag-dark flex-none">Ayudante</span>
-                  ) : v.tecnicoAyudante ? (
-                    <span className="tag tag-neutral border border-black/[.2] min-w-0 flex-none max-w-[45%]">
-                      <span className="truncate">+ {v.tecnicoAyudante.nombreCompleto}</span>
-                    </span>
-                  ) : null}
-                  {v.responsableNombre ? (
-                    <span className="tag tag-neutral border border-black/[.2] min-w-0 flex-none max-w-[45%]">
-                      <span className="truncate">{v.responsableNombre}</span>
-                    </span>
-                  ) : null}
-                </div>
-              </button>
-            ))}
+              );
+            })}
           </div>
         </div>
       ))}

@@ -27,8 +27,9 @@ export async function cargarReferencias(rol: RolUsuario, permisos: string[]): Pr
  * visita". RUT, correo y teléfono se quedan en el servidor.
  */
 export async function cargarReferenciasTecnico(): Promise<Referencias> {
-  const [clientes, sucursales, tecnicos, motivos, problemas, trabajos] = await Promise.all([
+  const [clientes, malls, sucursales, tecnicos, motivos, problemas, trabajos] = await Promise.all([
     listarClientes(),
+    listarMalls(),
     listarSucursales(),
     listarTecnicos(),
     listarMotivos(),
@@ -48,6 +49,5 @@ export async function cargarReferenciasTecnico(): Promise<Referencias> {
       telefono: null,
       activo: true,
     }));
-  // El celular agenda por cliente y sucursal: los malls son del panel.
-  return { rol: "TECNICO", permisos: [], clientes, malls: [], sucursales, tecnicos: companeros, motivos, problemas, trabajos };
+  return { rol: "TECNICO", permisos: [], clientes, malls, sucursales, tecnicos: companeros, motivos, problemas, trabajos };
 }
