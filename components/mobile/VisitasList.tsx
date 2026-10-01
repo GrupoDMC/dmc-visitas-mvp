@@ -45,6 +45,8 @@ export default function VisitasList({
   const ref = useReferencias();
   /** Los malls desplegados, como "<fecha>-<mall>": nacen plegados. */
   const [abiertos, setAbiertos] = useState<string[]>([]);
+  /** Los días que el técnico abrió o cerró a mano; el resto sigue la regla de `diaAbierto`. */
+  const [diasTocados, setDiasTocados] = useState<Record<string, boolean>>({});
   /** Actas terminadas que quedaron esperando señal en este celular. */
   const [pendientes, setPendientes] = useState<ActaEnCola[]>([]);
 
@@ -106,6 +108,14 @@ export default function VisitasList({
       return bloques;
     }
   }, [filtradas, hoy, ref.sucursales, ref.malls]);
+
+  // El único día que nace desplegado: hoy si tiene visitas y, si no, el
+  // próximo que las tenga. Los pasados y los demás futuros quedan plegados.
+  const diaAbierto = useMemo(() => {
+    if (grupos.some((g) => g.fecha === hoy)) return hoy;
+    const proximos = grupos.map((g) => g.fecha).filter((f) => f > hoy);
+    return proximos.length > 0 ? proximos.sort()[0] : null;
+  }, [grupos, hoy]);
 
   const tarjeta = (v: Visita) => (
     <button
@@ -231,12 +241,32 @@ export default function VisitasList({
         </div>
       ) : null}
 
-      {grupos.map((g) => (
-        <div key={g.fecha} className="mb-6">
-          <div className="flex items-center gap-2 pb-2 border-b-2 border-[var(--color-divider)]">
+      {grupos.map((g) => {
+        const diaDesplegado = diasTocados[g.fecha] ?? g.fecha === diaAbierto;
+        return (
+        <div key={g.fecha} className={diaDesplegado ? "mb-6" : "mb-3"}>
+          <button
+            type="button"
+            aria-expanded={diaDesplegado}
+            onClick={() => setDiasTocados((prev) => ({ ...prev, [g.fecha]: !diaDesplegado }))}
+            className="w-full min-h-[44px] flex items-center gap-2 pb-2 pt-2 bg-transparent border-0 border-b-2 border-[var(--color-divider)] cursor-pointer text-[var(--color-text)] text-left"
+          >
             <div className="font-extrabold text-xs tracking-[.1em] uppercase capitalize">{g.titulo}</div>
             <div className="text-xs tabular-nums opacity-60">{g.n}</div>
-          </div>
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.2"
+              className="ml-auto flex-none transition-transform"
+              style={{ transform: `rotate(${diaDesplegado ? 180 : 0}deg)` }}
+            >
+              <path d="M6 9l6 6 6-6" />
+            </svg>
+          </button>
+          {diaDesplegado ? (
           <div className="flex flex-col gap-3 mt-3">
             {g.bloques.map((b) => {
               if (!b.mall) return tarjeta(b.visitas[0]);
@@ -286,8 +316,10 @@ export default function VisitasList({
               );
             })}
           </div>
+          ) : null}
         </div>
-      ))}
+        );
+      })}
       {grupos.length === 0 ? <div className="py-8.5 text-center text-sm opacity-62">No hay visitas con ese estado.</div> : null}
 
       {nueva ? <NuevaVisitaSheet hoy={hoy} tecnicoId={tecnicoId} onCerrar={() => setNueva(false)} onError={aviso} /> : null}
