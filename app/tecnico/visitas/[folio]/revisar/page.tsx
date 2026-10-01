@@ -4,6 +4,7 @@ import { getVisitaCompletaPorFolio } from "@/lib/data/visitas";
 import { listarProblemas, listarTrabajos } from "@/lib/data/catalogos";
 import MobileShell from "@/components/mobile/MobileShell";
 import ActaGuardada from "@/components/mobile/ActaGuardada";
+import { participaEnVisita } from "@/lib/ui/estado";
 
 export const dynamic = "force-dynamic";
 
@@ -14,7 +15,7 @@ export default async function RevisarActaPage({ params }: { params: Promise<{ fo
   if (!sesion?.tecnico) redirect("/login");
 
   const visita = await getVisitaCompletaPorFolio(folio);
-  if (!visita || visita.tecnicoId !== sesion.tecnico.id) notFound();
+  if (!visita || !participaEnVisita(visita, sesion.tecnico.id)) notFound();
 
   const [catalogoTrabajos, catalogoProblemas] = await Promise.all([listarTrabajos(), listarProblemas()]);
 

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSesion } from "@/lib/auth";
-import { getDuenoDeVideo, getVideoMeta, getVideoTramo } from "@/lib/data/videos";
+import { getDuenosDeVideo,getVideoMeta, getVideoTramo } from "@/lib/data/videos";
 
 // Sirve el video que el técnico grabó en terreno. Los bytes viven en
 // dmc.visita_video.contenido: no hay almacenamiento de archivos contratado.
@@ -48,8 +48,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   if (!Number.isInteger(id) || id <= 0) return new NextResponse("No encontrado", { status: 404 });
 
   if (sesion.usuario.rol === "TECNICO") {
-    const dueno = await getDuenoDeVideo(id);
-    if (dueno === null || dueno !== sesion.tecnico?.id) {
+    const duenos = await getDuenosDeVideo(id);
+    if (!sesion.tecnico || !duenos.includes(sesion.tecnico.id)) {
       return new NextResponse("No encontrado", { status: 404 });
     }
   }

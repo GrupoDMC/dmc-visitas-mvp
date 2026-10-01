@@ -3,6 +3,7 @@ import { getSesion } from "@/lib/auth";
 import { getFirmaBinaria, getFotoBinaria, getVisitaCompletaPorFolio } from "@/lib/data/visitas";
 import { listarMotivos, listarProblemas, listarTrabajos } from "@/lib/data/catalogos";
 import { generarPdfActa } from "@/lib/pdf/acta";
+import { participaEnVisita } from "@/lib/ui/estado";
 
 // El acta en PDF para mandarle al cliente. Sin comentario interno: ni el texto,
 // ni su checklist, ni las fotos o clips marcados como internos.
@@ -20,7 +21,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ folio: 
   const folio = decodeURIComponent(folioParam);
   const visita = await getVisitaCompletaPorFolio(folio);
   if (!visita) return new NextResponse("No encontrada", { status: 404 });
-  if (sesion.usuario.rol === "TECNICO" && visita.tecnicoId !== sesion.tecnico?.id) {
+  if (sesion.usuario.rol === "TECNICO" && !(sesion.tecnico && participaEnVisita(visita, sesion.tecnico.id))) {
     return new NextResponse("No encontrada", { status: 404 });
   }
   if (visita.estado !== "COMPLETADA") {

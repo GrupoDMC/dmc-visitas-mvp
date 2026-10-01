@@ -32,6 +32,7 @@ export const MODULOS: ModuloPermiso[] = [
       { clave: "editar", label: "Corregir visitas" },
       { clave: "reprogramar", label: "Cambiar fecha y técnico" },
       { clave: "enviar", label: "Enviar el acta por correo" },
+      { clave: "liberar", label: "Liberar visitas en curso" },
       { clave: "cancelar", label: "Cancelar por admin" },
       { clave: "eliminar", label: "Eliminar visitas" },
     ],
@@ -106,7 +107,7 @@ export const TODOS_LOS_PERMISOS: string[] = MODULOS.flatMap((m) => m.acciones.ma
  * rol asignado y la semilla del rol «Coordinador» de la migración 008.
  */
 export const PERMISOS_COORDINADOR: string[] = TODOS_LOS_PERMISOS.filter(
-  (p) => !["visitas.cancelar", "visitas.eliminar", "usuarios.roles"].includes(p)
+  (p) => !["visitas.liberar", "visitas.cancelar","visitas.eliminar", "usuarios.roles"].includes(p)
 );
 
 export function tiene(permisos: readonly string[], permiso: string): boolean {

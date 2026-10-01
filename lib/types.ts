@@ -268,10 +268,17 @@ export interface Visita {
   sucursalId: number;
   tecnicoId: number;
   /**
-   * El segundo técnico, cuando van dos al mismo local. Ve la visita en su
-   * celular, pero el acta la llena y la firma el técnico asignado.
+   * El segundo técnico, cuando van dos al mismo local. Cualquiera de los dos
+   * puede llenar el acta, pero solo uno: el que la inicia (ver
+   * `tomadaPorTecnicoId`).
    */
   tecnicoAyudanteId: number | null;
+  /**
+   * Quién la tiene tomada mientras está EN_CURSO: el asignado o el ayudante,
+   * el que apretó "Iniciar visita". Solo él puede terminarla, hasta que
+   * administración la libere. Null en cualquier otro estado.
+   */
+  tomadaPorTecnicoId: number | null;
   motivoCodigo: string;
   /**
    * Todos los motivos agendados. `motivoCodigo` es el principal (el primero de
@@ -315,6 +322,11 @@ export interface Visita {
   /** Lo marcado del checklist del comentario interno, con su nombre. */
   internos?: { codigo: string; nombre: string }[];
   reagendamientos?: Reagendamiento[];
+  /**
+   * Solo viene en una visita eliminada, y esas solo las lee el administrador:
+   * quién la sacó de circulación y cuándo. Para todo el resto no existe.
+   */
+  eliminacion?: { por: string; en: string };
 }
 
 export type EstadoSolicitudPassword = "PENDIENTE" | "ATENDIDA" | "DESCARTADA";

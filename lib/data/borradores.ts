@@ -55,7 +55,7 @@ export async function leerBorrador(folio: string, usuarioId: number): Promise<Bo
     `SELECT b.payload, ${F_TS("b.guardado_en")} AS guardado_en
        FROM dmc.visita_borrador b
        JOIN dmc.visita v ON v.id = b.visita_id
-      WHERE v.folio = @folio AND b.usuario_id = @usuario`,
+      WHERE v.folio = @folio AND v.activo = 1 AND b.usuario_id = @usuario`,
     [
       ["folio", sql.VarChar(16), folio],
       ["usuario", sql.BigInt, usuarioId],

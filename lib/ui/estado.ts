@@ -17,7 +17,33 @@ export function estaCancelada(estado: EstadoVisita): boolean {
   return estado === "CANCELADA" || estado === "CANCELADA_ADMIN";
 }
 
-export type TagVariant = "accent" | "neutral" | "outline" | "dark";
+type VisitaConEquipo = {
+  estado: EstadoVisita;
+  tecnicoId: number;
+  tecnicoAyudanteId: number | null;
+  tomadaPorTecnicoId: number | null;
+  tecnico?: { nombreCompleto: string };
+  tecnicoAyudante?: { nombreCompleto: string };
+};
+
+/** ¿Va a esta visita, como asignado o como ayudante? */
+export function participaEnVisita(visita: VisitaConEquipo, tecnicoId: number): boolean {
+  return visita.tecnicoId === tecnicoId || visita.tecnicoAyudanteId === tecnicoId;
+}
+
+/** EN_CURSO y tomada por el otro técnico: este solo puede mirarla. */
+export function tomadaPorOtro(visita: VisitaConEquipo, tecnicoId: number): boolean {
+  return visita.estado === "EN_CURSO" && visita.tomadaPorTecnicoId !== tecnicoId;
+}
+
+/** El nombre de quien tiene tomada la visita en curso, o null si nadie. */
+export function nombreDeQuienLaTomo(visita: VisitaConEquipo): string | null {
+  if (visita.tomadaPorTecnicoId === null) return null;
+  const quien = visita.tomadaPorTecnicoId === visita.tecnicoAyudanteId ? visita.tecnicoAyudante : visita.tecnico;
+  return quien?.nombreCompleto ?? null;
+}
+
+export type TagVariant ="accent" | "neutral" | "outline" | "dark";
 
 export const ESTADO_VISITA_TAG: Record<EstadoVisita, TagVariant> = {
   PROGRAMADA: "neutral",

@@ -10,6 +10,7 @@ import {
   pegarTrozo,
   type DatosVideo,
 } from "@/lib/data/videos";
+import { participaEnVisita, tomadaPorOtro } from "@/lib/ui/estado";
 
 /**
  * Subida del video del trabajo, por partes.
@@ -36,7 +37,8 @@ export interface ResultadoVideo {
 }
 
 /**
- * La visita tiene que ser del técnico y estar todavía abierta.
+ * La visita tiene que ser del técnico (asignado o ayudante), estar todavía
+ * abierta y no tenerla tomada el otro.
  *
  * Se comprueba en cada trozo, no solo al abrir: entre el primero y el último
  * pueden pasar varios minutos, y en el medio el acta se pudo cerrar o
@@ -46,8 +48,9 @@ async function visitaAbierta(folio: string) {
   const sesion = await getSesion();
   if (!sesion?.tecnico) return null;
   const visita = await getVisitaParaVideo(folio);
-  if (!visita || visita.tecnicoId !== sesion.tecnico.id) return null;
+  if (!visita || !participaEnVisita(visita, sesion.tecnico.id)) return null;
   if (visita.estado !== "PROGRAMADA" && visita.estado !== "EN_CURSO") return null;
+  if (tomadaPorOtro(visita, sesion.tecnico.id)) return null;
   return visita;
 }
 

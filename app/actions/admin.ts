@@ -10,6 +10,7 @@ import {
   eliminarVisita,
   FaltaMigracionMargen,
   getVisitaCompletaPorFolio,
+  liberarVisita,
   registrarEnvioActa,
   reprogramarVisita,
   type DatosVisita,
@@ -272,6 +273,27 @@ export async function cancelarVisitaAdminAction(input: {
   }
   revalidarPanel(input.folio);
   return { ok: true, folio: input.folio };
+}
+
+/**
+ * "Liberar" — suelta una visita EN CURSO y la deja PROGRAMADA.
+ *
+ * Mientras está en curso solo puede terminarla el técnico que la inició (el
+ * asignado o el ayudante). Esto la destraba: lo que estaba en curso se anula
+ * y cualquiera de los dos puede iniciarla de nuevo.
+ */
+export async function liberarVisitaAction(folio: string): Promise<ResultadoAdmin> {
+  const sesion = await sesionCon("visitas.liberar");
+  if (!sesion) return { ok: false, error: "No tienes permiso para liberar visitas." };
+
+  try {
+    const fallo = await liberarVisita({ folio, usuarioId: sesion.usuario.id });
+    if (fallo) return { ok: false, error: fallo.error };
+  } catch (err) {
+    return comoError(err, "liberarVisita");
+  }
+  revalidarPanel(folio);
+  return { ok: true, folio };
 }
 
 /**

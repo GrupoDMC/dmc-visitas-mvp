@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSesion } from "@/lib/auth";
-import { getDuenoDeImagen, getFotoBinaria } from "@/lib/data/visitas";
+import { getDuenosDeImagen,getFotoBinaria } from "@/lib/data/visitas";
 
 // Sirve la foto que el técnico tomó en terreno. Los bytes viven en
 // dmc.visita_foto.contenido: no hay almacenamiento de archivos contratado.
@@ -19,8 +19,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   if (!Number.isInteger(id) || id <= 0) return new NextResponse("No encontrada", { status: 404 });
 
   if (sesion.usuario.rol === "TECNICO") {
-    const dueno = await getDuenoDeImagen("foto", id);
-    if (dueno === null || dueno !== sesion.tecnico?.id) {
+    const duenos = await getDuenosDeImagen("foto", id);
+    if (!sesion.tecnico || !duenos.includes(sesion.tecnico.id)) {
       return new NextResponse("No encontrada", { status: 404 });
     }
   }

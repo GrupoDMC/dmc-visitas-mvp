@@ -395,8 +395,13 @@ Hecho:
   no se tocan (ya tienen acta). No hay cron: se revisa al leer visitas, como mucho cada 5 minutos
   (`lib/data/vencimiento.ts`).
 - **Técnico ayudante** — `dmc.visita.tecnico_ayudante_id`, opcional, para cuando van dos al local.
-  El ayudante ve la visita en su celular marcada como «Ayudante», pero el acta la llena y la firma
-  el técnico asignado.
+  El ayudante ve la visita en su celular marcada como «Ayudante» y también puede llenar el acta.
+  El que aprieta «Iniciar visita» se la queda: mientras esté En curso solo él puede terminarla y el
+  otro solo la mira. Quién la tomó sale de la última fila `EN_CURSO` de
+  `dmc.visita_estado_historial` (`TOMADA_POR` en `lib/data/visitas.ts`), sin columna nueva.
+- **Liberar** — botón del acta en el panel (permiso `visitas.liberar`, por defecto solo el
+  administrador) para una visita En curso: anula ese inicio, borra la ejecución a medio abrir y la
+  deja Programada para que cualquiera de los dos la inicie de nuevo.
 - **Recuperación de contraseña** — sin servidor de correo: la solicitud queda en
   `dmc.solicitud_password` y el administrador la atiende en *Maestros › Usuarios › Contraseñas
   pedidas*, que es la pestaña vecina a la de las cuentas.

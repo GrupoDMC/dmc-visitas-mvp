@@ -6,7 +6,7 @@ import Sheet from "./Sheet";
 import Tag from "@/components/Tag";
 import { Toast, useToast } from "./toast";
 import { cambiarEstadoVisitaAction, iniciarVisitaAction } from "@/app/actions/visitas";
-import { ESTADO_VISITA_LABEL, ESTADO_VISITA_TAG, textoMotivos } from "@/lib/ui/estado";
+import { ESTADO_VISITA_LABEL, ESTADO_VISITA_TAG, nombreDeQuienLaTomo, textoMotivos } from "@/lib/ui/estado";
 import { hayDireccion, urlMapa, urlTel } from "@/lib/ui/formato";
 import type { HistorialVista } from "@/lib/data/historial";
 import type { EstadoVisita, Visita } from "@/lib/types";
@@ -50,11 +50,14 @@ export default function DetalleVisita({
   visita,
   historial,
   esAyudante = false,
+  tomadaPorOtro = false,
 }: {
   visita: Visita;
   historial: HistorialVista;
-  /** Quien mira va de ayudante: ve la visita, pero el acta es del asignado. */
+  /** Quien mira va de ayudante. Puede llenar el acta igual que el asignado. */
   esAyudante?: boolean;
+  /** Está en curso y la inició el otro técnico: acá solo se mira. */
+  tomadaPorOtro?: boolean;
 }) {
   const router = useRouter();
   const { toast, aviso } = useToast();
@@ -95,6 +98,9 @@ export default function DetalleVisita({
   } else if (visita.tecnicoAyudante) {
     filas.push({ k: "Ayudante", v: visita.tecnicoAyudante.nombreCompleto });
   }
+  if (visita.tomadaPorTecnicoId !== null && visita.tecnicoAyudante) {
+    filas.push({ k: "La inició", v: nombreDeQuienLaTomo(visita) ?? "—" });
+  }
   if (visita.indicacionesAcceso) filas.push({ k: "Acceso", v: visita.indicacionesAcceso });
   if (reagenda) {
     filas.push({
@@ -106,7 +112,11 @@ export default function DetalleVisita({
   function iniciar() {
     startTransition(async () => {
       const r = await iniciarVisitaAction(visita.folio);
-      if (!r.ok) return aviso(r.error ?? "No se pudo iniciar la visita");
+      if (!r.ok) {
+        // Puede que el otro técnico la haya iniciado recién: se vuelve a leer.
+        router.refresh();
+        return aviso(r.error ?? "No se pudo iniciar la visita");
+      }
       router.push(`/tecnico/visitas/${visita.folio}/formulario`);
     });
   }
@@ -309,12 +319,12 @@ export default function DetalleVisita({
         ) : null}
 
         {/* ── Acción principal ── */}
-        {esAyudante ? (
+        {tomadaPorOtro ? (
           // Dos personas llenando la misma acta desde dos celulares se pisarían:
-          // el ayudante acompaña, el asignado registra y hace firmar.
+          // el que la inicia se la queda, y el otro espera o pide que la liberen.
           <div className="mt-4.5 p-3.5 bg-[var(--color-surface)] border-l-4 border-[var(--color-text)] text-sm leading-[1.5]">
-            Vas como ayudante de <b>{visita.tecnico?.nombreCompleto ?? "otro técnico"}</b>. El acta la llena y la
-            hace firmar el técnico a cargo desde su celular.
+            <b>{nombreDeQuienLaTomo(visita) ?? "El otro técnico"}</b> ya inició esta visita y solo esa persona puede
+            terminarla desde su celular. Si no la va a terminar, pide a coordinación que la libere.
           </div>
         ) : abierta ? (
           <>
@@ -330,6 +340,9 @@ export default function DetalleVisita({
             </button>
             <p className="mt-2.5 mb-0 text-xs opacity-66">
               Al iniciar se registra la hora en el acta. El formulario guarda sección por sección.
+              {visita.tecnicoAyudante && visita.estado === "PROGRAMADA"
+                ? " Van dos técnicos: quien la inicie es el único que podrá terminarla."
+                : ""}
             </p>
 
             {/* ── Otras acciones de la visita ── */}

@@ -8,13 +8,14 @@ import Dialogo, { type Adjunto } from "@/components/admin/Dialogo";
 import VisitaDialogo, {
   CancelarAdminDialogo,
   EliminarVisitaDialogo,
+  LiberarDialogo,
   ReprogramarDialogo,
   type OrigenProblema,
 } from "@/components/admin/VisitaDialogos";
 import VisorFotos, { useVisorFotos } from "@/components/ui/VisorFotos";
 import { Toast, useToast } from "@/components/ui/Toast";
 import { enviarActaAction } from "@/app/actions/admin";
-import { ESTADO_PROBLEMA_LABEL, ESTADO_PROBLEMA_TAG, ESTADO_VISITA_LABEL, ESTADO_VISITA_TAG, textoMotivos, textoMotivosReales } from "@/lib/ui/estado";
+import { ESTADO_PROBLEMA_LABEL, ESTADO_PROBLEMA_TAG, ESTADO_VISITA_LABEL, ESTADO_VISITA_TAG, nombreDeQuienLaTomo, textoMotivos, textoMotivosReales } from "@/lib/ui/estado";
 import { textoFechaVisita } from "@/lib/ui/fecha";
 import { nombreProblema, nombreTrabajo, puede, useReferencias } from "@/lib/ui/referencias";
 import { reloj } from "@/lib/ui/video";
@@ -54,7 +55,7 @@ export default function ActaView({
   const [trazaAbierta, setTrazaAbierta] = useState(false);
   const [zonaAbierta, setZonaAbierta] = useState(false);
   const [dialogo, setDialogo] = useState<
-    "correo" | "editar" | "reprogramar" | "cancelarAdmin" | "eliminar" | null
+    "correo" | "editar" | "reprogramar" | "liberar" | "cancelarAdmin" | "eliminar" | null
   >(null);
   const [agendarProblema, setAgendarProblema] = useState<OrigenProblema | null>(null);
   const visor = useVisorFotos();
@@ -70,6 +71,9 @@ export default function ActaView({
   const cerrablePorAdmin =
     puede(ref, "visitas.cancelar") && (visita.estado === "PROGRAMADA" || visita.estado === "EN_CURSO");
   const eliminable = puede(ref, "visitas.eliminar");
+  // En curso la tiene tomada un técnico: liberarla la devuelve a programada.
+  const liberable = puede(ref, "visitas.liberar") && visita.estado === "EN_CURSO";
+  const tomadaPor = nombreDeQuienLaTomo(visita);
   const duracion = ejec ? minutosEntre(ejec.horaInicio, ejec.horaTermino) : null;
   const firma = visita.firmas?.[0];
 
@@ -110,6 +114,7 @@ export default function ActaView({
       : { k: "Ejecución", v: "Pendiente · sin registro en terreno" },
     { k: "Estado", v: ESTADO_VISITA_LABEL[visita.estado], span: 2 },
   ];
+  if (tomadaPor) resumen.push({ k: "En curso · la inició", v: tomadaPor, span: 2 });
   if (visita.indicacionesAcceso) resumen.push({ k: "Indicaciones de acceso", v: visita.indicacionesAcceso, span: 2 });
   if (visita.motivoPendiente) resumen.push({ k: "Motivo del técnico", v: visita.motivoPendiente, span: 2 });
   const reagenda = visita.reagendamientos?.[0];
@@ -157,6 +162,15 @@ export default function ActaView({
               <span>Cambiar fecha y técnico</span>
             </button>
           ) : null}
+          {liberable ? (
+            <button onClick={() => setDialogo("liberar")} className="btn btn-primary min-h-[38px] px-3.5">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                <rect x="5" y="11" width="14" height="10" />
+                <path d="M8 11V7a4 4 0 017.5-2" />
+              </svg>
+              <span>Liberar</span>
+            </button>
+          ) : null}
           <button onClick={() => setTrazaAbierta(true)} className="btn btn-secondary min-h-[38px] px-3.5">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
               <circle cx="12" cy="12" r="8.5" />
@@ -183,6 +197,9 @@ export default function ActaView({
       {sinCerrar ? (
         <div className="mx-7 mt-5 px-4 py-3.5 bg-[var(--color-accent-200)] border-l-4 border-[var(--color-accent)] text-[13px] text-[var(--color-accent-800)]">
           {AVISO_ESTADO[visita.estado]}
+          {tomadaPor
+            ? ` La inició ${tomadaPor} y solo esa persona puede terminarla${liberable ? "; con «Liberar» vuelve a quedar programada." : "."}`
+            : ""}
         </div>
       ) : null}
 
@@ -764,6 +781,16 @@ export default function ActaView({
         />
       ) : null}
 
+      {dialogo === "liberar" ? (
+        <LiberarDialogo
+          visita={visita}
+          onCerrar={() => setDialogo(null)}
+          onHecho={(m) => {
+            aviso(m);
+            router.refresh();
+          }}
+        />
+      ) : null}
       {dialogo === "cancelarAdmin" ? (
         <CancelarAdminDialogo
           visita={visita}

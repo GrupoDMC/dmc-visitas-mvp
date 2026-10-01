@@ -13,9 +13,10 @@ import {
   crearVisitaAction,
   editarVisitaAction,
   eliminarVisitaAction,
+  liberarVisitaAction,
   reprogramarVisitaAction,
 } from "@/app/actions/admin";
-import { ESTADO_VISITA_LABEL } from "@/lib/ui/estado";
+import { ESTADO_VISITA_LABEL, nombreDeQuienLaTomo } from "@/lib/ui/estado";
 import { mensajeRut } from "@/lib/ui/formato";
 import { hoyISO } from "@/lib/ui/fecha";
 import { algunoPideHora } from "@/lib/ui/motivos";
@@ -426,6 +427,54 @@ export function ReprogramarDialogo({
       campos={campos}
       form={form}
       onCampo={(k, v) => setForm((prev) => ({ ...prev, [k]: v }))}
+      onCerrar={onCerrar}
+      onGuardar={guardar}
+      guardando={guardando}
+    />
+  );
+}
+
+/**
+ * "Liberar" — suelta una visita EN CURSO y la deja programada.
+ *
+ * Mientras está en curso solo puede terminarla quien la inició (el asignado o
+ * el ayudante). Es solo una confirmación: no hay nada que llenar.
+ */
+export function LiberarDialogo({
+  visita,
+  onCerrar,
+  onHecho,
+}: {
+  visita: Visita;
+  onCerrar: () => void;
+  onHecho: (mensaje: string) => void;
+}) {
+  const [guardando, setGuardando] = useState(false);
+  const quien = nombreDeQuienLaTomo(visita) ?? "el técnico";
+
+  async function guardar() {
+    setGuardando(true);
+    const res = await liberarVisitaAction(visita.folio);
+    setGuardando(false);
+    if (!res.ok) {
+      onHecho(res.error ?? "No se pudo liberar la visita.");
+      return;
+    }
+    onHecho(`Visita ${visita.folio} liberada: quedó programada`);
+    onCerrar();
+  }
+
+  return (
+    <Dialogo
+      kicker="Operación · liberar visita"
+      titulo={`Liberar ${visita.folio}`}
+      cta="Liberar la visita"
+      nota={`La visita está en curso y la tiene ${quien}. Al liberarla se anula ese inicio y vuelve a quedar «Programada»: ${
+        visita.tecnicoAyudante ? "cualquiera de los dos técnicos" : "el técnico"
+      } puede iniciarla de nuevo, y la hora de llegada será la de ese nuevo inicio. Lo que ${quien} llevaba escrito queda guardado como borrador en su celular.`}
+      campos={[]}
+      form={{}}
+      onCampo={() => {}}
       onCerrar={onCerrar}
       onGuardar={guardar}
       guardando={guardando}

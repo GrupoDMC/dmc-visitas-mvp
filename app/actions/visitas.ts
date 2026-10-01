@@ -13,6 +13,7 @@ import {
 import { listarSucursales } from "@/lib/data/maestros";
 import { listarMotivos } from "@/lib/data/catalogos";
 import { algunoPideHora } from "@/lib/ui/motivos";
+import { participaEnVisita, tomadaPorOtro } from "@/lib/ui/estado";
 import { borrarBorrador } from "@/lib/data/borradores";
 import type { EstadoVisita } from "@/lib/types";
 
@@ -25,13 +26,13 @@ export interface ResultadoAccion {
   horaTermino?: string;
 }
 
-/** Solo el técnico dueño de la visita puede tocarla desde el móvil. */
+/** Solo los técnicos de la visita (asignado y ayudante) pueden tocarla desde el móvil. */
 async function visitaDelTecnico(folio: string) {
   const sesion = await getSesion();
   if (!sesion?.tecnico) return null;
   const visita = await getVisitaCompletaPorFolio(folio);
-  if (!visita || visita.tecnicoId !== sesion.tecnico.id) return null;
-  return { visita, sesion };
+  if (!visita || !participaEnVisita(visita, sesion.tecnico.id)) return null;
+  return { visita, sesion, tecnico: sesion.tecnico };
 }
 
 function revalidar(folio: string) {
@@ -51,13 +52,19 @@ function comoError(err: unknown, contexto: string): ResultadoAccion {
 export async function iniciarVisitaAction(folio: string): Promise<ResultadoAccion> {
   const contexto = await visitaDelTecnico(folio);
   if (!contexto) return { ok: false, error: "No encontramos esa visita entre las tuyas." };
-  const { visita } = contexto;
-  if (visita.estado !== "PROGRAMADA" && visita.estado !== "EN_CURSO") {
-    return { ok: false, error: "Esta visita ya está cerrada." };
-  }
+  const { visita, sesion, tecnico } = contexto;
 
   try {
-    await iniciarVisita(folio, visita.responsableNombre);
+    // Quién la puede iniciar y si ya la tomó el otro se decide con la fila
+    // bloqueada, no con lo que se leyó recién.
+    const fallo = await iniciarVisita(folio, visita.responsableNombre, {
+      tecnicoId: tecnico.id,
+      usuarioId: sesion.usuario.id,
+    });
+    if (fallo) {
+      revalidar(folio);
+      return { ok: false, error: fallo.error };
+    }
   } catch (err) {
     return comoError(err, "iniciarVisita");
   }
@@ -113,6 +120,9 @@ export async function cambiarEstadoVisitaAction(input: {
 }): Promise<ResultadoAccion> {
   const contexto = await visitaDelTecnico(input.folio);
   if (!contexto) return { ok: false, error: "No encontramos esa visita entre las tuyas." };
+  if (tomadaPorOtro(contexto.visita, contexto.tecnico.id)) {
+    return { ok: false, error: "El otro técnico ya inició esta visita: solo él puede cambiarla." };
+  }
 
   const motivo = input.motivo.trim();
   if (!motivo) return { ok: false, error: "El motivo es obligatorio." };
@@ -129,7 +139,7 @@ export async function cambiarEstadoVisitaAction(input: {
       horaNueva: input.horaNueva,
       origen: "MOVIL",
       usuarioId: contexto.sesion.usuario.id,
-      tecnicoId: contexto.sesion.tecnico?.id ?? null,
+      tecnicoId: contexto.tecnico.id,
     });
   } catch (err) {
     return comoError(err, "cambiarEstadoVisita");
@@ -194,7 +204,11 @@ export async function crearVisitaTecnicoAction(input: {
       sesion.usuario.id
     );
 
-    await iniciarVisita(visita.folio, visita.responsableNombre);
+    const fallo = await iniciarVisita(visita.folio, visita.responsableNombre, {
+      tecnicoId: sesion.tecnico.id,
+      usuarioId: sesion.usuario.id,
+    });
+    if (fallo) return { ok: false, error: fallo.error };
     revalidar(visita.folio);
     return { ok: true, folio: visita.folio };
   } catch (err) {

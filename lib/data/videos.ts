@@ -1,5 +1,7 @@
 import "server-only";
-import { consultaCon, ejecutar, num, sql } from "@/lib/data/sql";
+import { consultaCon, ejecutar, num, numONull, sql } from "@/lib/data/sql";
+import { TOMADA_POR } from "@/lib/data/visitas";
+import type { EstadoVisita } from "@/lib/types";
 
 /**
  * El video del trabajo, subido por partes.
@@ -71,8 +73,11 @@ export function motivoRechazo(d: DatosVideo): string | null {
 
 export interface VisitaParaVideo {
   id: number;
-  estado: string;
+  estado: EstadoVisita;
   tecnicoId: number;
+  tecnicoAyudanteId: number | null;
+  /** Quién la tiene tomada si está EN_CURSO (ver TOMADA_POR en visitas.ts). */
+  tomadaPorTecnicoId: number | null;
 }
 
 /**
@@ -84,11 +89,26 @@ export interface VisitaParaVideo {
  * no tiene ningún sentido.
  */
 export async function getVisitaParaVideo(folio: string): Promise<VisitaParaVideo | null> {
-  const [fila] = await consultaCon<{ id: number; estado: string; tecnico_id: number }>(
-    `SELECT id, estado, tecnico_id FROM dmc.visita WHERE folio = @folio AND activo = 1`,
+  const [fila] = await consultaCon<{
+    id: number;
+    estado: EstadoVisita;
+    tecnico_id: number;
+    tecnico_ayudante_id: number | null;
+    tomada_por: number | null;
+  }>(
+    `SELECT v.id, v.estado, v.tecnico_id, v.tecnico_ayudante_id, ${TOMADA_POR} AS tomada_por
+       FROM dmc.visita v WHERE v.folio = @folio AND v.activo = 1`,
     [["folio", sql.VarChar(16), folio]]
   );
-  return fila ? { id: num(fila.id), estado: fila.estado, tecnicoId: num(fila.tecnico_id) } : null;
+  return fila
+    ? {
+        id: num(fila.id),
+        estado: fila.estado,
+        tecnicoId: num(fila.tecnico_id),
+        tecnicoAyudanteId: numONull(fila.tecnico_ayudante_id),
+        tomadaPorTecnicoId: numONull(fila.tomada_por),
+      }
+    : null;
 }
 
 /** Crea la fila vacía a la que se le van a pegar los trozos. */
@@ -252,11 +272,14 @@ export async function getVideoTramo(id: number, desde: number, hasta: number): P
   return fila?.trozo ?? null;
 }
 
-/** El técnico dueño de la visita a la que pertenece el clip. */
-export async function getDuenoDeVideo(id: number): Promise<number | null> {
-  const [fila] = await consultaCon<{ tecnico_id: number }>(
-    `SELECT v.tecnico_id FROM dmc.visita_video x JOIN dmc.visita v ON v.id = x.visita_id WHERE x.id = @id`,
+/** Los técnicos de la visita a la que pertenece el clip: asignado y ayudante. */
+export async function getDuenosDeVideo(id: number): Promise<number[]> {
+  const [fila] = await consultaCon<{ tecnico_id: number; tecnico_ayudante_id: number | null }>(
+    `SELECT v.tecnico_id, v.tecnico_ayudante_id
+       FROM dmc.visita_video x JOIN dmc.visita v ON v.id = x.visita_id WHERE x.id = @id`,
     [["id", sql.BigInt, id]]
   );
-  return fila ? num(fila.tecnico_id) : null;
+  if (!fila) return [];
+  const ayudante = numONull(fila.tecnico_ayudante_id);
+  return ayudante === null ? [num(fila.tecnico_id)] : [num(fila.tecnico_id), ayudante];
 }

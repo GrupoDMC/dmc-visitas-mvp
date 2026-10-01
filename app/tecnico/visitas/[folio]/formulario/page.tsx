@@ -5,6 +5,7 @@ import { listarInternos, listarMotivos, listarProblemas, listarTrabajos } from "
 import { leerBorrador } from "@/lib/data/borradores";
 import MobileShell from "@/components/mobile/MobileShell";
 import FormularioVisita from "@/components/mobile/FormularioVisita";
+import { participaEnVisita, tomadaPorOtro } from "@/lib/ui/estado";
 
 export const dynamic = "force-dynamic";
 
@@ -15,8 +16,9 @@ export default async function FormularioPage({ params }: { params: Promise<{ fol
   if (!sesion?.tecnico) redirect("/login");
 
   const visita = await getVisitaCompletaPorFolio(folio);
-  if (!visita || visita.tecnicoId !== sesion.tecnico.id) notFound();
-  if (visita.estado !== "PROGRAMADA" && visita.estado !== "EN_CURSO") {
+  if (!visita || !participaEnVisita(visita, sesion.tecnico.id)) notFound();
+  // Si la inició el otro técnico, el formulario es suyo: este vuelve al detalle.
+  if ((visita.estado !== "PROGRAMADA" && visita.estado !== "EN_CURSO") || tomadaPorOtro(visita, sesion.tecnico.id)) {
     redirect(`/tecnico/visitas/${visita.folio}`);
   }
 

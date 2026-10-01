@@ -62,6 +62,14 @@ function porFolio(folio: string): Filtro {
   return { where: "v.folio = @f_folio AND v.activo = 1", params: [["f_folio", sql.VarChar(16), folio]] };
 }
 
+// Las eliminadas: solo las lee el administrador, y siempre por estas dos
+// puertas aparte para que ninguna otra lectura las traiga por descuido.
+const ELIMINADAS: Filtro = { where: "v.activo = 0", params: [] };
+
+function eliminadaPorFolio(folio: string): Filtro {
+  return { where: "v.folio = @f_folio AND v.activo = 0", params: [["f_folio", sql.VarChar(16), folio]] };
+}
+
 function porId(id: number): Filtro {
   return { where: "v.id = @f_id AND v.activo = 1", params: [["f_id", sql.BigInt, id]] };
 }
@@ -91,6 +99,7 @@ interface FilaVisita {
   responsable_rut: string | null;
   responsable_telefono: string | null;
   motivo_pendiente: string | null;
+  tomada_por: number | null;
   problema_origen_id: number | null;
   creada_en_terreno: boolean;
   creado_en: string;
@@ -136,6 +145,25 @@ const MOTIVO_PENDIENTE = `
     WHERE h.visita_id = v.id AND h.estado = v.estado AND h.motivo IS NOT NULL
     ORDER BY h.ocurrido_en DESC, h.id DESC)`;
 
+/**
+ * Quién tiene tomada una visita EN_CURSO: el asignado o el ayudante.
+ *
+ * No tiene columna propia: es el técnico de la última fila EN_CURSO de la
+ * bitácora, que `iniciarVisita` deja escrita. Si esa fila no es del ayudante
+ * actual (visitas iniciadas antes de este cambio, o un ayudante que
+ * coordinación cambió después), la tiene el asignado. Fuera de EN_CURSO, null.
+ */
+export const TOMADA_POR = `
+  CASE WHEN v.estado = 'EN_CURSO' THEN
+    CASE WHEN v.tecnico_ayudante_id IS NOT NULL AND v.tecnico_ayudante_id =
+              (SELECT TOP 1 h.tecnico_id
+                 FROM dmc.visita_estado_historial h
+                WHERE h.visita_id = v.id AND h.estado = 'EN_CURSO'
+                ORDER BY h.id DESC)
+         THEN v.tecnico_ayudante_id
+         ELSE v.tecnico_id END
+  END`;
+
 // `conMargen` = la base ya tiene v.fecha_hasta (migración 010).
 const selectVisita = (conMargen: boolean) => `
   SELECT v.id, v.folio, v.cliente_id, v.sucursal_id, v.tecnico_id, v.tecnico_ayudante_id,
@@ -146,6 +174,7 @@ const selectVisita = (conMargen: boolean) => `
          v.trabajo_solicitado, v.indicaciones_acceso, v.responsable_nombre,
          v.responsable_rut, v.responsable_telefono,
          ${MOTIVO_PENDIENTE} AS motivo_pendiente,
+         ${TOMADA_POR} AS tomada_por,
          v.problema_origen_id, v.creada_en_terreno,
          ${F_TS("v.creado_en")} AS creado_en,
 
@@ -422,6 +451,7 @@ async function cargar(filtro: Filtro): Promise<Visita[]> {
       sucursalId: num(v.sucursal_id),
       tecnicoId: num(v.tecnico_id),
       tecnicoAyudanteId: numONull(v.tecnico_ayudante_id),
+      tomadaPorTecnicoId: numONull(v.tomada_por),
       motivoCodigo: v.motivo_codigo,
       estado: v.estado,
       fechaProgramada: v.fecha_programada,
@@ -640,13 +670,44 @@ export async function getVisitaCompleta(id: number): Promise<Visita | undefined>
   return visita;
 }
 
+/**
+ * Las visitas eliminadas, con quién las eliminó y cuándo. Solo para el
+ * administrador: quien llama comprueba el rol antes.
+ */
+export async function getVisitasEliminadas(): Promise<Visita[]> {
+  return conEliminacion(await cargar(ELIMINADAS));
+}
+
+/** Una visita eliminada, para que el administrador la abra. Mismo cuidado con el rol. */
+export async function getVisitaEliminadaPorFolio(folio: string): Promise<Visita | undefined> {
+  const [visita] = await conEliminacion(await cargar(eliminadaPorFolio(folio)));
+  return visita;
+}
+
+async function conEliminacion(visitas: Visita[]): Promise<Visita[]> {
+  if (visitas.length === 0) return visitas;
+  const filas = await consultaCon<{ visita_id: number; por: string | null; en: string }>(
+    `SELECT e.visita_id, u.email AS por, ${F_TS("e.eliminado_en")} AS en
+       FROM dmc.visita_eliminacion e
+       LEFT JOIN dmc.usuario u ON u.id = e.usuario_id
+      ORDER BY e.id`,
+    []
+  );
+  // Ordenadas por id: si una visita tiene más de un registro, queda el último.
+  const porVisita = new Map(filas.map((f) => [num(f.visita_id), { por: f.por ?? "—", en: f.en }]));
+  return visitas.map((v) => ({ ...v, eliminacion: porVisita.get(v.id) ?? { por: "—", en: "" } }));
+}
+
 /** Todos los problemas levantados, con su visita resuelta. Para el panel. */
 export async function getTodosLosProblemas(): Promise<Problema[]> {
   const [problemas, items] = await Promise.all([
     consultaCon<FilaProblema>(
-      `SELECT id, visita_id, tipo_codigo, estado, descripcion, solucion, orden,
-              ${F_TS("resuelto_en")} AS resuelto_en, ${F_TS("creado_en")} AS creado_en
-         FROM dmc.problema ORDER BY creado_en DESC, id DESC`,
+      `SELECT p.id, p.visita_id, p.tipo_codigo, p.estado, p.descripcion, p.solucion, p.orden,
+              ${F_TS("p.resuelto_en")} AS resuelto_en, ${F_TS("p.creado_en")} AS creado_en
+         FROM dmc.problema p
+         JOIN dmc.visita v ON v.id = p.visita_id
+        WHERE v.activo = 1
+        ORDER BY p.creado_en DESC, p.id DESC`,
       []
     ),
     consultaCon<FilaItem>(`SELECT id, problema_id, etiqueta, cantidad FROM dmc.problema_item ORDER BY id`, []),
@@ -657,33 +718,127 @@ export async function getTodosLosProblemas(): Promise<Problema[]> {
 
 // ── Escritura ───────────────────────────────────────────────────────────────
 
-/** "Iniciar visita": deja la visita EN_CURSO y abre su ejecución. */
-export async function iniciarVisita(folio: string, responsable: string | null): Promise<boolean> {
-  const filas = await consultaCon<{ id: number; estado: EstadoVisita }>(
-    `SELECT id, estado FROM dmc.visita WHERE folio = @folio AND activo = 1`,
-    [["folio", sql.VarChar(16), folio]]
-  );
-  const visita = filas[0];
-  if (!visita) return false;
-  if (visita.estado !== "PROGRAMADA" && visita.estado !== "EN_CURSO") return false;
+const TOMADA_POR_OTRO = "El otro técnico ya inició esta visita: solo él puede terminarla.";
 
-  const id = num(visita.id);
-  if (visita.estado === "PROGRAMADA") {
-    await ejecutar(`UPDATE dmc.visita SET estado = 'EN_CURSO' WHERE id = @id`, [["id", sql.BigInt, id]]);
-  }
+/**
+ * "Iniciar visita": deja la visita EN_CURSO y abre su ejecución.
+ *
+ * La puede iniciar el asignado o el ayudante, y el que la inicia se la queda:
+ * queda anotado en la bitácora (ver TOMADA_POR) y desde ahí el otro solo la
+ * mira, hasta que administración la libere. El UPDLOCK hace que, si los dos
+ * aprietan a la vez, gane uno solo.
+ *
+ * Devuelve por qué no se pudo, o null si quedó iniciada.
+ */
+export async function iniciarVisita(
+  folio: string,
+  responsable: string | null,
+  ctx: { tecnicoId: number; usuarioId: number | null }
+): Promise<{ error: string } | null> {
+  return enTransaccion(async (ej) => {
+    const [visita] = await ej.consulta<{
+      id: number;
+      estado: EstadoVisita;
+      tecnico_id: number;
+      tecnico_ayudante_id: number | null;
+      tomada_por: number | null;
+    }>(
+      `SELECT v.id, v.estado, v.tecnico_id, v.tecnico_ayudante_id, ${TOMADA_POR} AS tomada_por
+         FROM dmc.visita v WITH (UPDLOCK, ROWLOCK) WHERE v.folio = @folio AND v.activo = 1`,
+      [["folio", sql.VarChar(16), folio]]
+    );
+    if (!visita) return { error: "No encontramos esa visita entre las tuyas." };
+    if (num(visita.tecnico_id) !== ctx.tecnicoId && numONull(visita.tecnico_ayudante_id) !== ctx.tecnicoId) {
+      return { error: "No encontramos esa visita entre las tuyas." };
+    }
+    if (visita.estado !== "PROGRAMADA" && visita.estado !== "EN_CURSO") {
+      return { error: "Esta visita ya está cerrada." };
+    }
+    if (visita.estado === "EN_CURSO" && numONull(visita.tomada_por) !== ctx.tecnicoId) {
+      return { error: TOMADA_POR_OTRO };
+    }
 
-  // La ejecución guarda la hora real de llegada. Se crea una sola vez: si el
-  // técnico vuelve a entrar, no se pisa la hora con la que ya había registrado.
-  await ejecutar(
-    `IF NOT EXISTS (SELECT 1 FROM dmc.visita_ejecucion WHERE visita_id = @id)
-       INSERT INTO dmc.visita_ejecucion (visita_id, hora_inicio, responsable_nombre)
-       VALUES (@id, SYSDATETIME(), @responsable)`,
-    [
-      ["id", sql.BigInt, id],
-      ["responsable", sql.NVarChar(120), responsable || "Por registrar"],
-    ]
-  );
-  return true;
+    const id = num(visita.id);
+    if (visita.estado === "PROGRAMADA") {
+      // tg_visita_cambio deja la fila EN_CURSO con el técnico asignado: se le
+      // pone el que de verdad la inició, que puede ser el ayudante.
+      await ej.ejecutar(
+        `DECLARE @antes bigint =
+           (SELECT ISNULL(MAX(id), 0) FROM dmc.visita_estado_historial WHERE visita_id = @id);
+
+         UPDATE dmc.visita SET estado = 'EN_CURSO' WHERE id = @id;
+
+         UPDATE dmc.visita_estado_historial
+            SET tecnico_id = @tecnico, origen = 'MOVIL', usuario_id = @usuario
+          WHERE visita_id = @id AND id > @antes;`,
+        [
+          ["id", sql.BigInt, id],
+          ["tecnico", sql.BigInt, ctx.tecnicoId],
+          ["usuario", sql.BigInt, ctx.usuarioId],
+        ]
+      );
+    }
+
+    // La ejecución guarda la hora real de llegada. Se crea una sola vez: si el
+    // técnico vuelve a entrar, no se pisa la hora con la que ya había registrado.
+    await ej.ejecutar(
+      `IF NOT EXISTS (SELECT 1 FROM dmc.visita_ejecucion WHERE visita_id = @id)
+         INSERT INTO dmc.visita_ejecucion (visita_id, hora_inicio, responsable_nombre)
+         VALUES (@id, SYSDATETIME(), @responsable)`,
+      [
+        ["id", sql.BigInt, id],
+        ["responsable", sql.NVarChar(120), responsable || "Por registrar"],
+      ]
+    );
+    return null;
+  });
+}
+
+/**
+ * "Liberar": suelta una visita EN_CURSO y la deja PROGRAMADA, como si nadie la
+ * hubiera iniciado. Es la salida cuando el técnico que la tomó no la va a
+ * terminar: desde ahí la puede iniciar cualquiera de los dos.
+ *
+ * Se borra la ejecución a medio abrir para que la hora de llegada sea la de
+ * quien la inicie de nuevo. El borrador del que la tenía no se toca: si la
+ * vuelve a tomar él, recupera lo que llevaba escrito.
+ *
+ * Devuelve por qué no se pudo, o null si quedó liberada.
+ */
+export async function liberarVisita(input: {
+  folio: string;
+  usuarioId: number;
+}): Promise<{ error: string } | null> {
+  return enTransaccion(async (ej) => {
+    const [visita] = await ej.consulta<{ id: number; estado: EstadoVisita }>(
+      `SELECT id, estado FROM dmc.visita WITH (UPDLOCK, ROWLOCK) WHERE folio = @folio AND activo = 1`,
+      [["folio", sql.VarChar(16), input.folio]]
+    );
+    if (!visita) return { error: "No encontramos esa visita." };
+    if (visita.estado !== "EN_CURSO") {
+      return { error: "Solo se libera una visita en curso: esta ya cambió de estado." };
+    }
+
+    const id = num(visita.id);
+    await ej.ejecutar(
+      `DECLARE @antes bigint =
+         (SELECT ISNULL(MAX(id), 0) FROM dmc.visita_estado_historial WHERE visita_id = @id);
+
+       UPDATE dmc.visita SET estado = 'PROGRAMADA' WHERE id = @id;
+
+       UPDATE dmc.visita_estado_historial
+          SET motivo = @motivo, origen = 'WEB', usuario_id = @usuario
+        WHERE visita_id = @id AND id > @antes;
+
+       DELETE FROM dmc.visita_ejecucion WHERE visita_id = @id;`,
+      [
+        ["id", sql.BigInt, id],
+        ["motivo", sql.NVarChar(sql.MAX), "Liberada por administración: vuelve a quedar programada."],
+        ["usuario", sql.BigInt, input.usuarioId],
+      ]
+    );
+    return null;
+  });
 }
 
 /**
@@ -1386,13 +1541,23 @@ export async function guardarActa(
   }
 
   return enTransaccion(async (ej) => {
-    const [visita] = await ej.consulta<{ id: number; estado: EstadoVisita; tecnico_id: number }>(
-      `SELECT id, estado, tecnico_id FROM dmc.visita WITH (UPDLOCK, ROWLOCK) WHERE folio = @folio AND activo = 1`,
+    const [visita] = await ej.consulta<{
+      id: number;
+      estado: EstadoVisita;
+      tecnico_id: number;
+      tecnico_ayudante_id: number | null;
+      tomada_por: number | null;
+    }>(
+      `SELECT v.id, v.estado, v.tecnico_id, v.tecnico_ayudante_id, ${TOMADA_POR} AS tomada_por
+         FROM dmc.visita v WITH (UPDLOCK, ROWLOCK) WHERE v.folio = @folio AND v.activo = 1`,
       [["folio", sql.VarChar(16), entrada.folio]]
     );
     if (!visita) return { ok: false, error: "No encontramos esa visita." };
-    if (num(visita.tecnico_id) !== ctx.tecnicoId) {
+    if (num(visita.tecnico_id) !== ctx.tecnicoId && numONull(visita.tecnico_ayudante_id) !== ctx.tecnicoId) {
       return { ok: false, error: "Esa visita no está asignada a ti." };
+    }
+    if (visita.estado === "EN_CURSO" && numONull(visita.tomada_por) !== ctx.tecnicoId) {
+      return { ok: false, error: TOMADA_POR_OTRO };
     }
     if (visita.estado === "COMPLETADA") {
       return { ok: false, error: "Esta visita ya quedó cerrada." };
@@ -1723,12 +1888,28 @@ export async function getFirmaBinaria(id: number): Promise<ImagenGuardada | null
   return { bytes: fila.contenido, mime: "image/png" };
 }
 
-/** El técnico dueño de la visita a la que pertenece la foto o la firma. */
-export async function getDuenoDeImagen(tabla: "foto" | "firma", id: number): Promise<number | null> {
-  const nombre = tabla === "foto" ? "dmc.visita_foto" : "dmc.visita_firma";
-  const [fila] = await consultaCon<{ tecnico_id: number }>(
-    `SELECT v.tecnico_id FROM ${nombre} x JOIN dmc.visita v ON v.id = x.visita_id WHERE x.id = @id`,
+/**
+ * ¿La foto, firma o clip es de una visita eliminada? Entonces solo la sirve el
+ * administrador: para el resto esa visita no existe, y su evidencia tampoco.
+ */
+export async function esEvidenciaDeEliminada(tabla: "foto" | "firma" | "video", id: number): Promise<boolean> {
+  const nombre = { foto: "dmc.visita_foto", firma: "dmc.visita_firma", video: "dmc.visita_video" }[tabla];
+  const [fila] = await consultaCon<{ activo: boolean }>(
+    `SELECT v.activo FROM ${nombre} x JOIN dmc.visita v ON v.id = x.visita_id WHERE x.id = @id`,
     [["id", sql.BigInt, id]]
   );
-  return fila ? num(fila.tecnico_id) : null;
+  return fila ? !fila.activo : false;
+}
+
+/** Los técnicos de la visita a la que pertenece la foto o la firma: asignado y ayudante. */
+export async function getDuenosDeImagen(tabla: "foto" | "firma", id: number): Promise<number[]> {
+  const nombre = tabla === "foto" ? "dmc.visita_foto" : "dmc.visita_firma";
+  const [fila] = await consultaCon<{ tecnico_id: number; tecnico_ayudante_id: number | null }>(
+    `SELECT v.tecnico_id, v.tecnico_ayudante_id
+       FROM ${nombre} x JOIN dmc.visita v ON v.id = x.visita_id WHERE x.id = @id`,
+    [["id", sql.BigInt, id]]
+  );
+  if (!fila) return [];
+  const ayudante = numONull(fila.tecnico_ayudante_id);
+  return ayudante === null ? [num(fila.tecnico_id)] : [num(fila.tecnico_id), ayudante];
 }

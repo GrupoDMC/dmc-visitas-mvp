@@ -3,6 +3,7 @@
 import { getSesion } from "@/lib/auth";
 import { getVisitaCompletaPorFolio } from "@/lib/data/visitas";
 import { borrarBorrador, guardarBorrador, leerBorrador } from "@/lib/data/borradores";
+import { participaEnVisita } from "@/lib/ui/estado";
 
 // Respaldo en el servidor del acta a medio llenar.
 //
@@ -22,7 +23,7 @@ async function tecnicoDeLaVisita(folio: string) {
   const sesion = await getSesion();
   if (!sesion?.tecnico) return null;
   const visita = await getVisitaCompletaPorFolio(folio);
-  if (!visita || visita.tecnicoId !== sesion.tecnico.id) return null;
+  if (!visita || !participaEnVisita(visita, sesion.tecnico.id)) return null;
   return { sesion, visita };
 }
 
