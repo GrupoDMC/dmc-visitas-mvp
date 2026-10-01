@@ -26,7 +26,7 @@ export default function SucursalesTable({
       addLabel="Nueva sucursal"
       editLabel="Editar sucursal"
       dialogoKicker="Maestro · sucursal"
-      nota="La sucursal siempre pertenece a un cliente y no se puede dejar sin él. El mall es opcional: al crear la sucursal, elegirlo le pone el nombre y la ubicación del mall."
+      nota="La sucursal siempre pertenece a un cliente y no se puede dejar sin él. El mall es opcional: elegirlo le pone a la sucursal la ubicación del mall y, si es nueva, también su nombre."
       phBusqueda="Buscar sucursal, comuna, mall, código…"
       rows={sucursales}
       searchKeys={(s) => `${s.nombre} ${s.codigo ?? ""} ${s.comuna} ${s.direccion} ${nombreCliente(s.clienteId)} ${nombreMall(s.mallId)}`}
@@ -66,7 +66,7 @@ export default function SucursalesTable({
             { v: "", t: "Sin mall" },
             ...malls.map((m) => ({ v: String(m.id), t: m.activo ? m.nombre : `${m.nombre} · inactivo` })),
           ],
-          ayuda: "Al crear la sucursal, toma el nombre, la dirección, la comuna y la región del mall.",
+          ayuda: "Al elegirlo, la sucursal toma la dirección, la comuna y la región del mall. Al crearla, también el nombre.",
           visible: () => malls.length > 0,
         },
         { k: "nombre", label: "Nombre de la sucursal" },
@@ -94,14 +94,15 @@ export default function SucursalesTable({
         }
         return null;
       }}
-      // Solo en un alta: una sucursal que ya existe no cambia de nombre ni de dirección por moverla de mall.
+      // La ubicación sigue al mall siempre. El nombre solo en un alta: una
+      // sucursal que ya existe no cambia de nombre por moverla de mall.
       alCambiar={(k, v, _f, id) => {
-        if (k !== "mallId" || id !== null) return null;
+        if (k !== "mallId") return null;
         const mall = malls.find((m) => String(m.id) === v);
         if (!mall) return null;
         // Los malls de antes de la migración 012 no tienen comuna ni región: ahí se deja lo escrito.
         return {
-          nombre: mall.nombre,
+          ...(id === null ? { nombre: mall.nombre } : null),
           direccion: mall.direccion,
           ...(mall.comuna ? { comuna: mall.comuna } : null),
           ...(mall.region ? { region: mall.region } : null),
