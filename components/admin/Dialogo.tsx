@@ -127,12 +127,12 @@ export default function Dialogo({
       role="dialog"
       aria-modal="true"
       aria-label={titulo}
-      className="fixed inset-0 z-[60] bg-[rgba(45,43,43,.5)] grid place-items-center p-6"
+      className="fixed inset-0 z-[60] bg-[rgba(45,43,43,.5)] grid place-items-center sm:p-6"
     >
       <div
-        className="w-full max-w-[720px] max-h-[88vh] flex flex-col overflow-hidden bg-[var(--color-bg)] border-2 border-[var(--color-text)] animate-up-dlg"
+        className="w-full max-w-[720px] h-dvh sm:h-auto sm:max-h-[88vh] flex flex-col overflow-hidden bg-[var(--color-bg)] border-2 border-[var(--color-text)] animate-up-dlg"
       >
-        <div className="flex-none flex items-center gap-3 px-5.5 py-4.5 border-b-2 border-[var(--color-divider)]">
+        <div className="flex-none flex items-center gap-3 px-4 sm:px-5.5 py-3.5 sm:py-4.5 border-b-2 border-[var(--color-divider)]">
           <div className="min-w-0">
             <div className="text-[10px] tracking-[.14em] uppercase text-[var(--color-accent-active)]">{kicker}</div>
             <div className="font-extrabold text-[21px] leading-[1.15] mt-1">{titulo}</div>
@@ -149,8 +149,8 @@ export default function Dialogo({
           </button>
         </div>
 
-        <div className="flex-1 min-h-0 overflow-y-auto p-5.5">
-          <div className="grid grid-cols-2 gap-4">
+        <div className="flex-1 min-h-0 overflow-y-auto p-4 sm:p-5.5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {campos.map((c) => {
               const valor = form[c.k];
               const texto = typeof valor === "boolean" ? "" : String(valor ?? "");
@@ -181,13 +181,13 @@ export default function Dialogo({
               ) : null;
               if (!abierto) {
                 return (
-                  <div key={c.k} className="min-w-0" style={{ gridColumn: `span ${c.span ?? 1}` }}>
+                  <div key={c.k} className={`min-w-0 ${c.span === 2 ? "sm:col-span-2" : ""}`}>
                     {plegador}
                   </div>
                 );
               }
               return (
-                <div key={c.k} className="field min-w-0" style={{ gridColumn: `span ${c.span ?? 1}` }}>
+                <div key={c.k} className={`field min-w-0 ${c.span === 2 ? "sm:col-span-2" : ""}`}>
                   {plegador ? (
                     <div className="mb-2">{plegador}</div>
                   ) : c.casilla ? (
@@ -409,7 +409,7 @@ export default function Dialogo({
 
           {nota ? <p className="mt-4.5 mb-0 text-xs opacity-66">{nota}</p> : null}
 
-          <div className="flex gap-2.5 justify-end mt-5.5 pt-4.5 border-t border-[var(--color-divider-soft)]">
+          <div className="flex gap-2.5 justify-end flex-wrap mt-5.5 pt-4.5 border-t border-[var(--color-divider-soft)]">
             <button type="button" className="btn btn-secondary min-h-11 px-4.5" onClick={onCerrar}>
               Cancelar
             </button>

@@ -12,10 +12,10 @@ export default function PanelDashboard({ data }: { data: Record<Rango, PanelData
 
   return (
     <>
-      <div className="sticky top-0 z-10 bg-[var(--color-bg)] border-b-2 border-[var(--color-divider)] flex items-end gap-5 px-7 pt-[22px] pb-4 flex-wrap">
+      <div className="lg:sticky lg:top-0 z-10 bg-[var(--color-bg)] border-b-2 border-[var(--color-divider)] flex items-end gap-x-5 gap-y-3 px-4 md:px-7 pt-4 md:pt-[22px] pb-4 flex-wrap">
         <div className="min-w-0">
           <div className="text-[10px] tracking-[.15em] uppercase text-[var(--color-accent-active)]">Coordinación</div>
-          <h1 className="font-extrabold text-[30px] leading-[1.08] tracking-[-.03em] mt-1.5">Panel de operación</h1>
+          <h1 className="font-extrabold text-[24px] md:text-[30px] leading-[1.08] tracking-[-.03em] mt-1.5">Panel de operación</h1>
         </div>
         <div className="ml-auto seg">
           {RANGOS.map((r) => (
@@ -41,7 +41,7 @@ export default function PanelDashboard({ data }: { data: Record<Rango, PanelData
       </div>
 
       <div className="pb-10 animate-fade-in">
-        <div className="grid grid-cols-4 border-b-2 border-[var(--color-divider)]">
+        <div className="grid grid-cols-2 lg:grid-cols-4 border-b-2 border-[var(--color-divider)]">
           <KpiCard
             label={`Visitas · ${rango.toLowerCase()}`}
             n={d.kpis.programadas}
@@ -75,8 +75,8 @@ export default function PanelDashboard({ data }: { data: Record<Rango, PanelData
           />
         </div>
 
-        <div className="grid grid-cols-2">
-          <div className="p-6 border-r border-b border-black/[.12]">
+        <div className="grid grid-cols-1 lg:grid-cols-2">
+          <div className="p-4 md:p-6 lg:border-r border-b border-black/[.12]">
             <div className="flex items-baseline gap-2.5">
               <h2 className="font-extrabold text-[17px] m-0">Visitas del día por estado</h2>
               <span className="ml-auto text-[11px] tracking-[.08em] uppercase opacity-60">{d.totalHoy} visitas</span>
@@ -104,7 +104,7 @@ export default function PanelDashboard({ data }: { data: Record<Rango, PanelData
 
           <CumplimientoPanel cumplimiento={d.cumplimiento} />
 
-          <div className="p-6 border-r border-b border-black/[.12]">
+          <div className="p-4 md:p-6 lg:border-r border-b border-black/[.12]">
             <div className="flex items-baseline gap-2.5">
               <h2 className="font-extrabold text-[17px] m-0">Problemas abiertos por tipo</h2>
               <span className="ml-auto text-[11px] tracking-[.08em] uppercase opacity-60">
@@ -130,7 +130,7 @@ export default function PanelDashboard({ data }: { data: Record<Rango, PanelData
             </div>
           </div>
 
-          <div className="p-6 border-b border-black/[.12]">
+          <div className="p-4 md:p-6 border-b border-black/[.12]">
             <h2 className="font-extrabold text-[17px] m-0 mb-1">Carga por técnico</h2>
             <p className="m-0 mb-2 text-xs opacity-62">Programadas vs realizadas hoy.</p>
             <table className="table">
@@ -162,7 +162,7 @@ export default function PanelDashboard({ data }: { data: Record<Rango, PanelData
             </table>
           </div>
 
-          <div className="p-6 border-r border-black/[.12]">
+          <div className="p-4 md:p-6 lg:border-r max-lg:border-b border-black/[.12]">
             <h2 className="font-extrabold text-[17px] m-0 mb-1">Sucursales con más fallas</h2>
             <p className="m-0 mb-2 text-xs opacity-62">Total histórico de problemas registrados.</p>
             <div>
@@ -187,8 +187,8 @@ export default function PanelDashboard({ data }: { data: Record<Rango, PanelData
             </div>
           </div>
 
-          <div className="p-6">
-            <div className="grid grid-cols-2 gap-6">
+          <div className="p-4 md:p-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
               <div>
                 <h2 className="font-extrabold text-[17px] m-0 mb-3">Tiempo en sitio</h2>
                 <div className="flex items-baseline gap-1.5">
@@ -254,7 +254,7 @@ function CumplimientoPanel({ cumplimiento }: { cumplimiento: PanelData["cumplimi
   const dia = cumplimiento.dias.find((x) => x.fecha === hover) ?? null;
 
   return (
-    <div className="p-6 border-b border-black/[.12]">
+    <div className="p-4 md:p-6 border-b border-black/[.12]">
       <div className="flex items-baseline gap-2.5">
         <h2 className="font-extrabold text-[17px] m-0">Cumplimiento vs programado</h2>
         <span className="ml-auto text-[11px] tracking-[.08em] uppercase opacity-60">{cumplimiento.rangoTexto}</span>
@@ -358,10 +358,10 @@ function KpiCard({
   color?: string;
 }) {
   return (
-    <Link href={href} className="block text-left px-6 pt-[22px] pb-4.5 border-r border-black/[.2] hover:bg-black/5">
+    <Link href={href} className="block text-left px-4 md:px-6 pt-4 md:pt-[22px] pb-4.5 border-r max-lg:border-b border-black/[.2] hover:bg-black/5">
       <div className="text-[10px] tracking-[.12em] uppercase opacity-66">{label}</div>
       <div className="flex items-baseline gap-2 mt-3">
-        <div className="font-extrabold text-[40px] leading-none tracking-[-.03em] tabular-nums" style={{ color }}>
+        <div className="font-extrabold text-[32px] md:text-[40px] leading-none tracking-[-.03em] tabular-nums" style={{ color }}>
           {n}
         </div>
         {unidad ? <div className="text-xs opacity-62">{unidad}</div> : null}

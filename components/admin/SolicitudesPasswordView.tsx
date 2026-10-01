@@ -68,8 +68,8 @@ export default function SolicitudesPasswordView({
       <AdminHeader kicker="Maestros · quién entra al sistema" title="Usuarios" pestanas={pestanas} />
 
       <div className="pb-10 animate-fade-in">
-        <div className="flex items-center gap-2.5 flex-wrap px-7 py-4 border-b border-[var(--color-divider-soft)]">
-          <div className="relative flex-1 min-w-[220px] max-w-[340px]">
+        <div className="flex items-center gap-2.5 flex-wrap px-4 md:px-7 py-4 border-b border-[var(--color-divider-soft)]">
+          <div className="relative flex-1 basis-full sm:basis-0 min-w-[220px] sm:max-w-[340px]">
             <input
               value={busqueda}
               onChange={(e) => setBusqueda(e.target.value)}
@@ -104,7 +104,7 @@ export default function SolicitudesPasswordView({
         </div>
 
         {entregada ? (
-          <div className="mx-7 mt-5 border-2 border-[var(--color-text)] bg-[var(--color-surface-3)]">
+          <div className="mx-4 md:mx-7 mt-5 border-2 border-[var(--color-text)] bg-[var(--color-surface-3)]">
             <div className="px-4 py-3 border-b border-[var(--color-divider)] font-extrabold text-[15px]">
               Contraseña asignada a {entregada.email}
             </div>
@@ -125,8 +125,8 @@ export default function SolicitudesPasswordView({
           </div>
         ) : null}
 
-        <div className="px-7 pt-5">
-          <table className="table">
+        <div className="px-4 md:px-7 pt-5 overflow-x-auto">
+          <table className="table min-w-[720px]">
             <thead>
               <tr>
                 <th>Correo</th>
@@ -216,7 +216,7 @@ export default function SolicitudesPasswordView({
           role="dialog"
           aria-modal="true"
           aria-label="Asignar contraseña temporal"
-          className="fixed inset-0 z-[60] bg-[rgba(45,43,43,.5)] grid place-items-center p-6"
+          className="fixed inset-0 z-[60] bg-[rgba(45,43,43,.5)] grid place-items-center p-3 sm:p-6"
         >
           <div
             className="w-full max-w-[520px] bg-[var(--color-bg)] border-2 border-[var(--color-text)] animate-up-dlg"

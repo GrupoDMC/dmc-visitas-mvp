@@ -127,8 +127,8 @@ export default function ActaView({
   return (
     <div className="pb-12 animate-fade-in">
       {/* Barra de acciones */}
-      <div className="flex items-center gap-3 flex-wrap px-7 py-3.5 border-b border-[var(--color-divider-soft)]">
-        <Link href="/admin/visitas" className="btn btn-secondary min-h-[38px] px-3.5">
+      <div className="flex items-center gap-3 flex-wrap px-4 md:px-7 py-3.5 border-b border-[var(--color-divider-soft)]">
+        <Link href="/admin/visitas" className="btn btn-secondary min-h-10 px-3.5">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
             <path d="M19 12H5M11 6l-6 6 6 6" />
           </svg>
@@ -150,7 +150,7 @@ export default function ActaView({
 
         <div className="ml-auto flex gap-2 flex-wrap">
           {cerrada && permite("visitas.enviar") ? (
-            <button onClick={() => setDialogo("correo")} className="btn btn-primary min-h-[38px] px-3.5">
+            <button onClick={() => setDialogo("correo")} className="btn btn-primary min-h-10 px-3.5">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
                 <rect x="3" y="5" width="18" height="14" />
                 <path d="M3 6l9 7 9-7" />
@@ -159,7 +159,7 @@ export default function ActaView({
             </button>
           ) : null}
           {reprogramable && permite("visitas.reprogramar") ? (
-            <button onClick={() => setDialogo("reprogramar")} className="btn btn-primary min-h-[38px] px-3.5">
+            <button onClick={() => setDialogo("reprogramar")} className="btn btn-primary min-h-10 px-3.5">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
                 <rect x="3" y="5" width="18" height="16" />
                 <path d="M8 3v4M16 3v4M3 11h18M12 15l2 2-2 2" />
@@ -168,7 +168,7 @@ export default function ActaView({
             </button>
           ) : null}
           {liberable ? (
-            <button onClick={() => setDialogo("liberar")} className="btn btn-primary min-h-[38px] px-3.5">
+            <button onClick={() => setDialogo("liberar")} className="btn btn-primary min-h-10 px-3.5">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
                 <rect x="5" y="11" width="14" height="10" />
                 <path d="M8 11V7a4 4 0 017.5-2" />
@@ -176,7 +176,7 @@ export default function ActaView({
               <span>Liberar</span>
             </button>
           ) : null}
-          <button onClick={() => setTrazaAbierta(true)} className="btn btn-secondary min-h-[38px] px-3.5">
+          <button onClick={() => setTrazaAbierta(true)} className="btn btn-secondary min-h-10 px-3.5">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
               <circle cx="12" cy="12" r="8.5" />
               <path d="M12 7.5V12l3 2" />
@@ -188,7 +188,7 @@ export default function ActaView({
             <a
               href={`/api/visita/acta/${encodeURIComponent(visita.folio)}`}
               download={`Acta ${visita.folio}.pdf`}
-              className="btn btn-secondary min-h-[38px] px-3.5"
+              className="btn btn-secondary min-h-10 px-3.5"
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
                 <path d="M12 4v11M7 11l5 5 5-5M4 20h16" />
@@ -200,7 +200,7 @@ export default function ActaView({
       </div>
 
       {eliminada ? (
-        <div className="mx-7 mt-5 px-4 py-3.5 bg-[var(--color-accent-200)] border-l-4 border-[var(--color-accent)] text-[13px] text-[var(--color-accent-800)]">
+        <div className="mx-4 md:mx-7 mt-5 px-4 py-3.5 bg-[var(--color-accent-200)] border-l-4 border-[var(--color-accent)] text-[13px] text-[var(--color-accent-800)]">
           Esta visita está eliminada
           {eliminada.en ? ` desde el ${eliminada.en.slice(0, 10)} a las ${hhmm(eliminada.en)}` : ""} · la eliminó{" "}
           {eliminada.por}. Solo la ve el administrador: para los demás roles y para el técnico no existe, y no cuenta en
@@ -209,7 +209,7 @@ export default function ActaView({
       ) : null}
 
       {sinCerrar ? (
-        <div className="mx-7 mt-5 px-4 py-3.5 bg-[var(--color-accent-200)] border-l-4 border-[var(--color-accent)] text-[13px] text-[var(--color-accent-800)]">
+        <div className="mx-4 md:mx-7 mt-5 px-4 py-3.5 bg-[var(--color-accent-200)] border-l-4 border-[var(--color-accent)] text-[13px] text-[var(--color-accent-800)]">
           {AVISO_ESTADO[visita.estado]}
           {tomadaPor
             ? ` La inició ${tomadaPor} y solo esa persona puede terminarla${liberable ? "; con «Liberar» vuelve a quedar programada." : "."}`
@@ -217,11 +217,11 @@ export default function ActaView({
         </div>
       ) : null}
 
-      <div className="px-7 pt-7 pb-10 max-w-[900px]">
+      <div className="px-4 md:px-7 pt-7 pb-10 max-w-[900px]">
         <div className="text-[10px] tracking-[.15em] uppercase text-[var(--color-accent-active)]">
           Acta de visita en terreno
         </div>
-        <h1 className="font-extrabold text-[40px] leading-[1.04] tracking-[-.035em] mt-2.5 mb-1.5 tabular-nums">
+        <h1 className="font-extrabold text-[30px] md:text-[40px] leading-[1.04] tracking-[-.035em] mt-2.5 mb-1.5 tabular-nums">
           {visita.folio}
         </h1>
         <p className="m-0 mb-6 text-[15px] opacity-60">
@@ -260,12 +260,11 @@ export default function ActaView({
 
           {resumenAbierto ? (
             <>
-              <div className="grid grid-cols-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2">
                 {resumen.map((r) => (
                   <div
                     key={r.k}
-                    className="px-5 py-3.5 border-b border-black/[.2] border-r border-r-black/[.2] min-w-0"
-                    style={{ gridColumn: `span ${r.span ?? 1}` }}
+                    className={`px-4 sm:px-5 py-3.5 border-b border-black/[.2] border-r border-r-black/[.2] min-w-0 ${r.span === 2 ? "sm:col-span-2" : ""}`}
                   >
                     <div className="text-[11px] tracking-[.11em] uppercase opacity-72">{r.k}</div>
                     <div className="text-[18px] leading-[1.35] mt-1.5">{r.v}</div>
@@ -312,7 +311,7 @@ export default function ActaView({
                 <div className="text-[15px] leading-[1.5] max-w-[74ch]">{ejec.comentarioInterno}</div>
               ) : null}
               {fotosInternas.length > 0 ? (
-                <div className="grid grid-cols-6 gap-2 mt-3">
+                <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 mt-3">
                   {fotosInternas.map((f, i) => (
                     <button
                       key={f.id}
@@ -328,7 +327,7 @@ export default function ActaView({
                 </div>
               ) : null}
               {videosInternos.length > 0 ? (
-                <div className="grid grid-cols-2 gap-2.5 mt-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 mt-3">
                   {videosInternos.map((v) => (
                     <video
                       key={v.id}
@@ -511,7 +510,7 @@ export default function ActaView({
               <div className="text-[11px] tracking-[.11em] uppercase opacity-66 mt-6.5 mb-3">
                 Fotos del trabajo ({fotosCliente.length})
               </div>
-              <div className="grid grid-cols-4 gap-2.5">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
                 {fotosCliente.map((f, i) => (
                   // La foto se agranda encima del acta, no en otra pestaña.
                   <button
@@ -537,7 +536,7 @@ export default function ActaView({
                   </button>
                 ))}
                 {fotosCliente.length === 0 ? (
-                  <div className="col-span-4 text-[13px] opacity-66">Sin fotos registradas.</div>
+                  <div className="col-span-full text-[13px] opacity-66">Sin fotos registradas.</div>
                 ) : null}
               </div>
 
@@ -547,7 +546,7 @@ export default function ActaView({
               <div className="text-[11px] tracking-[.11em] uppercase opacity-66 mt-6.5 mb-3">
                 Videos del trabajo ({videosCliente.length})
               </div>
-              <div className="grid grid-cols-2 gap-2.5">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                 {videosCliente.map((v) => (
                   <figure key={v.id} className="m-0 border border-black/[.35] bg-[var(--color-surface)]">
                     <video
@@ -567,7 +566,7 @@ export default function ActaView({
                   </figure>
                 ))}
                 {videosCliente.length === 0 ? (
-                  <div className="col-span-2 text-[13px] opacity-66">Sin videos registrados.</div>
+                  <div className="col-span-full text-[13px] opacity-66">Sin videos registrados.</div>
                 ) : null}
               </div>
 

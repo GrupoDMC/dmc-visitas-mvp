@@ -197,7 +197,7 @@ export default function VisitasTable({
 
         {/* Anchos fijos: las columnas de texto se reparten lo que sobra y se
             cortan con "…", así el botón de ver nunca se sale de la pantalla. */}
-        <div className="px-7 overflow-x-auto">
+        <div className="px-4 md:px-7 overflow-x-auto">
           <table className="table table-fixed min-w-[980px]">
             <colgroup>
               <col style={{ width: 124 }} />
@@ -269,7 +269,7 @@ export default function VisitasTable({
                       />
                     </td>
                   ) : null}
-                  <td className="text-right whitespace-nowrap">
+                  <td className="text-right whitespace-nowrap max-lg:sticky max-lg:right-0 max-lg:bg-[var(--color-bg)]">
                     <button
                       onClick={(e) => {
                         e.stopPropagation();

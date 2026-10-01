@@ -239,6 +239,12 @@ textarea.input {
   min-height: 90px;
   resize: vertical;
 }
+/* En el celular, menos de 16px hace que iOS acerque la pantalla al enfocar. */
+@media (max-width: 767px) {
+  .input {
+    font-size: 16px;
+  }
+}
 
 /* — tags / badges de estado — */
 .tag {

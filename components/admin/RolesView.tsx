@@ -108,7 +108,7 @@ export default function RolesView({ roles, pestanas }: { roles: Rol[] | null; pe
         ) : null}
       </AdminHeader>
 
-      <div className="px-7 pt-6 pb-10 animate-fade-in">
+      <div className="px-4 md:px-7 pt-6 pb-10 animate-fade-in">
         {roles === null ? (
           <div className="px-4 py-3.5 bg-[var(--color-accent-200)] border-l-4 border-[var(--color-accent)] text-[13px] text-[var(--color-accent-800)] max-w-[80ch]">
             La base de datos todavía no tiene las tablas de roles. Hay que correr{" "}
@@ -121,7 +121,8 @@ export default function RolesView({ roles, pestanas }: { roles: Rol[] | null; pe
               Cada usuario del panel tiene un rol y puede hacer lo que su rol tenga marcado. El rol se le asigna en
               la pestaña Cuentas.
             </p>
-            <table className="table">
+            <div className="overflow-x-auto">
+            <table className="table min-w-[640px]">
               <thead>
                 <tr>
                   <th>Rol</th>
@@ -193,6 +194,7 @@ export default function RolesView({ roles, pestanas }: { roles: Rol[] | null; pe
                 </tr>
               </tbody>
             </table>
+            </div>
           </>
         )}
       </div>

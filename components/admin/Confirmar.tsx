@@ -27,7 +27,7 @@ export default function Confirmar({ cfg, onCerrar }: { cfg: ConfirmarCfg; onCerr
     <div
       role="dialog"
       aria-modal="true"
-      className="fixed inset-0 z-[70] bg-[rgba(45,43,43,.55)] grid place-items-center p-6"
+      className="fixed inset-0 z-[70] bg-[rgba(45,43,43,.55)] grid place-items-center p-3 sm:p-6"
       onClick={onCerrar}
     >
       <div

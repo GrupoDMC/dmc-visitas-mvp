@@ -239,7 +239,7 @@ export default function VisitasMasivasDialogo({
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-4 px-3.5 py-3.5 border-b border-[var(--color-divider-soft)]">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 px-3.5 py-3.5 border-b border-[var(--color-divider-soft)]">
           <div className="field min-w-0">
             <label htmlFor="vm-cliente">Cliente</label>
             <SelectBuscable
@@ -310,7 +310,7 @@ export default function VisitasMasivasDialogo({
             </div>
 
             {l.abierto ? (
-              <div className="grid grid-cols-2 gap-4 px-3.5 pt-1.5 pb-4 bg-[var(--color-surface-3)]">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 px-3.5 pt-1.5 pb-4 bg-[var(--color-surface-3)]">
                 <CampoLocal
                   local={l}
                   k="responsable"
@@ -387,7 +387,7 @@ function CampoLocal({
   const poner = (v: string) => onCambiar(local.sucursalId, { [k]: v });
 
   return (
-    <div className="field min-w-0" style={{ gridColumn: `span ${tipo === "area" ? 2 : 1}` }}>
+    <div className={`field min-w-0 ${tipo === "area" ? "sm:col-span-2" : ""}`}>
       <label htmlFor={id}>{label}</label>
       {tipo === "area" ? (
         <textarea

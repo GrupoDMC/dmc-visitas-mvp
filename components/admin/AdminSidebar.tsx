@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
@@ -29,6 +29,24 @@ export default function AdminSidebar({
   const pathname = usePathname();
   const { toast, aviso } = useToast();
   const [saliendo, setSaliendo] = useState(false);
+  // Solo cuenta en el celular: ahí el menú es un cajón que se abre y se cierra.
+  const [abierto, setAbierto] = useState(false);
+  const pendientes = [...operacion, ...maestros].reduce((n, item) => n + (item.pendientes ?? 0), 0);
+
+  // Al elegir una sección el cajón se cierra solo.
+  useEffect(() => {
+    setAbierto(false);
+  }, [pathname]);
+
+  // Con el cajón abierto no se desplaza la página de atrás.
+  useEffect(() => {
+    if (!abierto) return;
+    const previo = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previo;
+    };
+  }, [abierto]);
   const iniciales = nombre
     .split(" ")
     .map((p) => p[0])
@@ -62,8 +80,49 @@ export default function AdminSidebar({
   }
 
   return (
-    <div className="border-r-2 border-[var(--color-divider)] flex flex-col sticky top-0 h-screen">
-      <div className="px-5 pt-[22px] pb-[18px] border-b-2 border-[var(--color-divider)]">
+    <>
+      {/* Barra de arriba: solo en el celular. */}
+      <div className="lg:hidden sticky top-0 z-30 flex items-center gap-3 h-14 px-4 bg-[var(--color-bg)] border-b-2 border-[var(--color-divider)]">
+        <button
+          type="button"
+          onClick={() => setAbierto(true)}
+          aria-label="Abrir el menú"
+          aria-expanded={abierto}
+          className="btn btn-icon relative w-10 h-10 border border-black/[.3]"
+        >
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+            <path d="M4 7h16M4 12h16M4 17h16" />
+          </svg>
+          {pendientes ? (
+            <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 grid place-items-center bg-[var(--color-accent)] text-[var(--color-bg)] text-[10px] tabular-nums">
+              {pendientes}
+            </span>
+          ) : null}
+        </button>
+        <Image src="/DMC-logo.png" alt="Grupo dMC" width={75} height={32} />
+        <div className="ml-auto text-[10px] tracking-[.09em] uppercase opacity-62 truncate">{rol}</div>
+      </div>
+
+      {abierto ? (
+        <div onClick={() => setAbierto(false)} className="lg:hidden fixed inset-0 z-40 bg-[rgba(45,43,43,.5)]" />
+      ) : null}
+
+      <div
+        className={`flex flex-col bg-[var(--color-bg)] border-r-2 border-[var(--color-divider)] fixed top-0 bottom-0 left-0 z-50 w-[min(290px,86vw)] transition-transform duration-200 ${
+          abierto ? "translate-x-0" : "-translate-x-full"
+        } lg:sticky lg:z-auto lg:w-auto lg:h-screen lg:translate-x-0 lg:transition-none`}
+      >
+      <div className="relative px-5 pt-[22px] pb-[18px] border-b-2 border-[var(--color-divider)]">
+        <button
+          type="button"
+          onClick={() => setAbierto(false)}
+          aria-label="Cerrar el menú"
+          className="btn btn-icon lg:hidden absolute top-3 right-3"
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4">
+            <path d="M6 6l12 12M18 6L6 18" />
+          </svg>
+        </button>
         <Image src="/DMC-logo.png" alt="Grupo dMC" width={124} height={53} />
         <div className="text-[9px] tracking-[.16em] uppercase opacity-62 mt-3">
           Sistema de técnicos · Coordinación
@@ -112,7 +171,9 @@ export default function AdminSidebar({
         </button>
       </div>
 
+      </div>
+
       <Toast texto={toast} variante="panel" />
-    </div>
+    </>
   );
 }

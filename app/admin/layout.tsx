@@ -38,10 +38,9 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   return (
     <ReferenciasProvider valor={referencias}>
       <VigilanteSesion />
-      <div
-        className="grid min-h-screen bg-[var(--color-bg)] text-[var(--color-text)]"
-        style={{ gridTemplateColumns: "248px minmax(0,1fr)" }}
-      >
+      {/* En el celular el menú es un cajón que se abre desde la barra de arriba
+          (ver AdminSidebar); desde lg vuelve a ser la columna fija de siempre. */}
+      <div className="min-h-screen bg-[var(--color-bg)] text-[var(--color-text)] lg:grid lg:grid-cols-[248px_minmax(0,1fr)]">
         <AdminSidebar
           nombre={nombreCoordinador}
           rol={sesion.rolNombre}

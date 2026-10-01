@@ -434,7 +434,7 @@ export default function ChecklistEditor({
         </button>
       </AdminHeader>
 
-      <div className="px-7 pt-6 pb-12 animate-fade-in max-w-[1000px]">
+      <div className="px-4 md:px-7 pt-6 pb-12 animate-fade-in max-w-[1000px]">
         <p className="mb-4 text-[13px] leading-[1.65] opacity-72 max-w-[74ch]">
           Acá vive todo lo que el técnico elige desde listas en su celular. Cada bloque es una lista distinta. Para
           cambiar el orden, agarra una fila de su manilla (⣿) y suéltala donde va; también puedes clonar una entrada con

@@ -131,8 +131,8 @@ export default function MaestroTable<T extends { id: number }>({
           conteo={`${filtradas.length} ${filtradas.length === 1 ? "registro" : "registros"}`}
         />
 
-        <div className="px-7">
-          <table className="table">
+        <div className="px-4 md:px-7 overflow-x-auto">
+          <table className="table min-w-[640px]">
             <thead>
               <tr>
                 {columns.map((c) => (
@@ -151,7 +151,7 @@ export default function MaestroTable<T extends { id: number }>({
                       {c.render ? c.render(row) : String((row as unknown as Record<string, unknown>)[c.key] ?? "")}
                     </td>
                   ))}
-                  <td className="text-right">
+                  <td className="text-right max-lg:sticky max-lg:right-0 max-lg:bg-[var(--color-bg)]">
                     {puedeEditar ? (
                       <button
                         onClick={() => setDialogo({ id: row.id, form: toFormValues(row) })}

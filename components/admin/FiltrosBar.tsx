@@ -52,9 +52,9 @@ export default function FiltrosBar({
 
   return (
     <>
-      <div className="flex items-center gap-2.5 flex-wrap px-7 py-4 border-b border-[var(--color-divider-soft)]">
+      <div className="flex items-center gap-2.5 flex-wrap px-4 md:px-7 py-4 border-b border-[var(--color-divider-soft)]">
         {onBusqueda ? (
-          <div className="relative flex-1 min-w-[220px] max-w-[340px]">
+          <div className="relative flex-1 basis-full sm:basis-0 min-w-[220px] sm:max-w-[340px]">
             <input
               value={busqueda ?? ""}
               onChange={(e) => onBusqueda(e.target.value)}
@@ -124,11 +124,11 @@ export default function FiltrosBar({
       </div>
 
       {abierto && campos.length > 0 ? (
-        <div className="px-7 pt-5 pb-5.5 border-b border-[var(--color-divider-soft)] bg-[var(--color-surface)] animate-fade-in">
+        <div className="px-4 md:px-7 pt-5 pb-5.5 border-b border-[var(--color-divider-soft)] bg-[var(--color-surface)] animate-fade-in">
           <div className="text-[10px] tracking-[.14em] uppercase text-[var(--color-accent-active)] mb-3.5">
             Elige por qué quieres filtrar
           </div>
-          <div className="grid grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             {campos.map((c) => (
               <div key={c.id} className="field m-0 min-w-0">
                 <label htmlFor={c.id}>{c.label}</label>
@@ -173,7 +173,7 @@ export default function FiltrosBar({
               </div>
             ))}
           </div>
-          <div className="flex gap-2.5 mt-4.5">
+          <div className="flex gap-2.5 mt-4.5 flex-wrap">
             <button type="button" onClick={() => setAbierto(false)} className="btn btn-primary min-h-[42px] px-4.5 gap-2.5">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4">
                 <path d="M4 12l5 5L20 6" />

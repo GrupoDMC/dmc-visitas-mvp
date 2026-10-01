@@ -185,7 +185,7 @@ export default function ProblemasView({ grupos }: { grupos: GrupoProblemas[] }) 
           ]}
         />
 
-        <div className="px-7">
+        <div className="px-4 md:px-7">
           {filtrados.map((g) => (
             <div key={g.sucursalId} className="border-2 border-[var(--color-text)] mt-7 shadow-[3px_3px_0_rgba(32,30,29,.1)]">
               <div className="flex items-center gap-3 flex-wrap px-5 py-4 bg-[var(--color-surface-2)] border-b-2 border-[var(--color-text)]">
