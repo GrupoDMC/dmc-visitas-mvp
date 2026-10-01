@@ -72,6 +72,8 @@ CREATE TABLE dmc.mall (
     id              bigint        IDENTITY(1,1) NOT NULL,
     nombre          nvarchar(120) NOT NULL,
     direccion       nvarchar(180) NOT NULL,
+    comuna          nvarchar(80)  NOT NULL CONSTRAINT df_mall_comuna DEFAULT (N''),   -- migración 012
+    region          nvarchar(80)  NOT NULL CONSTRAINT df_mall_region DEFAULT (N''),   -- migración 012
     activo          bit           NOT NULL CONSTRAINT df_mall_activo DEFAULT (1),
     creado_en       datetime2(0)  NOT NULL CONSTRAINT df_mall_creado DEFAULT (SYSDATETIME()),
     actualizado_en  datetime2(0)  NOT NULL CONSTRAINT df_mall_actualizado DEFAULT (SYSDATETIME()),

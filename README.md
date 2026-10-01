@@ -238,6 +238,7 @@ Sobre una base ya creada, los cambios van en archivos aparte y numerados:
 | [`sql/migracion-009-notas-y-motivo-inactivo.sql`](sql/migracion-009-notas-y-motivo-inactivo.sql) | `notas` en `dmc.cliente` y `dmc.sucursal`, y `motivo_inactivo` en las dos: el porqué que el panel exige al desactivar un cliente o una sucursal. Sin ella la app arranca igual, pero clientes y sucursales no se pueden guardar |
 | [`sql/migracion-010-margen-de-dias.sql`](sql/migracion-010-margen-de-dias.sql) | `dmc.visita.fecha_hasta`: el margen de días de una visita, que se puede hacer cualquier día entre `fecha_programada` y `fecha_hasta`. Sin ella la app arranca igual, pero no se puede agendar con margen |
 | [`sql/migracion-011-malls.sql`](sql/migracion-011-malls.sql) | `dmc.mall` y `dmc.sucursal.mall_id`: los malls y las tiendas que hay en cada uno, para agendar de una vez las tiendas de un mall. Agrega los permisos `malls.*` a cada rol según lo que ya podía hacer con las sucursales. Sin ella la app arranca igual, pero Maestros › Malls queda vacío y no se puede guardar |
+| [`sql/migracion-012-comuna-y-region-del-mall.sql`](sql/migracion-012-comuna-y-region-del-mall.sql) | `dmc.mall.comuna` y `dmc.mall.region`: el mall guarda su ubicación igual que la sucursal. Los malls que ya existen quedan con las dos vacías hasta completarlas. Sin ella la app arranca igual, pero los malls no se pueden guardar |
 
 ```bash
 sqlcmd -S <host>,<puerto> -d DMC_Contingencia -i sql/migracion-002-mejoras.sql
@@ -250,6 +251,7 @@ sqlcmd -S <host>,<puerto> -d DMC_Contingencia -i sql/migracion-008-roles-y-permi
 sqlcmd -S <host>,<puerto> -d DMC_Contingencia -i sql/migracion-009-notas-y-motivo-inactivo.sql
 sqlcmd -S <host>,<puerto> -d DMC_Contingencia -i sql/migracion-010-margen-de-dias.sql
 sqlcmd -S <host>,<puerto> -d DMC_Contingencia -i sql/migracion-011-malls.sql
+sqlcmd -S <host>,<puerto> -d DMC_Contingencia -i sql/migracion-012-comuna-y-region-del-mall.sql
 ```
 
 Son idempotentes: se pueden correr varias veces, y en orden.

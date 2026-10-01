@@ -9,6 +9,7 @@ import Tag from "@/components/Tag";
 import { Toast, useToast } from "@/components/ui/Toast";
 import { guardarMallAction, guardarTiendasMallAction } from "@/app/actions/maestros";
 import { puede, useReferencias } from "@/lib/ui/referencias";
+import { REGIONES } from "@/lib/ui/regiones";
 import type { Cliente, Mall, Sucursal } from "@/lib/types";
 
 export default function MallsTable({
@@ -36,12 +37,13 @@ export default function MallsTable({
         editLabel="Editar mall"
         dialogoKicker="Maestro · mall"
         nota="Las tiendas del mall se agregan desde el botón de la fila, una vez creado."
-        phBusqueda="Buscar mall o dirección…"
+        phBusqueda="Buscar mall, dirección o comuna…"
         rows={malls}
-        searchKeys={(m) => `${m.nombre} ${m.direccion}`}
+        searchKeys={(m) => `${m.nombre} ${m.direccion} ${m.comuna} ${m.region}`}
         columns={[
           { key: "nombre", label: "Mall" },
           { key: "direccion", label: "Dirección" },
+          { key: "comuna", label: "Comuna", render: (m) => m.comuna || "—" },
           { key: "tiendas", label: "Tiendas", align: "right", render: (m) => nTiendas(m.id) },
           {
             key: "activo",
@@ -51,21 +53,34 @@ export default function MallsTable({
         ]}
         fields={[
           { k: "nombre", label: "Nombre del mall", span: 2, ph: "Mall Plaza Vespucio" },
-          { k: "direccion", label: "Dirección", span: 2, ph: "Av. Vicuña Mackenna 7110, La Florida" },
+          { k: "direccion", label: "Dirección", span: 2, ph: "Av. Vicuña Mackenna 7110" },
+          { k: "comuna", label: "Comuna", ph: "La Florida" },
+          { k: "region", label: "Región", tipo: "select", opciones: REGIONES.map((r) => ({ v: r, t: r })) },
           { k: "activo", label: "Estado", tipo: "toggle", span: 2 },
         ]}
         validar={(f) =>
-          String(f.nombre).trim() && String(f.direccion).trim() ? null : "Nombre y dirección son obligatorios"
+          String(f.nombre).trim() && String(f.direccion).trim() && String(f.comuna).trim()
+            ? null
+            : "Nombre, dirección y comuna son obligatorios"
         }
-        toFormValues={(m) => ({ nombre: m.nombre, direccion: m.direccion, activo: m.activo })}
+        toFormValues={(m) => ({
+          nombre: m.nombre,
+          direccion: m.direccion,
+          comuna: m.comuna,
+          // Los malls de antes de la migración 012 no tienen región: el select parte en la primera.
+          region: m.region || REGIONES[0],
+          activo: m.activo,
+        })}
         guardarAction={(id, f) =>
           guardarMallAction(id, {
             nombre: String(f.nombre).trim(),
             direccion: String(f.direccion).trim(),
+            comuna: String(f.comuna).trim(),
+            region: String(f.region),
             activo: f.activo !== false,
           })
         }
-        emptyRow={{ nombre: "", direccion: "", activo: true }}
+        emptyRow={{ nombre: "", direccion: "", comuna: "", region: REGIONES[0], activo: true }}
         accionFila={
           puede(ref, "malls.editar")
             ? (m) => (

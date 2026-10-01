@@ -5,6 +5,7 @@ import { sesionCon } from "@/lib/auth";
 import {
   faltaMigracionNotas,
   faltaMigracionMalls,
+  faltaMigracionUbicacionMall,
   guardarCliente,
   guardarMall,
   guardarSucursal,
@@ -53,6 +54,9 @@ function mensajeDeError(err: unknown, contexto: string): string {
   if (faltaMigracionMalls(err)) {
     return "Falta aplicar la migración 011 en la base de datos. Avísale al administrador.";
   }
+  if (faltaMigracionUbicacionMall(err)) {
+    return "Falta aplicar la migración 012 en la base de datos. Avísale al administrador.";
+  }
   const texto = err instanceof Error ? err.message : String(err);
   if (/uq_mall_nombre/i.test(texto)) return "Ya existe un mall con ese nombre.";
   if (/fk_sucursal_mall/i.test(texto)) return "Ese mall ya no existe. Recarga la página.";
@@ -94,8 +98,8 @@ export async function guardarClienteAction(id: number | null, datos: DatosClient
 
 export async function guardarMallAction(id: number | null, datos: DatosMall): Promise<ResultadoMaestro> {
   if (!(await sesionMaestro("malls", id))) return { ok: false, error: "No tienes permiso para editar malls." };
-  if (!datos.nombre.trim() || !datos.direccion.trim()) {
-    return { ok: false, error: "Nombre y dirección son obligatorios." };
+  if (!datos.nombre.trim() || !datos.direccion.trim() || !datos.comuna?.trim() || !datos.region?.trim()) {
+    return { ok: false, error: "Nombre, dirección, comuna y región son obligatorios." };
   }
   try {
     await guardarMall(id, datos);

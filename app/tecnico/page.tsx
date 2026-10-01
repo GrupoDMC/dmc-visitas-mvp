@@ -40,7 +40,7 @@ export default async function InicioPage() {
     .map((m) => ({
       clave: String(m.id),
       nombre: m.nombre,
-      direccion: m.direccion as string | null,
+      direccion: [m.direccion, m.comuna].filter(Boolean).join(", ") as string | null,
       visitas: deHoy.filter((v) => mallDe.get(v.sucursalId) === m.id).sort(porHora),
     }))
     .filter((g) => g.visitas.length > 0);

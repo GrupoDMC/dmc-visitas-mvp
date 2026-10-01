@@ -40,6 +40,9 @@ export interface Mall {
   id: number;
   nombre: string;
   direccion: string;
+  /** Vacías en los malls creados antes de la migración 012. */
+  comuna: string;
+  region: string;
   activo: boolean;
 }
 

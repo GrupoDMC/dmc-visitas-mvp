@@ -3,27 +3,8 @@
 import MaestroTable from "@/components/admin/MaestroTable";
 import Tag from "@/components/Tag";
 import { guardarSucursalAction } from "@/app/actions/maestros";
+import { REGIONES } from "@/lib/ui/regiones";
 import type { Cliente, Mall, Sucursal } from "@/lib/types";
-
-// Las 16 regiones de Chile, de norte a sur.
-const REGIONES = [
-  "Arica y Parinacota",
-  "Tarapacá",
-  "Antofagasta",
-  "Atacama",
-  "Coquimbo",
-  "Valparaíso",
-  "Metropolitana",
-  "Libertador General Bernardo O'Higgins",
-  "Maule",
-  "Ñuble",
-  "Biobío",
-  "La Araucanía",
-  "Los Ríos",
-  "Los Lagos",
-  "Aysén del General Carlos Ibáñez del Campo",
-  "Magallanes y de la Antártica Chilena",
-];
 
 export default function SucursalesTable({
   sucursales,

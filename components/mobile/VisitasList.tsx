@@ -288,7 +288,9 @@ export default function VisitasList({
                   >
                     <div className="min-w-0 flex-1">
                       <div className="font-extrabold text-[17px] leading-[1.2] truncate">{b.mall.nombre}</div>
-                      <div className="text-[13px] opacity-60 mt-0.5 truncate">{b.mall.direccion}</div>
+                      <div className="text-[13px] opacity-60 mt-0.5 truncate">
+                        {[b.mall.direccion, b.mall.comuna].filter(Boolean).join(", ")}
+                      </div>
                       <div className="text-[11px] tracking-[.06em] uppercase opacity-66 mt-1.5 tabular-nums">
                         {b.visitas.length} {b.visitas.length === 1 ? "visita" : "visitas"}
                         {porHacer > 0 ? ` · ${porHacer} por hacer` : " · todas cerradas"}

@@ -147,25 +147,42 @@ export function faltaMigracionMalls(err: unknown): boolean {
   return /invalid object name 'dmc\.mall'|invalid column name 'mall_id'/i.test(texto);
 }
 
+/**
+ * ¿El error es que la base todavía no tiene la migración 012?
+ *
+ * Sin ella los malls siguen saliendo, solo que sin comuna ni región.
+ */
+export function faltaMigracionUbicacionMall(err: unknown): boolean {
+  const texto = err instanceof Error ? err.message : String(err);
+  return /invalid column name '(comuna|region)'/i.test(texto);
+}
+
 interface FilaMall {
   id: number;
   nombre: string;
   direccion: string;
+  comuna?: string;
+  region?: string;
   activo: boolean;
 }
 
 export async function listarMalls(): Promise<Mall[]> {
+  const leer = (extra: string) =>
+    consulta<FilaMall>(`SELECT id, nombre, direccion, activo${extra} FROM dmc.mall ORDER BY nombre`);
   let filas: FilaMall[];
   try {
-    filas = await consulta<FilaMall>(`SELECT id, nombre, direccion, activo FROM dmc.mall ORDER BY nombre`);
+    filas = await leer(", comuna, region");
   } catch (err) {
-    if (!faltaMigracionMalls(err)) throw err;
-    return [];
+    if (faltaMigracionMalls(err)) return [];
+    if (!faltaMigracionUbicacionMall(err)) throw err;
+    filas = await leer("");
   }
   return filas.map((f) => ({
     id: num(f.id),
     nombre: f.nombre,
     direccion: f.direccion,
+    comuna: f.comuna ?? "",
+    region: f.region ?? "",
     activo: Boolean(f.activo),
   }));
 }
@@ -173,6 +190,8 @@ export async function listarMalls(): Promise<Mall[]> {
 export interface DatosMall {
   nombre: string;
   direccion: string;
+  comuna: string;
+  region: string;
   activo: boolean;
 }
 
@@ -180,19 +199,23 @@ export async function guardarMall(id: number | null, d: DatosMall): Promise<numb
   const params: Parametros = [
     ["nombre", sql.NVarChar(120), d.nombre],
     ["direccion", sql.NVarChar(180), d.direccion],
+    ["comuna", sql.NVarChar(80), d.comuna],
+    ["region", sql.NVarChar(80), d.region],
     ["activo", sql.Bit, d.activo],
   ];
   if (id === null) {
     const [fila] = await consultaCon<{ id: number }>(
-      `INSERT INTO dmc.mall (nombre, direccion, activo)
+      `INSERT INTO dmc.mall (nombre, direccion, comuna, region, activo)
        OUTPUT INSERTED.id AS id
-       VALUES (@nombre, @direccion, @activo)`,
+       VALUES (@nombre, @direccion, @comuna, @region, @activo)`,
       params
     );
     return num(fila.id);
   }
   await ejecutar(
-    `UPDATE dmc.mall SET nombre = @nombre, direccion = @direccion, activo = @activo WHERE id = @id`,
+    `UPDATE dmc.mall
+        SET nombre = @nombre, direccion = @direccion, comuna = @comuna, region = @region, activo = @activo
+      WHERE id = @id`,
     [...params, ["id", sql.BigInt, id]]
   );
   return id;
