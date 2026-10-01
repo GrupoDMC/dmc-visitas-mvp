@@ -8,6 +8,7 @@ import {
   crearVisita,
   editarVisita,
   eliminarVisita,
+  FaltaMigracionMargen,
   getVisitaCompletaPorFolio,
   registrarEnvioActa,
   reprogramarVisita,
@@ -44,7 +45,11 @@ function revalidarPanel(folio?: string) {
 }
 
 function comoError(err: unknown, contexto: string): ResultadoAdmin {
+  if (err instanceof FaltaMigracionMargen) {
+    return { ok: false, error: "Para agendar con margen de días falta correr la migración 010 en la base." };
+  }
   const texto = err instanceof Error ? err.message : String(err);
+  if (/ck_visita_fecha_hasta/i.test(texto)) return { ok: false, error: ERROR_MARGEN };
   if (/fk_visita_motivo/i.test(texto)) {
     return { ok: false, error: "Ese motivo ya no existe en el checklist. Elige otro." };
   }
@@ -65,6 +70,13 @@ function comoError(err: unknown, contexto: string): ResultadoAdmin {
 
 // ── Visitas ─────────────────────────────────────────────────────────────────
 
+const ERROR_MARGEN = "En el margen de días, la fecha «hasta» tiene que ser posterior a la primera.";
+
+/** El margen, si viene, termina después de empezar. */
+function margenInvalido(datos: DatosVisita): boolean {
+  return Boolean(datos.fechaHasta) && String(datos.fechaHasta) <= datos.fechaProgramada;
+}
+
 /** Basta con que una instalación esté entre los motivos marcados. */
 async function incluyeInstalacion(datos: DatosVisita): Promise<boolean> {
   const marcados = datos.motivosCodigos?.length ? datos.motivosCodigos : [datos.motivoCodigo];
@@ -81,6 +93,7 @@ export async function crearVisitaAction(datos: DatosVisita): Promise<ResultadoAd
     return { ok: false, error: "Escribe qué se necesita hacer en la tienda." };
   }
   if (!datos.fechaProgramada) return { ok: false, error: "Elige la fecha programada." };
+  if (margenInvalido(datos)) return { ok: false, error: ERROR_MARGEN };
   if (datos.tecnicoAyudanteId && datos.tecnicoAyudanteId === datos.tecnicoId) {
     return { ok: false, error: "El ayudante no puede ser el mismo técnico asignado." };
   }
@@ -138,6 +151,7 @@ export async function crearVisitasMasivasAction(visitas: DatosVisita[]): Promise
       return falla("Escribe qué se necesita hacer: para todos o en cada local.");
     }
     if (!datos.fechaProgramada) return falla("Elige la fecha programada.");
+    if (margenInvalido(datos)) return falla(ERROR_MARGEN);
     if (datos.tecnicoAyudanteId && datos.tecnicoAyudanteId === datos.tecnicoId) {
       return falla("El ayudante no puede ser el mismo técnico asignado.");
     }
@@ -173,6 +187,7 @@ export async function editarVisitaAction(folio: string, datos: DatosVisita): Pro
   if (!datos.trabajoSolicitado.trim()) {
     return { ok: false, error: "Escribe qué se necesita hacer en la tienda." };
   }
+  if (margenInvalido(datos)) return { ok: false, error: ERROR_MARGEN };
   if (datos.tecnicoAyudanteId && datos.tecnicoAyudanteId === datos.tecnicoId) {
     return { ok: false, error: "El ayudante no puede ser el mismo técnico asignado." };
   }

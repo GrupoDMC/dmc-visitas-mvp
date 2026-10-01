@@ -1,5 +1,5 @@
 import "server-only";
-import { ejecutar, sql } from "@/lib/data/sql";
+import { consulta, ejecutar, sql } from "@/lib/data/sql";
 import { hoyISO, sumarDias } from "@/lib/ui/fecha";
 
 /**
@@ -50,9 +50,28 @@ export function cancelarVisitasVencidas(): Promise<void> {
   return enCurso;
 }
 
+let conMargen = false;
+
+/**
+ * ¿La base ya tiene dmc.visita.fecha_hasta (migración 010)?
+ *
+ * Sin ella todo sigue como antes, con visitas de un solo día. Solo se recuerda
+ * el sí: el no se vuelve a preguntar, para enterarse cuando corran la migración.
+ */
+export async function hayMargenDeDias(): Promise<boolean> {
+  if (conMargen) return true;
+  const [fila] = await consulta<{ largo: number | null }>(
+    `SELECT COL_LENGTH('dmc.visita', 'fecha_hasta') AS largo`
+  );
+  conMargen = fila?.largo != null;
+  return conMargen;
+}
+
 async function revisar(): Promise<void> {
   // Vence lo que tenga fecha anterior a ayer (en Chile): hoy y ayer siguen en plazo.
   const limite = sumarDias(hoyISO(), -DIAS_TOLERANCIA);
+  // Con margen de días, el plazo corre desde el último día del margen.
+  const plazo = (await hayMargenDeDias()) ? "COALESCE(fecha_hasta, fecha_programada)" : "fecha_programada";
 
   // tg_visita_cambio deja la fila del historial al cambiar el estado; después
   // se le pone el motivo. Los ids van a una tabla de paso porque OUTPUT sin
@@ -63,11 +82,11 @@ async function revisar(): Promise<void> {
 
      DECLARE @vencidas TABLE (id bigint PRIMARY KEY, fecha date);
      INSERT INTO @vencidas (id, fecha)
-     SELECT id, fecha_programada
+     SELECT id, ${plazo}
        FROM dmc.visita WITH (UPDLOCK, HOLDLOCK)
       WHERE activo = 1
         AND estado IN ('PROGRAMADA', 'EN_CURSO', 'REAGENDADA')
-        AND fecha_programada < @limite;
+        AND ${plazo} < @limite;
 
      IF EXISTS (SELECT 1 FROM @vencidas)
      BEGIN

@@ -58,6 +58,8 @@ CREATE TABLE dmc.cliente (
     razon_social     nvarchar(160) NOT NULL,
     nombre_fantasia  nvarchar(80)  NOT NULL,
     activo           bit           NOT NULL CONSTRAINT df_cliente_activo DEFAULT (1),
+    motivo_inactivo  nvarchar(400) NULL,         -- por qué se desactivó; el panel lo exige (migración 009)
+    notas            nvarchar(max) NULL,         -- texto libre del panel
     creado_en        datetime2(0)  NOT NULL CONSTRAINT df_cliente_creado DEFAULT (SYSDATETIME()),
     actualizado_en   datetime2(0)  NOT NULL CONSTRAINT df_cliente_actualizado DEFAULT (SYSDATETIME()),
     CONSTRAINT pk_cliente     PRIMARY KEY (id),
@@ -75,6 +77,8 @@ CREATE TABLE dmc.sucursal (
     region          nvarchar(80)  NOT NULL,
     telefono        varchar(30)   NULL,
     activo          bit           NOT NULL CONSTRAINT df_sucursal_activo DEFAULT (1),
+    motivo_inactivo nvarchar(400) NULL,         -- por qué se desactivó; el panel lo exige (migración 009)
+    notas           nvarchar(max) NULL,         -- texto libre del panel
     creado_en       datetime2(0)  NOT NULL CONSTRAINT df_sucursal_creado DEFAULT (SYSDATETIME()),
     actualizado_en  datetime2(0)  NOT NULL CONSTRAINT df_sucursal_actualizado DEFAULT (SYSDATETIME()),
     CONSTRAINT pk_sucursal                PRIMARY KEY (id),
@@ -285,7 +289,8 @@ CREATE TABLE dmc.visita (
     motivo_codigo         varchar(40)   NOT NULL,   -- FK al catálogo editable (Lista 1)
     estado                varchar(16)   NOT NULL CONSTRAINT df_visita_estado DEFAULT ('PROGRAMADA'),
     fecha_programada      date          NOT NULL,
-    hora_programada       time(0)       NULL,       -- la app la exige en motivos «Instalación…»
+    fecha_hasta           date          NULL,       -- margen de días: último día para hacerla (migración 010)
+    hora_programada      time(0)       NULL,       -- la app la exige en motivos «Instalación…»
     trabajo_solicitado    nvarchar(max) NOT NULL,
     indicaciones_acceso   nvarchar(max) NULL,
     responsable_nombre    nvarchar(120) NULL,
@@ -314,7 +319,8 @@ CREATE TABLE dmc.visita (
         ('PROGRAMADA','EN_CURSO','COMPLETADA','PENDIENTE','REAGENDADA','CANCELADA','CANCELADA_ADMIN')),
     -- La hora en instalación no va como CHECK: el código del motivo es fijo
     -- pero su nombre se edita, y la app la decide por el nombre (migración 007).
-    CONSTRAINT ck_visita_ayudante CHECK (tecnico_ayudante_id IS NULL OR tecnico_ayudante_id <> tecnico_id)
+    CONSTRAINT ck_visita_ayudante CHECK (tecnico_ayudante_id IS NULL OR tecnico_ayudante_id <> tecnico_id),
+    CONSTRAINT ck_visita_fecha_hasta CHECK (fecha_hasta IS NULL OR fecha_hasta > fecha_programada)
 );
 GO
 CREATE INDEX ix_visita_fecha    ON dmc.visita (fecha_programada DESC);

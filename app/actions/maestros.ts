@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { sesionCon } from "@/lib/auth";
 import {
+  faltaMigracionNotas,
   guardarCliente,
   guardarSucursal,
   guardarTecnico,
@@ -42,6 +43,9 @@ function mensajeDeError(err: unknown, contexto: string): string {
       ? `El RUT ${err.rut} ya está registrado en otra empresa. El RUT es único: busca esa empresa y edítala.`
       : `El RUT ${err.rut} ya está registrado en otra persona. El RUT es único: busca a esa persona y edítala.`;
   }
+  if (faltaMigracionNotas(err)) {
+    return "Falta aplicar la migración 009 en la base de datos. Avísale al administrador.";
+  }
   const texto = err instanceof Error ? err.message : String(err);
   if (/uq_\w*rut/i.test(texto)) return "Ya existe un registro con ese RUT.";
   if (/uq_\w*email|uq_usuario_email/i.test(texto)) return "Ya existe un registro con ese correo.";
@@ -66,6 +70,10 @@ export async function guardarClienteAction(id: number | null, datos: DatosClient
     return { ok: false, error: "Razón social y RUT son obligatorios." };
   }
   if (!rutCompleto(datos.rut)) return { ok: false, error: mensajeRut(datos.rut) ?? "El RUT está incompleto." };
+  // Un cliente no queda inactivo sin que conste por qué.
+  if (!datos.activo && !datos.motivoInactivo?.trim()) {
+    return { ok: false, error: "Explica por qué se desactiva el cliente." };
+  }
   try {
     await guardarCliente(id, datos);
   } catch (err) {
@@ -79,6 +87,10 @@ export async function guardarSucursalAction(id: number | null, datos: DatosSucur
   if (!(await sesionMaestro("sucursales", id))) return { ok: false, error: "No tienes permiso para editar sucursales." };
   if (!datos.nombre.trim() || !datos.clienteId) {
     return { ok: false, error: "Nombre y cliente son obligatorios." };
+  }
+  // Una sucursal no queda inactiva sin que conste por qué.
+  if (!datos.activo && !datos.motivoInactivo?.trim()) {
+    return { ok: false, error: "Explica por qué se desactiva la sucursal." };
   }
   try {
     await guardarSucursal(id, datos);

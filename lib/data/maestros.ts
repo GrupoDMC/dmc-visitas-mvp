@@ -42,18 +42,44 @@ async function rutTomado(tabla: "cliente" | "tecnico", rut: string, idPropio: nu
 
 // ── Clientes ────────────────────────────────────────────────────────────────
 
+/**
+ * ¿El error es que la base todavía no tiene la migración 009?
+ *
+ * Las listas de clientes y sucursales las lee toda la app, el celular del
+ * técnico incluido: sin la migración tienen que seguir saliendo, solo que sin
+ * notas ni motivo.
+ */
+export function faltaMigracionNotas(err: unknown): boolean {
+  const texto = err instanceof Error ? err.message : String(err);
+  return /invalid column name '(notas|motivo_inactivo)'/i.test(texto);
+}
+
+/** Lee con las columnas de la 009 y, si la base no las tiene, sin ellas. */
+async function consultaConNotas<T>(armar: (extra: string) => string, extra: string): Promise<T[]> {
+  try {
+    return await consulta<T>(armar(extra));
+  } catch (err) {
+    if (!faltaMigracionNotas(err)) throw err;
+    return consulta<T>(armar(""));
+  }
+}
+
 interface FilaCliente {
   id: number;
   rut: string;
   razon_social: string;
   nombre_fantasia: string;
   activo: boolean;
+  motivo_inactivo?: string | null;
+  notas?: string | null;
 }
 
 export async function listarClientes(): Promise<Cliente[]> {
-  const filas = await consulta<FilaCliente>(
-    `SELECT id, rut, razon_social, nombre_fantasia, activo
-       FROM dmc.cliente ORDER BY nombre_fantasia`
+  const filas = await consultaConNotas<FilaCliente>(
+    (extra) =>
+      `SELECT id, rut, razon_social, nombre_fantasia, activo${extra}
+         FROM dmc.cliente ORDER BY nombre_fantasia`,
+    ", motivo_inactivo, notas"
   );
   return filas.map((f) => ({
     id: num(f.id),
@@ -61,6 +87,8 @@ export async function listarClientes(): Promise<Cliente[]> {
     razonSocial: f.razon_social,
     nombreFantasia: f.nombre_fantasia,
     activo: Boolean(f.activo),
+    motivoInactivo: f.motivo_inactivo ?? null,
+    notas: f.notas ?? null,
   }));
 }
 
@@ -69,6 +97,9 @@ export interface DatosCliente {
   razonSocial: string;
   nombreFantasia: string;
   activo: boolean;
+  /** Obligatorio cuando `activo` es false. */
+  motivoInactivo: string | null;
+  notas: string | null;
 }
 
 export async function guardarCliente(id: number | null, d: DatosCliente): Promise<number> {
@@ -80,19 +111,23 @@ export async function guardarCliente(id: number | null, d: DatosCliente): Promis
     ["razon", sql.NVarChar(160), d.razonSocial],
     ["fantasia", sql.NVarChar(80), d.nombreFantasia],
     ["activo", sql.Bit, d.activo],
+    // El motivo es del estado inactivo: al reactivar se borra.
+    ["motivo", sql.NVarChar(400), d.activo ? null : d.motivoInactivo?.trim() || null],
+    ["notas", sql.NVarChar(sql.MAX), d.notas?.trim() || null],
   ];
   if (id === null) {
     const [fila] = await consultaCon<{ id: number }>(
-      `INSERT INTO dmc.cliente (rut, razon_social, nombre_fantasia, activo)
+      `INSERT INTO dmc.cliente (rut, razon_social, nombre_fantasia, activo, motivo_inactivo, notas)
        OUTPUT INSERTED.id AS id
-       VALUES (@rut, @razon, @fantasia, @activo)`,
+       VALUES (@rut, @razon, @fantasia, @activo, @motivo, @notas)`,
       params
     );
     return num(fila.id);
   }
   await ejecutar(
     `UPDATE dmc.cliente
-        SET rut = @rut, razon_social = @razon, nombre_fantasia = @fantasia, activo = @activo
+        SET rut = @rut, razon_social = @razon, nombre_fantasia = @fantasia, activo = @activo,
+            motivo_inactivo = @motivo, notas = @notas
       WHERE id = @id`,
     [...params, ["id", sql.BigInt, id]]
   );
@@ -111,12 +146,16 @@ interface FilaSucursal {
   region: string;
   telefono: string | null;
   activo: boolean;
+  motivo_inactivo?: string | null;
+  notas?: string | null;
 }
 
 export async function listarSucursales(): Promise<Sucursal[]> {
-  const filas = await consulta<FilaSucursal>(
-    `SELECT id, cliente_id, nombre, codigo, direccion, comuna, region, telefono, activo
-       FROM dmc.sucursal ORDER BY nombre`
+  const filas = await consultaConNotas<FilaSucursal>(
+    (extra) =>
+      `SELECT id, cliente_id, nombre, codigo, direccion, comuna, region, telefono, activo${extra}
+         FROM dmc.sucursal ORDER BY nombre`,
+    ", motivo_inactivo, notas"
   );
   return filas.map((f) => ({
     id: num(f.id),
@@ -128,6 +167,8 @@ export async function listarSucursales(): Promise<Sucursal[]> {
     region: f.region,
     telefono: f.telefono,
     activo: Boolean(f.activo),
+    motivoInactivo: f.motivo_inactivo ?? null,
+    notas: f.notas ?? null,
   }));
 }
 
@@ -141,6 +182,9 @@ export interface DatosSucursal {
   region: string;
   telefono: string | null;
   activo: boolean;
+  /** Obligatorio cuando `activo` es false. */
+  motivoInactivo: string | null;
+  notas: string | null;
 }
 
 export async function guardarSucursal(id: number | null, d: DatosSucursal): Promise<number> {
@@ -153,12 +197,16 @@ export async function guardarSucursal(id: number | null, d: DatosSucursal): Prom
     ["region", sql.NVarChar(80), d.region],
     ["telefono", sql.VarChar(30), d.telefono],
     ["activo", sql.Bit, d.activo],
+    // El motivo es del estado inactivo: al reactivar se borra.
+    ["motivo", sql.NVarChar(400), d.activo ? null : d.motivoInactivo?.trim() || null],
+    ["notas", sql.NVarChar(sql.MAX), d.notas?.trim() || null],
   ];
   if (id === null) {
     const [fila] = await consultaCon<{ id: number }>(
-      `INSERT INTO dmc.sucursal (cliente_id, nombre, codigo, direccion, comuna, region, telefono, activo)
+      `INSERT INTO dmc.sucursal (cliente_id, nombre, codigo, direccion, comuna, region, telefono, activo,
+                                 motivo_inactivo, notas)
        OUTPUT INSERTED.id AS id
-       VALUES (@cliente, @nombre, @codigo, @direccion, @comuna, @region, @telefono, @activo)`,
+       VALUES (@cliente, @nombre, @codigo, @direccion, @comuna, @region, @telefono, @activo, @motivo, @notas)`,
       params
     );
     return num(fila.id);
@@ -166,7 +214,8 @@ export async function guardarSucursal(id: number | null, d: DatosSucursal): Prom
   await ejecutar(
     `UPDATE dmc.sucursal
         SET cliente_id = @cliente, nombre = @nombre, codigo = @codigo, direccion = @direccion,
-            comuna = @comuna, region = @region, telefono = @telefono, activo = @activo
+            comuna = @comuna, region = @region, telefono = @telefono, activo = @activo,
+            motivo_inactivo = @motivo, notas = @notas
       WHERE id = @id`,
     [...params, ["id", sql.BigInt, id]]
   );

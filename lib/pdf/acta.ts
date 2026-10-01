@@ -401,8 +401,11 @@ export async function generarPdfActa(d: DatosPdfActa): Promise<Uint8Array> {
   // ── Resumen: la fecha, el horario y lo encontrado, de un vistazo ──
   {
     const alto = 58;
+    // Con margen de días, la fecha del acta es el día en que se hizo, no el
+    // primero del margen.
+    const dia = visita.fechaHasta && ejec ? ejec.horaInicio.slice(0, 10) : visita.fechaProgramada;
     const celdas: { etiqueta: string; valor: string; sub: string; color?: Color }[] = [
-      { etiqueta: "FECHA DE LA VISITA", valor: fechaLarga(visita.fechaProgramada), sub: diaSemana(visita.fechaProgramada) },
+      { etiqueta: "FECHA DE LA VISITA", valor: fechaLarga(dia), sub: diaSemana(dia) },
       {
         etiqueta: "HORARIO EN TIENDA",
         valor: ejec ? `${hhmm(ejec.horaInicio)} – ${hhmm(ejec.horaTermino)}` : "—",

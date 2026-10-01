@@ -29,6 +29,10 @@ export interface Cliente {
   razonSocial: string;
   nombreFantasia: string;
   activo: boolean;
+  /** Por qué se desactivó. Solo lo llevan los inactivos. */
+  motivoInactivo?: string | null;
+  /** Texto libre del panel. */
+  notas?: string | null;
 }
 
 export interface Sucursal {
@@ -42,6 +46,10 @@ export interface Sucursal {
   region: string;
   telefono: string | null;
   activo: boolean;
+  /** Por qué se desactivó. Solo lo llevan las inactivas. */
+  motivoInactivo?: string | null;
+  /** Texto libre del panel. */
+  notas?: string | null;
 }
 
 export interface Tecnico {
@@ -274,6 +282,11 @@ export interface Visita {
   motivosNombres: string[];
   estado: EstadoVisita;
   fechaProgramada: string;
+  /**
+   * Margen de días: el último día en que se puede hacer. Null = un solo día.
+   * Con valor, la visita vale cualquier día entre `fechaProgramada` y este.
+   */
+  fechaHasta: string | null;
   horaProgramada: string | null;
   trabajoSolicitado: string;
   indicacionesAcceso: string | null;

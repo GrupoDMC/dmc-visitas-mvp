@@ -9,6 +9,7 @@ import VisitaDialogo from "@/components/admin/VisitaDialogos";
 import VisitasMasivasDialogo from "@/components/admin/VisitasMasivasDialogo";
 import { Toast, useToast } from "@/components/ui/Toast";
 import { ESTADO_VISITA_LABEL, ESTADO_VISITA_TAG, textoMotivos } from "@/lib/ui/estado";
+import { textoFechaVisita } from "@/lib/ui/fecha";
 import { puede, useReferencias } from "@/lib/ui/referencias";
 import type { Visita, EstadoVisita } from "@/lib/types";
 
@@ -204,7 +205,7 @@ export default function VisitasTable({
                   className="cursor-pointer hover:bg-black/5"
                 >
                   <td className="font-semibold tabular-nums whitespace-nowrap">{v.folio}</td>
-                  <td className="tabular-nums opacity-65 whitespace-nowrap">{v.fechaProgramada}</td>
+                  <td className="tabular-nums opacity-65 whitespace-nowrap">{textoFechaVisita(v)}</td>
                   <td className={`tabular-nums whitespace-nowrap ${v.horaProgramada ? "opacity-90" : "opacity-45"}`}>
                     {v.horaProgramada ?? "Sin hora"}
                   </td>

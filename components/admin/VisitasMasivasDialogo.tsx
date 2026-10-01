@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import Dialogo, { escribirChecks, leerChecks, type CampoDef, type FormValores } from "@/components/admin/Dialogo";
 import SelectBuscable from "@/components/ui/SelectBuscable";
-import { opciones } from "@/components/admin/VisitaDialogos";
+import { camposFecha, errorMargen, fechaHastaDe, opciones } from "@/components/admin/VisitaDialogos";
 import { useReferencias } from "@/lib/ui/referencias";
 import { crearVisitasMasivasAction } from "@/app/actions/admin";
 import { fmtRut, fmtTel, mensajeRut } from "@/lib/ui/formato";
@@ -60,6 +60,8 @@ export default function VisitasMasivasDialogo({
     ayudanteId: "",
     motivoCodigo: escribirChecks([opc.motivos[0]?.v ?? ""]),
     fecha: hoyISO(),
+    margen: false,
+    fechaHasta: "",
     trabajo: "",
     acceso: "",
   }));
@@ -98,15 +100,13 @@ export default function VisitasMasivasDialogo({
       opciones: opc.motivos,
       ayuda: "Marca todos los que correspondan. El primero es el que encabeza la ficha del técnico.",
     },
-    {
-      k: "fecha",
-      label: "Fecha programada",
-      span: 2,
-      tipo: "date",
-      ayuda: esInstalacion
+    // Sin margen la fecha ocupa la fila entera; con margen, «desde» y «hasta» la comparten.
+    ...camposFecha(
+      form,
+      esInstalacion
         ? "En instalación la hora es obligatoria: ponla en cada local."
-        : "La hora es opcional y va en cada local, si hace falta.",
-    },
+        : "La hora es opcional y va en cada local, si hace falta."
+    ).map((c): CampoDef => (form.margen === true ? c : { ...c, span: 2 })),
     {
       k: "trabajo",
       label: "Qué se necesita hacer · para todos",
@@ -166,6 +166,8 @@ export default function VisitasMasivasDialogo({
   async function guardar() {
     if (motivosMarcados.length === 0) return onHecho("Marca al menos un motivo de la visita.", 0);
     if (locales.length === 0) return onHecho("Agrega al menos un local a la ruta.", 0);
+    const malMargen = errorMargen(form);
+    if (malMargen) return onHecho(malMargen, 0);
     for (const l of locales) {
       const errorRut = mensajeRut(l.respRut);
       if (errorRut) return onHecho(`${nombreLocal(l)}: ${errorRut}`, 0);
@@ -186,6 +188,7 @@ export default function VisitasMasivasDialogo({
       motivoCodigo: motivosMarcados[0],
       motivosCodigos: motivosMarcados,
       fechaProgramada: String(form.fecha),
+      fechaHasta: fechaHastaDe(form),
       horaProgramada: l.hora || null,
       trabajoSolicitado: l.trabajo.trim() || String(form.trabajo).trim(),
       indicacionesAcceso: l.acceso.trim() || String(form.acceso).trim() || null,

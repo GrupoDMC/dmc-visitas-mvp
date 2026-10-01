@@ -38,6 +38,44 @@ export function opciones(ref: Referencias) {
 
 type Opciones = ReturnType<typeof opciones>;
 
+/**
+ * La fecha de la visita, con la casilla «Margen de días» arriba. Sin marcar es
+ * un solo campo; marcada, aparece el segundo y la visita vale cualquier día
+ * entre los dos. Usa `fecha`, `margen` y `fechaHasta` del formulario.
+ */
+export function camposFecha(form: FormValores, ayuda?: string): CampoDef[] {
+  const conMargen = form.margen === true;
+  const desde: CampoDef = {
+    k: "fecha",
+    label: conMargen ? "Desde" : "Fecha programada",
+    tipo: "date",
+    casilla: { k: "margen", label: "Margen de días" },
+    ayuda,
+  };
+  if (!conMargen) return [desde];
+  return [
+    desde,
+    {
+      k: "fechaHasta",
+      label: "Hasta",
+      tipo: "date",
+      ayuda: "Al técnico le aparece en «Hoy» cada día del margen, hasta que la cierre.",
+    },
+  ];
+}
+
+/** El texto del error del margen, o null si está bien (o no se usa). */
+export function errorMargen(form: FormValores): string | null {
+  if (form.margen !== true) return null;
+  if (!form.fechaHasta) return "Marcaste margen de días: falta la fecha «hasta».";
+  return String(form.fechaHasta) > String(form.fecha) ? null : "La fecha «hasta» tiene que ser posterior a «desde».";
+}
+
+/** Lo que se guarda en fecha_hasta: nada si la casilla está sin marcar. */
+export function fechaHastaDe(form: FormValores): string | null {
+  return form.margen === true ? String(form.fechaHasta || "") || null : null;
+}
+
 /** Origen cuando la visita nace desde un problema de la vista "Problemas". */
 export interface OrigenProblema {
   problemaId: number;
@@ -71,6 +109,8 @@ function valoresIniciales(opc: Opciones, visita?: Visita, origen?: OrigenProblem
         visita.motivosCodigos?.length ? visita.motivosCodigos : [visita.motivoCodigo]
       ),
       fecha: visita.fechaProgramada,
+      margen: Boolean(visita.fechaHasta),
+      fechaHasta: visita.fechaHasta ?? "",
       hora: visita.horaProgramada ?? "",
       responsable: visita.responsableNombre ?? "",
       respRut: visita.responsableRut ?? "",
@@ -95,6 +135,8 @@ function valoresIniciales(opc: Opciones, visita?: Visita, origen?: OrigenProblem
       ]),
       // Se agenda para hoy salvo que se cambie.
       fecha: hoyISO(),
+      margen: false,
+      fechaHasta: "",
       hora: "",
       responsable: "",
       respRut: "",
@@ -112,6 +154,8 @@ function valoresIniciales(opc: Opciones, visita?: Visita, origen?: OrigenProblem
     motivoCodigo: escribirChecks([opc.motivos[0]?.v ?? ""]),
     // Se agenda para hoy salvo que se cambie.
     fecha: hoyISO(),
+    margen: false,
+    fechaHasta: "",
     hora: "",
     responsable: "",
     respRut: "",
@@ -180,11 +224,13 @@ export default function VisitaDialogo({
       opciones: opc.motivos,
       ayuda: "Marca todos los que correspondan. El primero es el que encabeza la ficha del técnico.",
     },
-    { k: "fecha", label: "Fecha programada", tipo: "date" },
+    ...camposFecha(form),
     {
       k: "hora",
       label: esInstalacion ? "Hora de la instalación (obligatoria)" : "Hora de llegada (opcional)",
       tipo: "time",
+      // Con margen, «desde» y «hasta» llenan la fila: la hora baja a la suya.
+      span: form.margen === true ? 2 : 1,
       ayuda: esInstalacion
         ? "En instalación la hora es obligatoria: la tienda tiene que dejar el acceso libre."
         : "Si la dejas vacía, el técnico la realiza en cualquier momento del día.",
@@ -244,6 +290,11 @@ export default function VisitaDialogo({
       onHecho("En instalación la hora es obligatoria.");
       return;
     }
+    const malMargen = errorMargen(form);
+    if (malMargen) {
+      onHecho(malMargen);
+      return;
+    }
     setGuardando(true);
     const datos = {
       clienteId: Number(form.clienteId),
@@ -253,6 +304,7 @@ export default function VisitaDialogo({
       motivoCodigo: motivosMarcados[0],
       motivosCodigos: motivosMarcados,
       fechaProgramada: String(form.fecha),
+      fechaHasta: fechaHastaDe(form),
       horaProgramada: String(form.hora) || null,
       trabajoSolicitado: String(form.trabajo),
       indicacionesAcceso: String(form.acceso) || null,

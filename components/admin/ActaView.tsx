@@ -15,6 +15,7 @@ import VisorFotos, { useVisorFotos } from "@/components/ui/VisorFotos";
 import { Toast, useToast } from "@/components/ui/Toast";
 import { enviarActaAction } from "@/app/actions/admin";
 import { ESTADO_PROBLEMA_LABEL, ESTADO_PROBLEMA_TAG, ESTADO_VISITA_LABEL, ESTADO_VISITA_TAG, textoMotivos, textoMotivosReales } from "@/lib/ui/estado";
+import { textoFechaVisita } from "@/lib/ui/fecha";
 import { nombreProblema, nombreTrabajo, puede, useReferencias } from "@/lib/ui/referencias";
 import { reloj } from "@/lib/ui/video";
 import type { Visita } from "@/lib/types";
@@ -90,7 +91,7 @@ export default function ActaView({
     : `${visita.fechaProgramada} · sin ejecutar`;
 
   const resumen: { k: string; v: string; span?: 2 }[] = [
-    { k: "Fecha programada", v: visita.fechaProgramada },
+    { k: visita.fechaHasta ? "Margen de días" : "Fecha programada", v: textoFechaVisita(visita) },
     { k: "Hora de llegada", v: visita.horaProgramada ?? "Sin hora · durante el día" },
     { k: "Cliente", v: visita.cliente?.nombreFantasia ?? "—" },
     { k: "Sucursal", v: visita.sucursal?.nombre ?? "—" },

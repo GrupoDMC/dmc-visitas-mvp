@@ -29,17 +29,37 @@ export default function ClientesTable({ clientes, sucursales }: { clientes: Clie
         {
           key: "activo",
           label: "Estado",
-          render: (c) => <Tag variant={c.activo ? "accent" : "neutral"}>{c.activo ? "Activo" : "Inactivo"}</Tag>,
+          render: (c) => (
+            <>
+              <Tag variant={c.activo ? "accent" : "neutral"}>{c.activo ? "Activo" : "Inactivo"}</Tag>
+              {!c.activo && c.motivoInactivo ? (
+                <div className="text-[11px] leading-[1.4] opacity-66 mt-1 max-w-[260px]">{c.motivoInactivo}</div>
+              ) : null}
+            </>
+          ),
         },
       ]}
       fields={[
         { k: "razonSocial", label: "Razón social", span: 2 },
         { k: "rut", label: "RUT", tipo: "rut", ph: "76.123.456-7" },
         { k: "nombreFantasia", label: "Nombre fantasía" },
-        { k: "activo", label: "Estado", tipo: "toggle" },
+        { k: "activo", label: "Estado", tipo: "toggle", span: 2 },
+        {
+          k: "motivoInactivo",
+          label: "¿Por qué se desactiva?",
+          tipo: "area",
+          span: 2,
+          ph: "Término de contrato, deuda, cierre de la empresa…",
+          ayuda: "Obligatorio para dejar al cliente inactivo. Se borra si se reactiva.",
+          visible: (f) => f.activo === false,
+        },
+        { k: "notas", label: "Notas", tipo: "area", span: 2, ph: "Lo que conviene saber de este cliente" },
       ]}
       validar={(f, id) => {
         if (!String(f.razonSocial).trim() || !String(f.rut).trim()) return "Razón social y RUT son obligatorios";
+        if (f.activo === false && !String(f.motivoInactivo ?? "").trim()) {
+          return "Explica por qué se desactiva el cliente";
+        }
         // El dígito verificador se valida al crear: un RUT mal tecleado deja al
         // cliente duplicado y sin forma de cruzarlo con la facturación.
         const error = mensajeRut(String(f.rut));
@@ -57,6 +77,8 @@ export default function ClientesTable({ clientes, sucursales }: { clientes: Clie
         razonSocial: c.razonSocial,
         rut: c.rut,
         activo: c.activo,
+        motivoInactivo: c.motivoInactivo ?? "",
+        notas: c.notas ?? "",
       })}
       guardarAction={(id, f) =>
         guardarClienteAction(id, {
@@ -64,9 +86,11 @@ export default function ClientesTable({ clientes, sucursales }: { clientes: Clie
           razonSocial: String(f.razonSocial).trim(),
           nombreFantasia: String(f.nombreFantasia).trim() || String(f.razonSocial).trim(),
           activo: f.activo !== false,
+          motivoInactivo: String(f.motivoInactivo ?? "").trim() || null,
+          notas: String(f.notas ?? "").trim() || null,
         })
       }
-      emptyRow={{ nombreFantasia: "", razonSocial: "", rut: "", activo: true }}
+      emptyRow={{ nombreFantasia: "", razonSocial: "", rut: "", activo: true, motivoInactivo: "", notas: "" }}
     />
   );
 }

@@ -13,7 +13,7 @@ import {
   type Ejecutor,
   type Parametro,
 } from "@/lib/data/sql";
-import { cancelarVisitasVencidas } from "@/lib/data/vencimiento";
+import { cancelarVisitasVencidas, hayMargenDeDias } from "@/lib/data/vencimiento";
 import type {
   EstadoProblema,
   EstadoVisita,
@@ -83,6 +83,7 @@ interface FilaVisita {
   motivo_codigo: string;
   estado: EstadoVisita;
   fecha_programada: string;
+  fecha_hasta: string | null;
   hora_programada: string | null;
   trabajo_solicitado: string;
   indicaciones_acceso: string | null;
@@ -135,10 +136,12 @@ const MOTIVO_PENDIENTE = `
     WHERE h.visita_id = v.id AND h.estado = v.estado AND h.motivo IS NOT NULL
     ORDER BY h.ocurrido_en DESC, h.id DESC)`;
 
-const SELECT_VISITA = `
+// `conMargen` = la base ya tiene v.fecha_hasta (migración 010).
+const selectVisita = (conMargen: boolean) => `
   SELECT v.id, v.folio, v.cliente_id, v.sucursal_id, v.tecnico_id, v.tecnico_ayudante_id,
          v.motivo_codigo, v.estado,
          ${F_FECHA("v.fecha_programada")} AS fecha_programada,
+         ${conMargen ? F_FECHA("v.fecha_hasta") : "CAST(NULL AS varchar(10))"} AS fecha_hasta,
          ${F_HORA("v.hora_programada")}   AS hora_programada,
          v.trabajo_solicitado, v.indicaciones_acceso, v.responsable_nombre,
          v.responsable_rut, v.responsable_telefono,
@@ -286,6 +289,7 @@ async function cargar(filtro: Filtro): Promise<Visita[]> {
   // Antes de leer, lo vencido pasa a CANCELADA: así ni el panel ni el celular
   // muestran abierta una visita que ya salió del plazo.
   await cancelarVisitasVencidas();
+  const conMargen = await hayMargenDeDias();
   const ids = subconsultaIds(filtro);
   const p = () => filtro.params.map((x) => [...x] as Parametro);
 
@@ -304,7 +308,7 @@ async function cargar(filtro: Filtro): Promise<Visita[]> {
     internos,
   ] = await Promise.all([
       consultaCon<FilaVisita>(
-        `${SELECT_VISITA} WHERE ${filtro.where} ORDER BY v.fecha_programada DESC, v.hora_programada, v.id DESC`,
+        `${selectVisita(conMargen)} WHERE ${filtro.where} ORDER BY v.fecha_programada DESC, v.hora_programada, v.id DESC`,
         p()
       ),
       consultaCon<FilaMotivoVisita>(
@@ -421,6 +425,7 @@ async function cargar(filtro: Filtro): Promise<Visita[]> {
       motivoCodigo: v.motivo_codigo,
       estado: v.estado,
       fechaProgramada: v.fecha_programada,
+      fechaHasta: v.fecha_hasta,
       horaProgramada: v.hora_programada,
       trabajoSolicitado: v.trabajo_solicitado,
       indicacionesAcceso: v.indicaciones_acceso,
@@ -722,7 +727,9 @@ export async function cambiarEstadoVisita(input: {
       ]
     );
     if (input.fechaNueva) {
-      await ejecutar(`UPDATE dmc.visita SET fecha_programada = @fecha, hora_programada = @hora WHERE id = @id`, [
+      // Reagendar deja un día fijo: el margen que tuviera se suelta.
+      const sinMargen = (await hayMargenDeDias()) ? ", fecha_hasta = NULL" : "";
+      await ejecutar(`UPDATE dmc.visita SET fecha_programada = @fecha, hora_programada = @hora${sinMargen} WHERE id = @id`, [
         ["fecha", sql.Date, input.fechaNueva],
         ["hora", sql.VarChar(8), input.horaNueva || null],
         ["id", sql.BigInt, id],
@@ -904,6 +911,8 @@ export interface DatosVisita {
   /** Todos los motivos marcados. Si va vacio se asume solo el principal. */
   motivosCodigos?: string[];
   fechaProgramada: string;
+  /** Margen de días: el último día para hacerla. Vacío = un solo día. */
+  fechaHasta?: string | null;
   horaProgramada: string | null;
   trabajoSolicitado: string;
   indicacionesAcceso: string | null;
@@ -914,19 +923,36 @@ export interface DatosVisita {
   creadaEnTerreno?: boolean;
 }
 
+/** Pedir margen de días en una base que todavía no tiene la migración 010. */
+export class FaltaMigracionMargen extends Error {
+  constructor() {
+    super("Falta la migración 010: dmc.visita.fecha_hasta");
+    this.name = "FaltaMigracionMargen";
+  }
+}
+
+/** ¿Se puede escribir fecha_hasta? Si piden margen y no hay columna, se avisa. */
+async function margenPara(datos: DatosVisita): Promise<boolean> {
+  const conMargen = await hayMargenDeDias();
+  if (datos.fechaHasta && !conMargen) throw new FaltaMigracionMargen();
+  return conMargen;
+}
+
 /** "Nueva visita" del panel y "Agregar visita" del celular. Nace PROGRAMADA. */
 export async function crearVisita(datos: DatosVisita, creadaPor: number | null): Promise<Visita> {
+  const conMargen = await margenPara(datos);
   // El folio lo genera el DEFAULT de dmc.visita con la secuencia seq_folio_visita.
   const [fila] = await consultaCon<{ id: number; folio: string }>(
     `INSERT INTO dmc.visita
        (cliente_id, sucursal_id, tecnico_id, tecnico_ayudante_id, motivo_codigo, fecha_programada,
         hora_programada, trabajo_solicitado, indicaciones_acceso, responsable_nombre, responsable_rut,
-        responsable_telefono, problema_origen_id, creada_en_terreno, creada_por)
+        responsable_telefono, problema_origen_id, creada_en_terreno, creada_por${conMargen ? ", fecha_hasta" : ""})
      VALUES (@cliente, @sucursal, @tecnico, @ayudante, @motivo, @fecha, @hora, @trabajo, @acceso,
-             @responsable, @rut, @telefono, @problema, @terreno, @creadaPor);
+             @responsable, @rut, @telefono, @problema, @terreno, @creadaPor${conMargen ? ", @hasta" : ""});
 
      SELECT id, folio FROM dmc.visita WHERE id = SCOPE_IDENTITY();`,
     [
+      ["hasta", sql.Date, datos.fechaHasta || null],
       ["cliente", sql.BigInt, datos.clienteId],
       ["sucursal", sql.BigInt, datos.sucursalId],
       ["tecnico", sql.BigInt, datos.tecnicoId],
@@ -1024,6 +1050,7 @@ export async function editarVisita(folio: string, datos: DatosVisita, usuarioId:
   );
   if (!visita) return false;
   const id = num(visita.id);
+  const conMargen = await margenPara(datos);
 
   await ejecutar(
     `UPDATE dmc.visita
@@ -1031,9 +1058,10 @@ export async function editarVisita(folio: string, datos: DatosVisita, usuarioId:
             tecnico_ayudante_id = @ayudante, motivo_codigo = @motivo, fecha_programada = @fecha, hora_programada = @hora,
             trabajo_solicitado = @trabajo, indicaciones_acceso = @acceso,
             responsable_nombre = @responsable, responsable_rut = @rut,
-            responsable_telefono = @telefono
+            responsable_telefono = @telefono${conMargen ? ", fecha_hasta = @hasta" : ""}
       WHERE id = @id`,
     [
+      ["hasta", sql.Date, datos.fechaHasta || null],
       ["cliente", sql.BigInt, datos.clienteId],
       ["sucursal", sql.BigInt, datos.sucursalId],
       ["tecnico", sql.BigInt, datos.tecnicoId],
@@ -1090,10 +1118,12 @@ export async function reprogramarVisita(input: {
     ]
   );
 
+  // Reprogramar deja un día fijo: el margen que tuviera se suelta.
+  const sinMargen = (await hayMargenDeDias()) ? "fecha_hasta = NULL," : "";
   await ejecutar(
     // Si el nuevo asignado era el ayudante, pasa a ir solo: no puede ser las dos cosas.
     `UPDATE dmc.visita
-        SET tecnico_id = @tecnico, fecha_programada = @fecha, hora_programada = @hora,
+        SET tecnico_id = @tecnico, fecha_programada = @fecha, hora_programada = @hora, ${sinMargen}
             tecnico_ayudante_id = CASE WHEN tecnico_ayudante_id = @tecnico THEN NULL
                                        ELSE tecnico_ayudante_id END
       WHERE id = @id`,

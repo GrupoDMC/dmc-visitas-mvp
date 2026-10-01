@@ -235,6 +235,8 @@ Sobre una base ya creada, los cambios van en archivos aparte y numerados:
 | [`sql/migracion-006-motivo-trabajo-e-interno.sql`](sql/migracion-006-motivo-trabajo-e-interno.sql) | Trabajos asignados a cada motivo (`dmc.catalogo_motivo_trabajo`, `visita_trabajo.motivo_codigo`), checklist del comentario interno (`dmc.catalogo_interno`, `dmc.visita_interno`), `interno` en `visita_foto` / `visita_video` y `sucursal.codigo` opcional |
 | [`sql/migracion-007-hora-instalacion-y-ayudante.sql`](sql/migracion-007-hora-instalacion-y-ayudante.sql) | Quita `ck_visita_hora_instalacion` (la hora obligatoria la decide la app por el nombre «Instalación…» del motivo) y agrega `dmc.visita.tecnico_ayudante_id` para cuando van dos técnicos al local |
 | [`sql/migracion-008-roles-y-permisos.sql`](sql/migracion-008-roles-y-permisos.sql) | Roles del panel con permisos por módulo y acción: `dmc.rol`, `dmc.rol_permiso` y `dmc.usuario.rol_id`. Crea el rol «Coordinador» con lo que un coordinador podía hacer hasta ahora y se lo asigna a los que ya existen. Sin ella la app arranca igual, pero no hay roles que administrar |
+| [`sql/migracion-009-notas-y-motivo-inactivo.sql`](sql/migracion-009-notas-y-motivo-inactivo.sql) | `notas` en `dmc.cliente` y `dmc.sucursal`, y `motivo_inactivo` en las dos: el porqué que el panel exige al desactivar un cliente o una sucursal. Sin ella la app arranca igual, pero clientes y sucursales no se pueden guardar |
+| [`sql/migracion-010-margen-de-dias.sql`](sql/migracion-010-margen-de-dias.sql) | `dmc.visita.fecha_hasta`: el margen de días de una visita, que se puede hacer cualquier día entre `fecha_programada` y `fecha_hasta`. Sin ella la app arranca igual, pero no se puede agendar con margen |
 
 ```bash
 sqlcmd -S <host>,<puerto> -d DMC_Contingencia -i sql/migracion-002-mejoras.sql
@@ -244,6 +246,8 @@ sqlcmd -S <host>,<puerto> -d DMC_Contingencia -i sql/migracion-005-eliminar-visi
 sqlcmd -S <host>,<puerto> -d DMC_Contingencia -i sql/migracion-006-motivo-trabajo-e-interno.sql
 sqlcmd -S <host>,<puerto> -d DMC_Contingencia -i sql/migracion-007-hora-instalacion-y-ayudante.sql
 sqlcmd -S <host>,<puerto> -d DMC_Contingencia -i sql/migracion-008-roles-y-permisos.sql
+sqlcmd -S <host>,<puerto> -d DMC_Contingencia -i sql/migracion-009-notas-y-motivo-inactivo.sql
+sqlcmd -S <host>,<puerto> -d DMC_Contingencia -i sql/migracion-010-margen-de-dias.sql
 ```
 
 Son idempotentes: se pueden correr varias veces, y en orden.

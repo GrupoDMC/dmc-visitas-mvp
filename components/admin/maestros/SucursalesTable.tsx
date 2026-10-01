@@ -49,7 +49,14 @@ export default function SucursalesTable({ sucursales, clientes }: { sucursales: 
         {
           key: "activo",
           label: "Estado",
-          render: (s) => <Tag variant={s.activo ? "accent" : "neutral"}>{s.activo ? "Activa" : "Inactiva"}</Tag>,
+          render: (s) => (
+            <>
+              <Tag variant={s.activo ? "accent" : "neutral"}>{s.activo ? "Activa" : "Inactiva"}</Tag>
+              {!s.activo && s.motivoInactivo ? (
+                <div className="text-[11px] leading-[1.4] opacity-66 mt-1 max-w-[260px]">{s.motivoInactivo}</div>
+              ) : null}
+            </>
+          ),
         },
       ]}
       fields={[
@@ -66,8 +73,24 @@ export default function SucursalesTable({ sucursales, clientes }: { sucursales: 
         { k: "comuna", label: "Comuna" },
         { k: "region", label: "Región", tipo: "select", opciones: REGIONES.map((r) => ({ v: r, t: r })) },
         { k: "activo", label: "Estado", tipo: "toggle" },
+        {
+          k: "motivoInactivo",
+          label: "¿Por qué se desactiva?",
+          tipo: "area",
+          span: 2,
+          ph: "Cierre de la tienda, cambio de local, término de contrato…",
+          ayuda: "Obligatorio para dejar la sucursal inactiva. Se borra si se reactiva.",
+          visible: (f) => f.activo === false,
+        },
+        { k: "notas", label: "Notas", tipo: "area", span: 2, ph: "Lo que conviene saber de esta tienda" },
       ]}
-      validar={(f) => (!String(f.nombre).trim() || !f.clienteId ? "Nombre y cliente son obligatorios" : null)}
+      validar={(f) => {
+        if (!String(f.nombre).trim() || !f.clienteId) return "Nombre y cliente son obligatorios";
+        if (f.activo === false && !String(f.motivoInactivo ?? "").trim()) {
+          return "Explica por qué se desactiva la sucursal";
+        }
+        return null;
+      }}
       toFormValues={(s) => ({
         clienteId: String(s.clienteId),
         nombre: s.nombre,
@@ -77,6 +100,8 @@ export default function SucursalesTable({ sucursales, clientes }: { sucursales: 
         region: s.region,
         telefono: s.telefono ?? "",
         activo: s.activo,
+        motivoInactivo: s.motivoInactivo ?? "",
+        notas: s.notas ?? "",
       })}
       guardarAction={(id, f) =>
         guardarSucursalAction(id, {
@@ -88,6 +113,8 @@ export default function SucursalesTable({ sucursales, clientes }: { sucursales: 
           region: String(f.region),
           telefono: String(f.telefono).trim() || null,
           activo: f.activo !== false,
+          motivoInactivo: String(f.motivoInactivo ?? "").trim() || null,
+          notas: String(f.notas ?? "").trim() || null,
         })
       }
       emptyRow={{
@@ -99,6 +126,8 @@ export default function SucursalesTable({ sucursales, clientes }: { sucursales: 
         region: REGIONES[0],
         telefono: "",
         activo: true,
+        motivoInactivo: "",
+        notas: "",
       }}
     />
   );

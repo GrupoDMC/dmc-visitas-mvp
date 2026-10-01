@@ -8,6 +8,7 @@ import { Toast, useToast } from "@/components/ui/Toast";
 import { ESTADO_VISITA_BARRA, ESTADO_VISITA_LABEL, ESTADO_VISITA_TAG, textoMotivos } from "@/lib/ui/estado";
 import { actasEnCola, haceCuanto, sacarDeCola, type ActaEnCola } from "@/lib/ui/borrador";
 import { estaCancelada } from "@/lib/ui/estado";
+import { diaDeVisita } from "@/lib/ui/fecha";
 import type { EstadoVisita, Visita } from "@/lib/types";
 
 const ESTADOS: EstadoVisita[] = [
@@ -19,6 +20,11 @@ const ESTADOS: EstadoVisita[] = [
   "CANCELADA",
   "CANCELADA_ADMIN",
 ];
+
+/** '2026-10-05' → "5 oct". */
+function diaCorto(fecha: string): string {
+  return new Date(`${fecha}T00:00:00`).toLocaleDateString("es-CL", { day: "numeric", month: "short" });
+}
 
 export default function VisitasList({
   visitas,
@@ -62,9 +68,11 @@ export default function VisitasList({
   const grupos = useMemo(() => {
     const porFecha = new Map<string, Visita[]>();
     for (const v of filtradas) {
-      const arr = porFecha.get(v.fechaProgramada) ?? [];
+      // Con margen de días y sin cerrar, la visita se va corriendo a «Hoy».
+      const dia = diaDeVisita(v, hoy);
+      const arr = porFecha.get(dia) ?? [];
       arr.push(v);
-      porFecha.set(v.fechaProgramada, arr);
+      porFecha.set(dia, arr);
     }
     return [...porFecha.entries()]
       .sort((a, b) => b[0].localeCompare(a[0]))
@@ -190,6 +198,9 @@ export default function VisitasList({
                   <span className="tag tag-neutral border border-black/[.2] min-w-0 max-w-full">
                     <span className="truncate">{textoMotivos(v)}</span>
                   </span>
+                  {v.fechaHasta ? (
+                    <span className="tag tag-accent flex-none tabular-nums">Hasta {diaCorto(v.fechaHasta)}</span>
+                  ) : null}
                   {v.tecnicoId !== tecnicoId ? (
                     <span className="tag tag-dark flex-none">Ayudante</span>
                   ) : v.tecnicoAyudante ? (

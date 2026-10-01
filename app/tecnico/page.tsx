@@ -2,7 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getSesion } from "@/lib/auth";
 import { getVisitasPorTecnico } from "@/lib/data/visitas";
-import { hoyISO } from "@/lib/ui/fecha";
+import { diaDeVisita, hoyISO } from "@/lib/ui/fecha";
 import MobileShell from "@/components/mobile/MobileShell";
 import Tag from "@/components/Tag";
 import { ESTADO_VISITA_LABEL, ESTADO_VISITA_TAG, textoMotivos } from "@/lib/ui/estado";
@@ -15,7 +15,8 @@ export default async function InicioPage() {
 
   const HOY = hoyISO();
   const visitas = await getVisitasPorTecnico(sesion.tecnico.id);
-  const deHoy = visitas.filter((v) => v.fechaProgramada === HOY);
+  // Las que tienen margen de días cuentan como de hoy mientras sigan abiertas.
+  const deHoy = visitas.filter((v) => diaDeVisita(v, HOY) === HOY);
   const nHoy = deHoy.length;
   const nCurso = deHoy.filter((v) => v.estado === "EN_CURSO").length;
   const nPend = deHoy.filter((v) => v.estado === "PROGRAMADA" || v.estado === "PENDIENTE").length;

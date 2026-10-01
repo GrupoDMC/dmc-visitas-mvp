@@ -86,7 +86,9 @@ export default function DetalleVisita({
     { k: "Responsable", v: `${visita.responsableNombre ?? "—"} · ${visita.responsableTelefono ?? "—"}` },
     { k: visita.motivosCodigos.length > 1 ? "Motivos" : "Motivo", v: textoMotivos(visita) },
     { k: "Estado", v: ESTADO_VISITA_LABEL[visita.estado] },
-    { k: "Fecha", v: visita.fechaProgramada },
+    visita.fechaHasta
+      ? { k: "Margen", v: `Cualquier día del ${visita.fechaProgramada} al ${visita.fechaHasta}` }
+      : { k: "Fecha", v: visita.fechaProgramada },
   ];
   if (esAyudante) {
     filas.push({ k: "Técnico a cargo", v: visita.tecnico?.nombreCompleto ?? "—" });

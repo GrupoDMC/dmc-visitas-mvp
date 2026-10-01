@@ -48,6 +48,30 @@ export function fechaHoraLegible(marca: string | null | undefined): string {
   return `${Number(dia)} ${MESES[Number(mes) - 1] ?? mes} ${anio} · ${hh}:${mm}`;
 }
 
+interface ConMargen {
+  fechaProgramada: string;
+  fechaHasta?: string | null;
+  estado: string;
+}
+
+/**
+ * Bajo qué día se muestra una visita.
+ *
+ * La de un solo día, el suyo. La que tiene margen de días y sigue abierta se
+ * va corriendo: cada día del margen aparece en «Hoy», hasta que se cierre o
+ * se acabe el margen.
+ */
+export function diaDeVisita(v: ConMargen, hoy: string): string {
+  const abierta = v.estado === "PROGRAMADA" || v.estado === "EN_CURSO";
+  if (!v.fechaHasta || !abierta || hoy <= v.fechaProgramada) return v.fechaProgramada;
+  return hoy < v.fechaHasta ? hoy : v.fechaHasta;
+}
+
+/** '2026-10-01', o '2026-10-01 → 2026-10-05' si la visita tiene margen. */
+export function textoFechaVisita(v: Pick<ConMargen, "fechaProgramada" | "fechaHasta">): string {
+  return v.fechaHasta ? `${v.fechaProgramada} → ${v.fechaHasta}` : v.fechaProgramada;
+}
+
 /** Primer día del mes de `fecha`. */
 export function inicioMes(fecha: string): string {
   return `${fecha.slice(0, 7)}-01`;

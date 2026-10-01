@@ -56,6 +56,11 @@ export interface CampoDef {
    * (al corregir una visita) aparece abierto.
    */
   plegable?: boolean;
+  /**
+   * Casilla pequeña en la fila del título, a la derecha. Guarda true/false en
+   * `form[k]`: sirve para que otro campo aparezca solo cuando se marca.
+   */
+  casilla?: { k: string; label: string };
 }
 
 export interface Adjunto {
@@ -185,6 +190,27 @@ export default function Dialogo({
                 <div key={c.k} className="field min-w-0" style={{ gridColumn: `span ${c.span ?? 1}` }}>
                   {plegador ? (
                     <div className="mb-2">{plegador}</div>
+                  ) : c.casilla ? (
+                    <div className="flex items-start gap-2">
+                      <label htmlFor={`dlg-${c.k}`}>{c.label}</label>
+                      <button
+                        type="button"
+                        role="checkbox"
+                        aria-checked={form[c.casilla.k] === true}
+                        onClick={() => onCampo(c.casilla!.k, form[c.casilla!.k] !== true)}
+                        className="ml-auto flex-none flex items-center gap-1.5 p-0 bg-transparent border-0 cursor-pointer text-[var(--color-text)] text-[11px] tracking-[.06em] uppercase"
+                        style={{ opacity: form[c.casilla.k] === true ? 1 : 0.72 }}
+                      >
+                        <span className="w-3.5 h-3.5 flex-none border-2 border-current grid place-items-center">
+                          {form[c.casilla.k] === true ? (
+                            <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="4">
+                              <path d="M4 12l5 5L20 6" />
+                            </svg>
+                          ) : null}
+                        </span>
+                        <span>{c.casilla.label}</span>
+                      </button>
+                    </div>
                   ) : (
                     <label htmlFor={`dlg-${c.k}`}>{c.label}</label>
                   )}
