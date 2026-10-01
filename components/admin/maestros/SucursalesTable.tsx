@@ -26,7 +26,7 @@ export default function SucursalesTable({
       addLabel="Nueva sucursal"
       editLabel="Editar sucursal"
       dialogoKicker="Maestro · sucursal"
-      nota="La sucursal siempre pertenece a un cliente y no se puede dejar sin él. El mall se asigna desde Maestros › Malls."
+      nota="La sucursal siempre pertenece a un cliente y no se puede dejar sin él. El mall es opcional: al crear la sucursal, elegirlo le pone el nombre del mall."
       phBusqueda="Buscar sucursal, comuna, mall, código…"
       rows={sucursales}
       searchKeys={(s) => `${s.nombre} ${s.codigo ?? ""} ${s.comuna} ${s.direccion} ${nombreCliente(s.clienteId)} ${nombreMall(s.mallId)}`}
@@ -57,6 +57,18 @@ export default function SucursalesTable({
           tipo: "select",
           opciones: clientes.map((c) => ({ v: String(c.id), t: c.nombreFantasia })),
         },
+        {
+          k: "mallId",
+          label: "Mall (opcional)",
+          tipo: "select",
+          buscable: true,
+          opciones: [
+            { v: "", t: "Sin mall" },
+            ...malls.map((m) => ({ v: String(m.id), t: m.activo ? m.nombre : `${m.nombre} · inactivo` })),
+          ],
+          ayuda: "Al crear la sucursal, toma el nombre del mall.",
+          visible: () => malls.length > 0,
+        },
         { k: "nombre", label: "Nombre de la sucursal" },
         { k: "codigo", label: "Código interno (opcional)", ph: "MS-118" },
         { k: "telefono", label: "Teléfono", tipo: "tel", ph: "+56 2 2299 4100" },
@@ -82,8 +94,15 @@ export default function SucursalesTable({
         }
         return null;
       }}
+      // Solo en un alta: una sucursal que ya existe no cambia de nombre por moverla de mall.
+      alCambiar={(k, v, _f, id) => {
+        if (k !== "mallId" || id !== null) return null;
+        const mall = malls.find((m) => String(m.id) === v);
+        return mall ? { nombre: mall.nombre } : null;
+      }}
       toFormValues={(s) => ({
         clienteId: String(s.clienteId),
+        mallId: s.mallId ? String(s.mallId) : "",
         nombre: s.nombre,
         codigo: s.codigo ?? "",
         direccion: s.direccion,
@@ -97,6 +116,7 @@ export default function SucursalesTable({
       guardarAction={(id, f) =>
         guardarSucursalAction(id, {
           clienteId: Number(f.clienteId),
+          mallId: Number(f.mallId) || null,
           nombre: String(f.nombre).trim(),
           codigo: String(f.codigo ?? "").trim() || null,
           direccion: String(f.direccion).trim(),
@@ -110,6 +130,7 @@ export default function SucursalesTable({
       }
       emptyRow={{
         clienteId: String(clientes[0]?.id ?? ""),
+        mallId: "",
         nombre: "",
         codigo: "",
         direccion: "",

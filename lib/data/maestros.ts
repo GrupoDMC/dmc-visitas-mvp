@@ -292,6 +292,8 @@ export async function listarSucursales(): Promise<Sucursal[]> {
 
 export interface DatosSucursal {
   clienteId: number;
+  /** El mall en el que queda la tienda. null = no está en ningún mall. */
+  mallId: number | null;
   nombre: string;
   /** Opcional: null o vacío se guarda como "sin código". */
   codigo: string | null;
@@ -308,6 +310,7 @@ export interface DatosSucursal {
 export async function guardarSucursal(id: number | null, d: DatosSucursal): Promise<number> {
   const params: Parametros = [
     ["cliente", sql.BigInt, d.clienteId],
+    ["mall", sql.BigInt, d.mallId],
     ["nombre", sql.NVarChar(120), d.nombre],
     ["codigo", sql.VarChar(20), d.codigo?.trim() || null],
     ["direccion", sql.NVarChar(180), d.direccion],
@@ -321,17 +324,17 @@ export async function guardarSucursal(id: number | null, d: DatosSucursal): Prom
   ];
   if (id === null) {
     const [fila] = await consultaCon<{ id: number }>(
-      `INSERT INTO dmc.sucursal (cliente_id, nombre, codigo, direccion, comuna, region, telefono, activo,
+      `INSERT INTO dmc.sucursal (cliente_id, mall_id, nombre, codigo, direccion, comuna, region, telefono, activo,
                                  motivo_inactivo, notas)
        OUTPUT INSERTED.id AS id
-       VALUES (@cliente, @nombre, @codigo, @direccion, @comuna, @region, @telefono, @activo, @motivo, @notas)`,
+       VALUES (@cliente, @mall, @nombre, @codigo, @direccion, @comuna, @region, @telefono, @activo, @motivo, @notas)`,
       params
     );
     return num(fila.id);
   }
   await ejecutar(
     `UPDATE dmc.sucursal
-        SET cliente_id = @cliente, nombre = @nombre, codigo = @codigo, direccion = @direccion,
+        SET cliente_id = @cliente, mall_id = @mall, nombre = @nombre, codigo = @codigo, direccion = @direccion,
             comuna = @comuna, region = @region, telefono = @telefono, activo = @activo,
             motivo_inactivo = @motivo, notas = @notas
       WHERE id = @id`,

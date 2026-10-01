@@ -47,6 +47,7 @@ export default function MaestroTable<T extends { id: number }>({
   guardarAction,
   emptyRow,
   validar,
+  alCambiar,
   accionFila,
 }: {
   kicker: string;
@@ -74,6 +75,11 @@ export default function MaestroTable<T extends { id: number }>({
    * repetidos (un RUT que ya está en la fila que se está editando).
    */
   validar?: (form: FormValores, id: number | null) => string | null;
+  /**
+   * Lo que un campo arrastra al cambiar: devuelve los otros campos que hay que
+   * pisar (elegir el mall llena el nombre de la sucursal). `id` es null en un alta.
+   */
+  alCambiar?: (k: string, valor: string | boolean, form: FormValores, id: number | null) => FormValores | null;
   /** Un botón propio del maestro en cada fila, antes del lápiz. */
   accionFila?: (row: T) => React.ReactNode;
 }) {
@@ -191,7 +197,12 @@ export default function MaestroTable<T extends { id: number }>({
           nota={nota}
           campos={camposVisibles}
           form={dialogo.form}
-          onCampo={(k, v) => setDialogo({ ...dialogo, form: { ...dialogo.form, [k]: v } })}
+          onCampo={(k, v) =>
+            setDialogo({
+              ...dialogo,
+              form: { ...dialogo.form, [k]: v, ...alCambiar?.(k, v, dialogo.form, dialogo.id) },
+            })
+          }
           onCerrar={() => setDialogo(null)}
           onGuardar={guardar}
           guardando={guardando}
