@@ -118,6 +118,11 @@ export default function MallsTable({
   );
 }
 
+/** Para comparar sin tildes ni mayúsculas: «egana» también encuentra «Egaña». */
+function sinTildes(texto: string): string {
+  return texto.toLowerCase().normalize("NFD").replace(/\p{Diacritic}/gu, "");
+}
+
 /**
  * "Tiendas del mall": las sucursales que están en él.
  *
@@ -144,6 +149,8 @@ function TiendasDialogo({
   const opcClientes = clientes.filter((c) => c.activo).map((c) => ({ v: String(c.id), t: c.nombreFantasia }));
   const [clienteSel, setClienteSel] = useState(opcClientes[0]?.v ?? "");
   const [guardando, setGuardando] = useState(false);
+  const [porPalabra, setPorPalabra] = useState(false);
+  const [busqueda, setBusqueda] = useState("");
 
   const nombreCliente = (id: number) => clientes.find((c) => c.id === id)?.nombreFantasia ?? "—";
   const tiendas = ids
@@ -159,6 +166,15 @@ function TiendasDialogo({
       const otro = s.mallId && s.mallId !== mall.id ? malls.find((m) => m.id === s.mallId)?.nombre : null;
       return { v: String(s.id), t: otro ? `${s.nombre} · hoy en ${otro}` : s.nombre };
     });
+
+  // Búsqueda por palabra: todas las sucursales, de cualquier cliente, que la
+  // traigan en el nombre («Egaña» encuentra las de Plaza Egaña de cada marca).
+  const palabra = sinTildes(busqueda.trim());
+  const encontradas = palabra
+    ? sucursales
+        .filter((s) => s.activo && !ids.includes(s.id) && sinTildes(s.nombre).includes(palabra))
+        .sort((a, b) => `${nombreCliente(a.clienteId)} ${a.nombre}`.localeCompare(`${nombreCliente(b.clienteId)} ${b.nombre}`))
+    : [];
 
   async function guardar() {
     setGuardando(true);
@@ -190,31 +206,83 @@ function TiendasDialogo({
           </div>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 px-3.5 py-3.5 border-b border-[var(--color-divider-soft)]">
-          <div className="field min-w-0">
-            <label htmlFor="mt-cliente">Cliente</label>
-            <SelectBuscable
-              id="mt-cliente"
-              valor={clienteSel}
-              opciones={opcClientes}
-              onChange={setClienteSel}
-              ariaLabel="Cliente"
-            />
+        <label className="flex items-center gap-2 px-3.5 py-2.5 text-[13px] cursor-pointer border-b border-[var(--color-divider-soft)]">
+          <input type="checkbox" checked={porPalabra} onChange={(e) => setPorPalabra(e.target.checked)} />
+          Buscar por palabra en todas las sucursales
+        </label>
+
+        {porPalabra ? (
+          <div className="border-b border-[var(--color-divider-soft)]">
+            <div className="field min-w-0 px-3.5 py-3.5">
+              <label htmlFor="mt-palabra">Palabra en el nombre de la sucursal</label>
+              <input
+                id="mt-palabra"
+                type="search"
+                value={busqueda}
+                onChange={(e) => setBusqueda(e.target.value)}
+                placeholder="Egaña"
+                autoFocus
+              />
+            </div>
+            {palabra && encontradas.length === 0 ? (
+              <div className="px-3.5 pb-3.5 text-[13px] opacity-66">Ninguna sucursal por agregar con esa palabra.</div>
+            ) : null}
+            {encontradas.length ? (
+              <div className="max-h-56 overflow-y-auto border-t border-black/[.18]">
+                {encontradas.map((s) => {
+                  const otro = s.mallId && s.mallId !== mall.id ? malls.find((m) => m.id === s.mallId)?.nombre : null;
+                  return (
+                    <div key={s.id} className="flex items-center gap-2 px-3.5 py-2 border-b border-black/[.18] last:border-b-0">
+                      <div className="flex-1 min-w-0">
+                        <div className="text-[14px] truncate">
+                          {nombreCliente(s.clienteId)} · {s.nombre}
+                        </div>
+                        <div className="text-[11px] opacity-66 truncate">{otro ? `Hoy en ${otro} · ${s.direccion}` : s.direccion}</div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setIds((prev) => [...prev, s.id])}
+                        className="btn btn-icon w-8 h-8 flex-none border border-black/[.3]"
+                        aria-label={`Agregar ${s.nombre} al mall`}
+                        title="Agregar al mall"
+                      >
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4">
+                          <path d="M12 5v14M5 12h14" />
+                        </svg>
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : null}
           </div>
-          <div className="field min-w-0">
-            <label htmlFor="mt-sucursal">Agregar tienda</label>
-            <SelectBuscable
-              id="mt-sucursal"
-              valor=""
-              opciones={libres}
-              onChange={(v) => {
-                if (v) setIds((prev) => [...prev, Number(v)]);
-              }}
-              placeholder={libres.length ? "Elige y se agrega al mall…" : "No quedan sucursales por agregar"}
-              ariaLabel="Agregar tienda"
-            />
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 px-3.5 py-3.5 border-b border-[var(--color-divider-soft)]">
+            <div className="field min-w-0">
+              <label htmlFor="mt-cliente">Cliente</label>
+              <SelectBuscable
+                id="mt-cliente"
+                valor={clienteSel}
+                opciones={opcClientes}
+                onChange={setClienteSel}
+                ariaLabel="Cliente"
+              />
+            </div>
+            <div className="field min-w-0">
+              <label htmlFor="mt-sucursal">Agregar tienda</label>
+              <SelectBuscable
+                id="mt-sucursal"
+                valor=""
+                opciones={libres}
+                onChange={(v) => {
+                  if (v) setIds((prev) => [...prev, Number(v)]);
+                }}
+                placeholder={libres.length ? "Elige y se agrega al mall…" : "No quedan sucursales por agregar"}
+                ariaLabel="Agregar tienda"
+              />
+            </div>
           </div>
-        </div>
+        )}
 
         {tiendas.length === 0 ? (
           <div className="px-3.5 py-5 text-[13px] opacity-66">
