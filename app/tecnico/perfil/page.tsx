@@ -12,36 +12,55 @@ export default async function PerfilPage() {
   const sesion = await getSesion();
   if (!sesion?.tecnico) redirect("/login");
 
-  const visitas = await getVisitasPorTecnico(sesion.tecnico.id);
+  const tecnico = sesion.tecnico;
+  const visitas = await getVisitasPorTecnico(tecnico.id);
+  const iniciales = `${tecnico.nombres.trim().charAt(0)}${tecnico.apellidoPaterno.trim().charAt(0)}`.toUpperCase();
   // Sin fila "Rol": el técnico solo tiene un rol posible y verlo no le aporta.
   const filas: { k: string; v: string }[] = [
-    { k: "Nombre", v: sesion.tecnico.nombreCompleto },
-    { k: "RUT", v: sesion.tecnico.rut },
-    { k: "Correo", v: sesion.tecnico.email },
-    { k: "Teléfono", v: sesion.tecnico.telefono ?? "—" },
+    { k: "RUT", v: tecnico.rut },
+    { k: "Correo", v: tecnico.email },
+    { k: "Teléfono", v: tecnico.telefono ?? "—" },
   ];
 
   return (
     <MobileShell titulo="Mi cuenta">
       <div className="px-4 pt-[22px] pb-[26px] animate-fade-in">
-        <h1 className="font-extrabold text-[28px] leading-[1.06] tracking-[-.03em] m-0 mb-4.5">Mi cuenta</h1>
-        <div className="border-t-2 border-[var(--color-divider)]">
-          {filas.map((f) => (
-            <div key={f.k} className="flex gap-3 py-3.5 border-b border-black/[.15]">
-              <div className="text-[10px] tracking-[.09em] uppercase opacity-62 min-w-[104px]">{f.k}</div>
-              <div className="text-sm">{f.v}</div>
+        <div className="flex items-center gap-3.5">
+          <div
+            aria-hidden="true"
+            className="w-16 h-16 flex-none grid place-items-center bg-[var(--color-text)] text-[var(--color-bg)] font-extrabold text-[22px] leading-none tracking-[.02em]"
+          >
+            {iniciales || "—"}
+          </div>
+          <div className="min-w-0">
+            <div className="text-[10px] tracking-[.15em] uppercase text-[var(--color-accent-active)]">Técnico en terreno</div>
+            <h1 className="font-extrabold text-[24px] leading-[1.1] tracking-[-.03em] m-0 mt-1">{tecnico.nombreCompleto}</h1>
+          </div>
+        </div>
+
+        <div className="mt-4.5 border border-[var(--color-divider)] bg-[var(--color-surface-3)] px-3.5">
+          {filas.map((f, i) => (
+            <div
+              key={f.k}
+              className={`flex items-baseline gap-3 py-3 ${i > 0 ? "border-t border-black/[.15]" : ""}`}
+            >
+              <div className="text-[10px] tracking-[.09em] uppercase opacity-62 w-[78px] flex-none">{f.k}</div>
+              <div className="text-sm min-w-0 tabular-nums">{f.v}</div>
             </div>
           ))}
         </div>
 
-        <PerfilHistorial visitas={visitas} hoy={hoyISO()} />
+        <PerfilHistorial visitas={visitas} hoy={hoyISO()} tecnicoId={tecnico.id} />
 
         <form action={logoutAction}>
           <button
             type="submit"
-            className="w-full min-h-[52px] flex items-center px-4 mt-5.5 bg-transparent text-[var(--color-accent-active)] border border-[var(--color-accent)] font-extrabold text-sm cursor-pointer text-left hover:bg-[rgba(236,48,19,.1)]"
+            className="w-full min-h-[52px] flex items-center justify-between px-4 mt-7 bg-transparent text-[var(--color-accent-active)] border border-[var(--color-accent)] font-extrabold text-sm cursor-pointer text-left hover:bg-[rgba(236,48,19,.1)]"
           >
-            Cerrar sesión
+            <span>Cerrar sesión</span>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+              <path d="M15 17l5-5-5-5M20 12H9M12 4H5v16h7" />
+            </svg>
           </button>
         </form>
       </div>
