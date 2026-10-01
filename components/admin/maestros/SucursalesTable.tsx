@@ -26,7 +26,7 @@ export default function SucursalesTable({
       addLabel="Nueva sucursal"
       editLabel="Editar sucursal"
       dialogoKicker="Maestro · sucursal"
-      nota="La sucursal siempre pertenece a un cliente y no se puede dejar sin él. El mall es opcional: al crear la sucursal, elegirlo le pone el nombre del mall."
+      nota="La sucursal siempre pertenece a un cliente y no se puede dejar sin él. El mall es opcional: al crear la sucursal, elegirlo le pone el nombre y la ubicación del mall."
       phBusqueda="Buscar sucursal, comuna, mall, código…"
       rows={sucursales}
       searchKeys={(s) => `${s.nombre} ${s.codigo ?? ""} ${s.comuna} ${s.direccion} ${nombreCliente(s.clienteId)} ${nombreMall(s.mallId)}`}
@@ -66,7 +66,7 @@ export default function SucursalesTable({
             { v: "", t: "Sin mall" },
             ...malls.map((m) => ({ v: String(m.id), t: m.activo ? m.nombre : `${m.nombre} · inactivo` })),
           ],
-          ayuda: "Al crear la sucursal, toma el nombre del mall.",
+          ayuda: "Al crear la sucursal, toma el nombre, la dirección, la comuna y la región del mall.",
           visible: () => malls.length > 0,
         },
         { k: "nombre", label: "Nombre de la sucursal" },
@@ -94,11 +94,18 @@ export default function SucursalesTable({
         }
         return null;
       }}
-      // Solo en un alta: una sucursal que ya existe no cambia de nombre por moverla de mall.
+      // Solo en un alta: una sucursal que ya existe no cambia de nombre ni de dirección por moverla de mall.
       alCambiar={(k, v, _f, id) => {
         if (k !== "mallId" || id !== null) return null;
         const mall = malls.find((m) => String(m.id) === v);
-        return mall ? { nombre: mall.nombre } : null;
+        if (!mall) return null;
+        // Los malls de antes de la migración 012 no tienen comuna ni región: ahí se deja lo escrito.
+        return {
+          nombre: mall.nombre,
+          direccion: mall.direccion,
+          ...(mall.comuna ? { comuna: mall.comuna } : null),
+          ...(mall.region ? { region: mall.region } : null),
+        };
       }}
       toFormValues={(s) => ({
         clienteId: String(s.clienteId),
