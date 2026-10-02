@@ -290,6 +290,22 @@ CREATE TABLE dmc.catalogo_interno (
 );
 GO
 
+-- Checklist de gestión de reagendas y pendientes: los pasos que coordinación
+-- marca en el panel mientras destraba una visita que no se pudo hacer.
+CREATE TABLE dmc.catalogo_pendiente (
+    id              bigint        IDENTITY(1,1) NOT NULL,
+    codigo          varchar(40)   NOT NULL,
+    nombre          nvarchar(80)  NOT NULL,     -- "Repuesto pedido"
+    orden           smallint      NOT NULL CONSTRAINT df_cat_pendiente_orden DEFAULT (0),
+    activo          bit           NOT NULL CONSTRAINT df_cat_pendiente_activo DEFAULT (1),
+    creado_en       datetime2(0)  NOT NULL CONSTRAINT df_cat_pendiente_creado DEFAULT (SYSDATETIME()),
+    actualizado_en  datetime2(0)  NOT NULL CONSTRAINT df_cat_pendiente_actualizado DEFAULT (SYSDATETIME()),
+    CONSTRAINT pk_catalogo_pendiente        PRIMARY KEY (id),
+    CONSTRAINT uq_catalogo_pendiente_codigo UNIQUE (codigo),
+    CONSTRAINT uq_catalogo_pendiente_nombre UNIQUE (nombre)
+);
+GO
+
 /* =====================================================================
    3. VISITAS
    ===================================================================== */
@@ -437,6 +453,30 @@ GO
 CREATE INDEX ix_visita_elim_visita ON dmc.visita_eliminacion (visita_id);
 GO
 
+-- Bitácora de cada corrección hecha a un acta después de cerrarla: quién,
+-- cuándo, desde dónde, qué partes tocó, qué cambió y por qué. El técnico puede
+-- editar hasta un día después del cierre; el administrador, sin plazo. La firma
+-- de la tienda no se toca y el PDF no menciona las ediciones.
+CREATE TABLE dmc.visita_edicion (
+    id          bigint        IDENTITY(1,1) NOT NULL,
+    visita_id   bigint        NOT NULL,
+    origen      varchar(6)    NOT NULL,      -- MOVIL = el técnico, WEB = el panel
+    usuario_id  bigint        NOT NULL,
+    tecnico_id  bigint        NULL,
+    motivo      nvarchar(max) NOT NULL,      -- por qué se cambió
+    secciones   nvarchar(400) NOT NULL,      -- qué partes: "Responsable de tienda · Fotos y video"
+    detalle     nvarchar(max) NOT NULL,      -- qué cambió, una línea por cambio
+    editado_en  datetime2(0)  NOT NULL CONSTRAINT df_visita_edicion_en DEFAULT (SYSDATETIME()),
+    CONSTRAINT pk_visita_edicion PRIMARY KEY (id),
+    CONSTRAINT fk_visita_edicion_visita  FOREIGN KEY (visita_id)  REFERENCES dmc.visita  (id) ON DELETE CASCADE,
+    CONSTRAINT fk_visita_edicion_usuario FOREIGN KEY (usuario_id) REFERENCES dmc.usuario (id),
+    CONSTRAINT fk_visita_edicion_tecnico FOREIGN KEY (tecnico_id) REFERENCES dmc.tecnico (id),
+    CONSTRAINT ck_visita_edicion_origen  CHECK (origen IN ('MOVIL','WEB'))
+);
+GO
+CREATE INDEX ix_visita_edicion_visita ON dmc.visita_edicion (visita_id, editado_en DESC);
+GO
+
 CREATE TABLE dmc.reagendamiento (
     id              bigint        IDENTITY(1,1) NOT NULL,
     visita_id       bigint        NOT NULL,
@@ -507,6 +547,23 @@ CREATE TABLE dmc.visita_interno (
     CONSTRAINT uq_visita_interno        UNIQUE (visita_id, interno_codigo),
     CONSTRAINT fk_vis_interno_visita    FOREIGN KEY (visita_id)      REFERENCES dmc.visita (id) ON DELETE CASCADE,
     CONSTRAINT fk_vis_interno_catalogo  FOREIGN KEY (interno_codigo) REFERENCES dmc.catalogo_interno (codigo)
+);
+GO
+
+-- Lo que coordinación lleva marcado del checklist de gestión en cada visita
+-- reagendada o pendiente. Desmarcar borra la fila; la app solo cuenta lo
+-- marcado desde el último cambio de estado de la visita.
+CREATE TABLE dmc.visita_pendiente_gestion (
+    id                bigint       IDENTITY(1,1) NOT NULL,
+    visita_id         bigint       NOT NULL,
+    pendiente_codigo  varchar(40)  NOT NULL,
+    usuario_id        bigint       NULL,
+    marcado_en        datetime2(0) NOT NULL CONSTRAINT df_vis_pend_gestion_en DEFAULT (SYSDATETIME()),
+    CONSTRAINT pk_visita_pendiente_gestion PRIMARY KEY (id),
+    CONSTRAINT uq_visita_pendiente_gestion UNIQUE (visita_id, pendiente_codigo),
+    CONSTRAINT fk_vis_pend_gestion_visita   FOREIGN KEY (visita_id)        REFERENCES dmc.visita (id) ON DELETE CASCADE,
+    CONSTRAINT fk_vis_pend_gestion_catalogo FOREIGN KEY (pendiente_codigo) REFERENCES dmc.catalogo_pendiente (codigo),
+    CONSTRAINT fk_vis_pend_gestion_usuario  FOREIGN KEY (usuario_id)       REFERENCES dmc.usuario (id)
 );
 GO
 
@@ -871,6 +928,12 @@ BEGIN
     UPDATE c SET actualizado_en = SYSDATETIME() FROM dmc.catalogo_interno c JOIN inserted i ON i.id = c.id;
 END;
 GO
+CREATE OR ALTER TRIGGER dmc.tg_cat_pendiente_actualizado ON dmc.catalogo_pendiente AFTER UPDATE AS
+BEGIN
+    SET NOCOUNT ON;
+    UPDATE c SET actualizado_en = SYSDATETIME() FROM dmc.catalogo_pendiente c JOIN inserted i ON i.id = c.id;
+END;
+GO
 CREATE OR ALTER TRIGGER dmc.tg_ejecucion_actualizado ON dmc.visita_ejecucion AFTER UPDATE AS
 BEGIN
     SET NOCOUNT ON;
@@ -1127,7 +1190,7 @@ SELECT (SELECT id FROM dmc.rol WHERE nombre = N'Coordinador'), x.permiso
 FROM (VALUES
         ('panel.ver'),
         ('visitas.ver'), ('visitas.crear'), ('visitas.editar'), ('visitas.reprogramar'), ('visitas.enviar'),
-        ('reagendas.ver'),
+        ('reagendas.ver'), ('reagendas.gestionar'),
         ('problemas.ver'), ('problemas.editar'),
         ('tecnicos.ver'), ('tecnicos.crear'), ('tecnicos.editar'),
         ('usuarios.ver'), ('usuarios.crear'), ('usuarios.editar'), ('usuarios.contrasenas'),

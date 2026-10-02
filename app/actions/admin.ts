@@ -15,8 +15,10 @@ import {
   reprogramarVisita,
   type DatosVisita,
 } from "@/lib/data/visitas";
+import { marcarGestionPendiente } from "@/lib/data/pendientes";
 import {
   aplicarPlantilla,
+  FaltaMigracionPendientes,
   getPlantilla,
   guardarChecklist,
   guardarPlantilla,
@@ -29,6 +31,8 @@ import {
   atenderSolicitudPassword,
   descartarSolicitudPassword,
 } from "@/lib/data/solicitudes-password";
+import { modificarVisita, type CambiosVisita } from "@/lib/data/visitas-lote";
+import { tiene } from "@/lib/permisos";
 import { algunoPideHora } from "@/lib/ui/motivos";
 import type { ChecklistPlantilla, EstadoProblema } from "@/lib/types";
 
@@ -329,6 +333,143 @@ export async function eliminarVisitaAction(input: {
   return { ok: true, folio: input.folio };
 }
 
+// ── Acciones para múltiples visitas ─────────────────────────────────────────
+//
+// Las mismas operaciones de arriba, sobre las visitas marcadas en la tabla.
+// Hace falta el permiso «Acciones para múltiples visitas» y además el de la
+// operación. Cada visita se resuelve por separado: la que no se puede queda
+// con su explicación y las demás siguen.
+
+export interface ResultadoLote {
+  ok: boolean;
+  /** Cuando no se alcanzó a tocar ninguna: falta el permiso o algo viene mal. */
+  error?: string;
+  /** Folios en los que quedó aplicado. */
+  hechas: string[];
+  /** Las que no se pudieron, con el porqué de cada una. */
+  fallidas: { folio: string; error: string }[];
+}
+
+/** El diálogo manda las visitas por tandas de este tamaño. */
+const MAXIMO_POR_TANDA = 25;
+
+const loteRechazado = (error: string): ResultadoLote => ({ ok: false, error, hechas: [], fallidas: [] });
+
+async function sesionParaLote(permiso: string) {
+  const sesion = await sesionCon("visitas.masivo");
+  return sesion && tiene(sesion.permisos, permiso) ? sesion : null;
+}
+
+function tandaInvalida(folios: string[]): string | null {
+  if (folios.length === 0) return "No hay ninguna visita seleccionada.";
+  if (folios.length > MAXIMO_POR_TANDA) return "Son demasiadas visitas de una vez.";
+  if (new Set(folios).size !== folios.length) return "Hay una visita repetida en la selección.";
+  return null;
+}
+
+async function aplicarEnLote(
+  folios: string[],
+  contexto: string,
+  aplicar: (folio: string, i: number) => Promise<{ error: string } | null>
+): Promise<ResultadoLote> {
+  const hechas: string[] = [];
+  const fallidas: ResultadoLote["fallidas"] = [];
+  for (const [i, folio] of folios.entries()) {
+    try {
+      const fallo = await aplicar(folio, i);
+      if (fallo) fallidas.push({ folio, error: fallo.error });
+      else hechas.push(folio);
+    } catch (err) {
+      fallidas.push({ folio, error: comoError(err, contexto).error ?? "No se pudo guardar." });
+    }
+  }
+  if (hechas.length > 0) revalidarPanel();
+  return { ok: fallidas.length === 0, hechas, fallidas };
+}
+
+/**
+ * Reagendar, cambiar el técnico, el motivo o el detalle de varias visitas.
+ * Cada elemento ya viene resuelto desde el diálogo: lo común más lo propio de
+ * esa visita. Lo que no viene en `cambios` se queda como estaba.
+ */
+export async function modificarVisitasAction(
+  items: { folio: string; cambios: CambiosVisita }[]
+): Promise<ResultadoLote> {
+  const sesion = await sesionParaLote("visitas.editar");
+  if (!sesion) return loteRechazado("No tienes permiso para editar varias visitas a la vez.");
+  const mal = tandaInvalida(items.map((x) => x.folio));
+  if (mal) return loteRechazado(mal);
+
+  const limpios: CambiosVisita[] = [];
+  for (const { folio, cambios: c } of items) {
+    const limpio: CambiosVisita = {};
+    if (c.tecnicoId) limpio.tecnicoId = Number(c.tecnicoId);
+    if (c.tecnicoAyudanteId !== undefined) limpio.tecnicoAyudanteId = Number(c.tecnicoAyudanteId) || null;
+    if (c.fecha) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(c.fecha)) return loteRechazado(`${folio}: la fecha no es válida.`);
+      limpio.fecha = c.fecha;
+    }
+    if (c.hora) {
+      if (!/^\d{2}:\d{2}/.test(c.hora)) return loteRechazado(`${folio}: la hora no es válida.`);
+      limpio.hora = c.hora;
+    }
+    const motivos = (c.motivosCodigos ?? []).filter(Boolean);
+    if (motivos.length) limpio.motivosCodigos = motivos;
+    if (c.trabajoSolicitado?.trim()) limpio.trabajoSolicitado = c.trabajoSolicitado.trim();
+    if (c.indicacionesAcceso?.trim()) limpio.indicacionesAcceso = c.indicacionesAcceso.trim();
+    if (Object.keys(limpio).length === 0) return loteRechazado(`${folio} no tiene ningún cambio.`);
+    limpios.push(limpio);
+  }
+
+  const motivos = await listarMotivos();
+  return aplicarEnLote(
+    items.map((x) => x.folio),
+    "modificarVisitas",
+    (folio, i) => modificarVisita(folio, limpios[i], sesion.usuario.id, motivos)
+  );
+}
+
+/** «Cancelar por admin» sobre varias: cada una con su motivo (el común o el suyo). */
+export async function cancelarVisitasAdminAction(items: { folio: string; motivo: string }[]): Promise<ResultadoLote> {
+  const sesion = await sesionParaLote("visitas.cancelar");
+  if (!sesion) return loteRechazado("No tienes permiso para cancelar varias visitas por admin.");
+  const mal = tandaInvalida(items.map((x) => x.folio));
+  if (mal) return loteRechazado(mal);
+  const sinMotivo = items.find((x) => x.motivo.trim().length < 10);
+  if (sinMotivo) {
+    return loteRechazado(`${sinMotivo.folio}: escribe por qué se cierra la visita, queda en la bitácora.`);
+  }
+
+  return aplicarEnLote(
+    items.map((x) => x.folio),
+    "cancelarVisitas",
+    (folio, i) => cancelarVisitaPorAdmin({ folio, motivo: items[i].motivo.trim(), usuarioId: sesion.usuario.id })
+  );
+}
+
+/**
+ * «Eliminar» sobre varias. La traba contra el clic accidental no es el folio
+ * —son muchos— sino escribir «ELIMINAR» y cuántas son: `total` es el número
+ * que se le mostró a quien confirma, aunque lleguen por tandas.
+ */
+export async function eliminarVisitasAction(input: {
+  folios: string[];
+  total: number;
+  confirmacion: string;
+}): Promise<ResultadoLote> {
+  const sesion = await sesionParaLote("visitas.eliminar");
+  if (!sesion) return loteRechazado("No tienes permiso para eliminar varias visitas a la vez.");
+  const mal = tandaInvalida(input.folios);
+  if (mal) return loteRechazado(mal);
+  if (input.folios.length > input.total || input.confirmacion.trim().toUpperCase() !== `ELIMINAR ${input.total}`) {
+    return loteRechazado(`La confirmación no coincide. Escribe «ELIMINAR ${input.total}» tal cual.`);
+  }
+
+  return aplicarEnLote(input.folios, "eliminarVisitas", (folio) =>
+    eliminarVisita({ folio, confirmacionFolio: folio, usuarioId: sesion.usuario.id })
+  );
+}
+
 export async function actualizarProblemaAction(input: {
   problemaId: number;
   estado: EstadoProblema;
@@ -346,6 +487,30 @@ export async function actualizarProblemaAction(input: {
   }
   revalidarPanel();
   return { ok: true };
+}
+
+/** Marca o desmarca un paso del checklist de gestión en «Reagendas y pendientes». */
+export async function marcarGestionPendienteAction(input: {
+  folio: string;
+  codigo: string;
+  marcado: boolean;
+}): Promise<ResultadoAdmin> {
+  const sesion = await sesionCon("reagendas.gestionar");
+  if (!sesion) return { ok: false, error: "No tienes permiso para marcar la gestión de pendientes." };
+
+  try {
+    const fallo = await marcarGestionPendiente({
+      folio: input.folio,
+      codigo: input.codigo,
+      marcado: input.marcado,
+      usuarioId: sesion.usuario.id,
+    });
+    if (fallo) return { ok: false, error: fallo.error };
+  } catch (err) {
+    return comoError(err, "marcarGestionPendiente");
+  }
+  revalidatePath("/admin/reagendas");
+  return { ok: true, folio: input.folio };
 }
 
 export async function enviarActaAction(input: {
@@ -398,6 +563,9 @@ function revalidarChecklist() {
 }
 
 function errorChecklist(err: unknown, contexto: string): ResultadoChecklist {
+  if (err instanceof FaltaMigracionPendientes) {
+    return { ok: false, error: "Para guardar la lista «Gestión de pendientes» falta correr la migración 014 en la base." };
+  }
   const texto = err instanceof Error ? err.message : String(err);
   if (/uq_\w*nombre/i.test(texto)) return { ok: false, error: "Hay dos entradas con el mismo nombre en la misma lista." };
   if (/uq_\w*opcion|uq_\w*subtrabajo/i.test(texto)) {
@@ -427,7 +595,8 @@ export async function guardarChecklistAction(borrador: BorradorChecklist): Promi
     repetidos(borrador.motivos.map((m) => m.nombre)) ??
     repetidos(borrador.problemas.map((x) => x.nombre)) ??
     repetidos(borrador.trabajos.map((x) => x.nombre)) ??
-    repetidos((borrador.internos ?? []).map((x) => x.nombre));
+    repetidos((borrador.internos ?? []).map((x) => x.nombre)) ??
+    repetidos((borrador.pendientes ?? []).map((x) => x.nombre));
   if (choque) return { ok: false, error: `«${choque}» está dos veces en la misma lista.` };
 
   for (const pr of borrador.problemas) {

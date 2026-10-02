@@ -3,6 +3,7 @@ import { agrupar, consulta, consultaCon, ejecutar, num, sql } from "@/lib/data/s
 import type {
   CatalogoInterno,
   CatalogoMotivo,
+  CatalogoPendiente,
   CatalogoProblema,
   CatalogoProblemaOpcion,
   CatalogoTrabajo,
@@ -180,6 +181,42 @@ export async function listarInternos(): Promise<CatalogoInterno[]> {
   }));
 }
 
+/** La Lista 5 necesita la migración 014. Sin ella el resto del checklist sigue andando. */
+export class FaltaMigracionPendientes extends Error {
+  constructor() {
+    super("Falta la migración 014: dmc.catalogo_pendiente");
+    this.name = "FaltaMigracionPendientes";
+  }
+}
+
+let conGestion = false;
+
+/** ¿Está la migración 014? Una vez que aparece no se vuelve a preguntar. */
+export async function hayGestionPendientes(): Promise<boolean> {
+  if (conGestion) return true;
+  const [fila] = await consulta<{ id: number | null }>(
+    `SELECT OBJECT_ID('dmc.visita_pendiente_gestion', 'U') AS id`
+  );
+  conGestion = fila?.id != null;
+  return conGestion;
+}
+
+/** Los pasos del checklist de gestión de reagendas y pendientes. */
+export async function listarPendientes(): Promise<CatalogoPendiente[]> {
+  if (!(await hayGestionPendientes())) return [];
+  const filas = await consulta<FilaMotivo>(
+    `SELECT id, codigo, nombre, orden, activo
+       FROM dmc.catalogo_pendiente WHERE activo = 1 ORDER BY orden, id`
+  );
+  return filas.map((f) => ({
+    id: num(f.id),
+    codigo: f.codigo,
+    nombre: f.nombre,
+    orden: f.orden,
+    activo: Boolean(f.activo),
+  }));
+}
+
 // ── Guardado en bloque ──────────────────────────────────────────────────────
 
 /** Una entrada del borrador. `id` en null significa que es nueva. */
@@ -219,6 +256,8 @@ export interface BorradorChecklist {
   trabajos: TrabajoBorrador[];
   /** Checklist del comentario interno. Misma forma que los motivos. */
   internos?: MotivoBorrador[];
+  /** Checklist de gestión de reagendas y pendientes. Misma forma que los motivos. */
+  pendientes?: MotivoBorrador[];
 }
 
 export interface ResumenChecklist {
@@ -226,6 +265,7 @@ export interface ResumenChecklist {
   problemas: number;
   trabajos: number;
   internos: number;
+  pendientes: number;
   desactivados: number;
 }
 
@@ -359,21 +399,38 @@ export async function guardarChecklist(borrador: BorradorChecklist): Promise<Res
     vivosInterno = (await listarInternos()).length;
   }
 
+  // ── Checklist de gestión de pendientes ──
+  // Igual que el interno: sin la lista en el borrador no se toca. Y sin la
+  // migración 014 solo se reclama si de verdad hay algo que guardar en ella.
+  let vivosPendiente = 0;
+  if (await hayGestionPendientes()) {
+    if (borrador.pendientes) {
+      const pendientes = await guardarListaSimple("dmc.catalogo_pendiente", borrador.pendientes, "PENDIENTE");
+      vivosPendiente = pendientes.vivos.length;
+      desactivados += pendientes.desactivados;
+    } else {
+      vivosPendiente = (await listarPendientes()).length;
+    }
+  } else if (borrador.pendientes?.some((x) => x.nombre.trim())) {
+    throw new FaltaMigracionPendientes();
+  }
+
   return {
     motivos: vivosMotivo.length,
     problemas: vivosProblema.length,
     trabajos: vivosTrabajo.length,
     internos: vivosInterno,
+    pendientes: vivosPendiente,
     desactivados,
   };
 }
 
 /**
- * Motivos y checklist interno: las dos tablas son una lista plana de
- * (codigo, nombre, orden, activo), así que se guardan igual.
+ * Motivos, checklist interno y gestión de pendientes: las tres tablas son una
+ * lista plana de (codigo, nombre, orden, activo), así que se guardan igual.
  */
 async function guardarListaSimple(
-  tabla: "dmc.catalogo_motivo" | "dmc.catalogo_interno",
+  tabla: "dmc.catalogo_motivo" | "dmc.catalogo_interno" | "dmc.catalogo_pendiente",
   items: MotivoBorrador[],
   respaldo: string
 ): Promise<{ vivos: number[]; idPorNombre: Map<string, number>; desactivados: number }> {
@@ -501,11 +558,12 @@ async function desactivarSobrantes(tabla: string, vivos: number[], extra = "1 = 
 export const PLANTILLA_PROPIA = "Mi plantilla";
 
 export async function guardarPlantilla(nombre: string, usuarioId: number | null): Promise<ChecklistPlantilla> {
-  const [motivos, problemas, trabajos, internos] = await Promise.all([
+  const [motivos, problemas, trabajos, internos, pendientes] = await Promise.all([
     listarMotivos(),
     listarProblemas(),
     listarTrabajos(),
     listarInternos(),
+    listarPendientes(),
   ]);
   const nombreMotivo = (codigo: string) => motivos.find((m) => m.codigo === codigo)?.nombre;
 
@@ -533,6 +591,7 @@ export async function guardarPlantilla(nombre: string, usuarioId: number | null)
       motivos: t.motivosCodigos.map(nombreMotivo).filter((n): n is string => Boolean(n)),
     })),
     internos: internos.map((x) => ({ id: null, nombre: x.nombre })),
+    pendientes: pendientes.map((x) => ({ id: null, nombre: x.nombre })),
   };
 
   await ejecutar(
@@ -578,8 +637,9 @@ async function leerPlantilla(nombre: string): Promise<{ fila: FilaPlantilla; dat
         motivos: datos.motivos ?? [],
         problemas: datos.problemas ?? [],
         trabajos: datos.trabajos ?? [],
-        // Plantillas guardadas antes de que existiera: sin lista interna.
+        // Plantillas guardadas antes de que existieran: sin estas listas.
         internos: datos.internos,
+        pendientes: datos.pendientes,
       },
     };
   } catch {
@@ -601,6 +661,7 @@ export async function getPlantilla(nombre: string): Promise<ChecklistPlantilla |
     problemas: leida.datos.problemas.length,
     trabajos: leida.datos.trabajos.length,
     internos: leida.datos.internos?.length ?? 0,
+    pendientes: leida.datos.pendientes?.length ?? 0,
   };
 }
 
@@ -613,11 +674,12 @@ export async function aplicarPlantilla(nombre: string): Promise<ResumenChecklist
   const leida = await leerPlantilla(nombre);
   if (!leida) throw new Error("Todavía no has guardado ninguna plantilla.");
 
-  const [motivos, problemas, trabajos, internos] = await Promise.all([
+  const [motivos, problemas, trabajos, internos, pendientes] = await Promise.all([
     listarMotivos(),
     listarProblemas(),
     listarTrabajos(),
     listarInternos(),
+    listarPendientes(),
   ]);
 
   const idPorNombre = <T extends { id: number; nombre: string }>(lista: T[], buscado: string) =>
@@ -640,6 +702,7 @@ export async function aplicarPlantilla(nombre: string): Promise<ResumenChecklist
       motivos: t.motivos ?? [],
     })),
     internos: leida.datos.internos?.map((x) => ({ id: idPorNombre(internos, x.nombre), nombre: x.nombre })),
+    pendientes: leida.datos.pendientes?.map((x) => ({ id: idPorNombre(pendientes, x.nombre), nombre: x.nombre })),
   };
 
   return guardarChecklist(borrador);

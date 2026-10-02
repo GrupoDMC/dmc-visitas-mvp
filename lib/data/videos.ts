@@ -1,6 +1,6 @@
 import "server-only";
 import { consultaCon, ejecutar, num, numONull, sql } from "@/lib/data/sql";
-import { TOMADA_POR } from "@/lib/data/visitas";
+import { DIAS_PARA_EDITAR, TOMADA_POR } from "@/lib/data/visitas";
 import type { EstadoVisita } from "@/lib/types";
 
 /**
@@ -78,6 +78,8 @@ export interface VisitaParaVideo {
   tecnicoAyudanteId: number | null;
   /** Quién la tiene tomada si está EN_CURSO (ver TOMADA_POR en visitas.ts). */
   tomadaPorTecnicoId: number | null;
+  /** El acta ya está cerrada y sigue dentro del plazo en que el técnico la puede editar. */
+  editablePorTecnico: boolean;
 }
 
 /**
@@ -95,8 +97,12 @@ export async function getVisitaParaVideo(folio: string): Promise<VisitaParaVideo
     tecnico_id: number;
     tecnico_ayudante_id: number | null;
     tomada_por: number | null;
+    editable: boolean | null;
   }>(
-    `SELECT v.id, v.estado, v.tecnico_id, v.tecnico_ayudante_id, ${TOMADA_POR} AS tomada_por
+    `SELECT v.id, v.estado, v.tecnico_id, v.tecnico_ayudante_id, ${TOMADA_POR} AS tomada_por,
+            (SELECT CAST(CASE WHEN DATEADD(day, ${DIAS_PARA_EDITAR}, e.hora_termino) >= SYSDATETIME()
+                              THEN 1 ELSE 0 END AS bit)
+               FROM dmc.visita_ejecucion e WHERE e.visita_id = v.id) AS editable
        FROM dmc.visita v WHERE v.folio = @folio AND v.activo = 1`,
     [["folio", sql.VarChar(16), folio]]
   );
@@ -107,6 +113,7 @@ export async function getVisitaParaVideo(folio: string): Promise<VisitaParaVideo
         tecnicoId: num(fila.tecnico_id),
         tecnicoAyudanteId: numONull(fila.tecnico_ayudante_id),
         tomadaPorTecnicoId: numONull(fila.tomada_por),
+        editablePorTecnico: fila.estado === "COMPLETADA" && Boolean(fila.editable),
       }
     : null;
 }

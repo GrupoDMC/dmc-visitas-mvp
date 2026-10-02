@@ -51,6 +51,8 @@ export interface ProblemaItemForm {
 
 export interface ProblemaForm {
   id: number;
+  /** Id en dmc.problema cuando se edita un acta ya cerrada: el problema se corrige en su misma fila. */
+  dbId?: number;
   codigo: string;
   items: ProblemaItemForm[];
   desc: string;
@@ -60,6 +62,8 @@ export interface ProblemaForm {
 
 export interface FotoForm {
   id: number;
+  /** Id en dmc.visita_foto cuando la foto ya estaba en el acta que se edita. */
+  dbId?: number;
   src: string;
   /** Foto del comentario interno: no la ve el cliente. */
   interno?: boolean;

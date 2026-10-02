@@ -9,6 +9,7 @@ import AdminHeader from "@/components/admin/AdminHeader";
 import FiltrosBar, { type ChipFiltro } from "@/components/admin/FiltrosBar";
 import VisitaDialogo from "@/components/admin/VisitaDialogos";
 import VisitasMasivasDialogo from "@/components/admin/VisitasMasivasDialogo";
+import VisitasLoteDialogo, { type AccionLote } from "@/components/admin/VisitasLoteDialogo";
 import { Toast, useToast } from "@/components/ui/Toast";
 import { ESTADO_VISITA_LABEL, ESTADO_VISITA_TAG, textoMotivos } from "@/lib/ui/estado";
 import { textoFechaVisita } from "@/lib/ui/fecha";
@@ -81,6 +82,34 @@ export default function VisitasTable({
   // Con `porMall` el diálogo de la ruta abre eligiendo tiendas de un mall, y
   // con `inicial` trae lo que ya se había escrito en "Nueva visita".
   const [masivas, setMasivas] = useState<{ porMall: boolean; inicial?: FormValores } | null>(null);
+  // "Acciones múltiples": con el modo prendido, el clic en una fila la marca en
+  // vez de abrir su acta. Lo marcado se guarda por folio y sobrevive a los
+  // filtros, para poder juntar visitas de varias búsquedas.
+  const [seleccionando, setSeleccionando] = useState(false);
+  const [marcadas, setMarcadas] = useState<string[]>([]);
+  const [lote, setLote] = useState<AccionLote | null>(null);
+
+  // El permiso abre la selección; cada acción pide además el suyo.
+  const accionesLote: { accion: AccionLote; label: string }[] = puede(ref, "visitas.masivo")
+    ? [
+        ...(puede(ref, "visitas.editar") ? [{ accion: "modificar" as const, label: "Editar o reagendar" }] : []),
+        ...(puede(ref, "visitas.cancelar") ? [{ accion: "cancelar" as const, label: "Cancelar por admin" }] : []),
+        ...(puede(ref, "visitas.eliminar") ? [{ accion: "eliminar" as const, label: "Eliminar" }] : []),
+      ]
+    : [];
+  // Las eliminadas solo se miran: sobre ellas no hay nada que marcar.
+  const verEliminadas = f.estado === ELIMINADAS;
+  const conCasillas = seleccionando && !verEliminadas;
+  const seleccionadas = useMemo(() => visitas.filter((v) => marcadas.includes(v.folio)), [visitas, marcadas]);
+
+  function alternar(folio: string) {
+    setMarcadas((prev) => (prev.includes(folio) ? prev.filter((x) => x !== folio) : [...prev, folio]));
+  }
+
+  function salirDeSeleccion() {
+    setSeleccionando(false);
+    setMarcadas([]);
+  }
 
   const fechas = useMemo(
     () => [...new Set(visitas.map((v) => v.fechaProgramada))].sort().reverse(),
@@ -90,7 +119,6 @@ export default function VisitasTable({
   const filtradas = useMemo(() => {
     const q = sinTildes(busqueda.trim());
     // Las eliminadas van en su propia lista: nunca se mezclan con las vigentes.
-    const verEliminadas = f.estado === ELIMINADAS;
     return (verEliminadas ? eliminadas ?? [] : visitas).filter((v) => {
       if (!verEliminadas && f.estado !== "TODAS" && v.estado !== f.estado) return false;
       if (f.fecha && v.fechaProgramada !== f.fecha) return false;
@@ -103,7 +131,17 @@ export default function VisitasTable({
       const hay = `${v.folio} ${v.sucursal?.nombre ?? ""} ${v.cliente?.nombreFantasia ?? ""} ${v.tecnico?.nombreCompleto ?? ""} ${v.tecnicoAyudante?.nombreCompleto ?? ""} ${v.motivosNombres.join(" ")}`;
       return sinTildes(hay).includes(q);
     });
-  }, [visitas, eliminadas, busqueda, f]);
+  }, [visitas, eliminadas, busqueda, f, verEliminadas]);
+
+  const todasMarcadas = filtradas.length > 0 && filtradas.every((v) => marcadas.includes(v.folio));
+
+  /** La casilla del encabezado: marca o desmarca lo que se está viendo. */
+  function alternarVisibles() {
+    const visibles = filtradas.map((v) => v.folio);
+    setMarcadas((prev) =>
+      todasMarcadas ? prev.filter((x) => !visibles.includes(x)) : [...new Set([...prev, ...visibles])]
+    );
+  }
 
   // La fecha con margen de días ("desde → hasta") necesita el doble de ancho.
   const hayMargen = filtradas.some((v) => v.fechaHasta);
@@ -129,6 +167,20 @@ export default function VisitasTable({
   return (
     <>
       <AdminHeader kicker={kicker} title={title}>
+        {accionesLote.length ? (
+          <button
+            onClick={() => (seleccionando ? salirDeSeleccion() : setSeleccionando(true))}
+            aria-pressed={seleccionando}
+            className={`btn ${seleccionando ? "btn-primary" : "btn-secondary"}`}
+          >
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+              <rect x="3" y="3" width="8" height="8" />
+              <rect x="3" y="14" width="8" height="7" />
+              <path d="M14 7l2 2 4-4M14 17.5h7" />
+            </svg>
+            <span>{seleccionando ? "Salir de acciones múltiples" : "Acciones múltiples"}</span>
+          </button>
+        ) : null}
         {permiteCrear && puede(ref, "visitas.crear") ? (
           <>
             <button onClick={() => setMasivas({ porMall: false })} className="btn btn-secondary">
@@ -204,6 +256,7 @@ export default function VisitasTable({
         <div className="px-4 md:px-7 overflow-x-auto">
           <table className="table table-fixed min-w-[980px]">
             <colgroup>
+              {conCasillas ? <col style={{ width: 44 }} /> : null}
               <col style={{ width: 124 }} />
               <col style={{ width: hayMargen ? 200 : 108 }} />
               <col style={{ width: 80 }} />
@@ -211,12 +264,21 @@ export default function VisitasTable({
               <col />
               <col />
               <col />
-              <col style={{ width: 164 }} />
+              <col style={{ width: 226 }} />
               {mostrarMotivo ? <col /> : null}
               <col style={{ width: 52 }} />
             </colgroup>
             <thead>
               <tr>
+                {conCasillas ? (
+                  <th>
+                    <Casilla
+                      marcada={todasMarcadas}
+                      onAlternar={alternarVisibles}
+                      label={todasMarcadas ? "Desmarcar las que se ven" : "Marcar todas las que se ven"}
+                    />
+                  </th>
+                ) : null}
                 <th>Folio</th>
                 <th>Fecha</th>
                 <th>Hora</th>
@@ -233,9 +295,18 @@ export default function VisitasTable({
               {filtradas.map((v) => (
                 <tr
                   key={v.id}
-                  onClick={() => router.push(`/admin/visitas/${v.folio}`)}
-                  className="cursor-pointer hover:bg-black/5"
+                  onClick={() => (conCasillas ? alternar(v.folio) : router.push(`/admin/visitas/${v.folio}`))}
+                  className={`cursor-pointer hover:bg-black/5 ${conCasillas && marcadas.includes(v.folio) ? "bg-black/[.07]" : ""}`}
                 >
+                  {conCasillas ? (
+                    <td>
+                      <Casilla
+                        marcada={marcadas.includes(v.folio)}
+                        onAlternar={() => alternar(v.folio)}
+                        label={`Marcar ${v.folio}`}
+                      />
+                    </td>
+                  ) : null}
                   <td className="font-semibold tabular-nums whitespace-nowrap">{v.folio}</td>
                   <td className="tabular-nums opacity-65 whitespace-nowrap">{textoFechaVisita(v)}</td>
                   <td className={`tabular-nums whitespace-nowrap ${v.horaProgramada ? "opacity-90" : "opacity-45"}`}>
@@ -265,6 +336,15 @@ export default function VisitasTable({
                     ) : (
                       <Tag variant={ESTADO_VISITA_TAG[v.estado]}>{ESTADO_VISITA_LABEL[v.estado]}</Tag>
                     )}
+                    {/* El acta se corrigió después de cerrarla: qué parte y por qué, al pasar el mouse y en el acta. */}
+                    {v.ediciones?.length ? (
+                      <span
+                        className="tag tag-outline ml-1.5"
+                        title={`Editada · ${v.ediciones[0].secciones.join(", ")} · ${v.ediciones[0].motivo}`}
+                      >
+                        Editada
+                      </span>
+                    ) : null}
                   </td>
                   {mostrarMotivo ? (
                     <td className="opacity-70">
@@ -300,7 +380,55 @@ export default function VisitasTable({
             </div>
           ) : null}
         </div>
+
+        {/* La barra de las acciones: pegada abajo mientras se va marcando. */}
+        {conCasillas ? (
+          <div className="sticky bottom-0 z-10 mt-4 flex items-center gap-2.5 flex-wrap px-4 md:px-7 py-3 bg-[var(--color-bg)] border-t-2 border-[var(--color-divider)]">
+            <div className="font-extrabold text-[13px] tabular-nums">
+              {marcadas.length === 0
+                ? "Marca las visitas en la tabla"
+                : `${seleccionadas.length} ${seleccionadas.length === 1 ? "visita marcada" : "visitas marcadas"}`}
+            </div>
+            {marcadas.length > 0 ? (
+              <button
+                type="button"
+                onClick={() => setMarcadas([])}
+                className="min-h-8 px-1 bg-transparent border-0 text-[var(--color-accent-active)] text-xs underline underline-offset-[3px] cursor-pointer"
+              >
+                Desmarcar todas
+              </button>
+            ) : null}
+            <div className="ml-auto flex gap-2 flex-wrap">
+              {accionesLote.map((a) => (
+                <button
+                  key={a.accion}
+                  type="button"
+                  disabled={seleccionadas.length === 0}
+                  onClick={() => setLote(a.accion)}
+                  className={`btn ${a.accion === "modificar" ? "btn-primary" : "btn-secondary"} min-h-10 px-3.5`}
+                >
+                  {a.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : null}
       </div>
+
+      {lote ? (
+        <VisitasLoteDialogo
+          accion={lote}
+          visitas={seleccionadas}
+          onCerrar={() => setLote(null)}
+          onHecho={(mensaje, hechas) => {
+            aviso(mensaje);
+            if (hechas.length === 0) return;
+            // Las que ya quedaron salen de la selección; las que fallaron siguen marcadas.
+            setMarcadas((prev) => prev.filter((x) => !hechas.includes(x)));
+            router.refresh();
+          }}
+        />
+      ) : null}
 
       {nueva ? (
         <VisitaDialogo
@@ -330,6 +458,35 @@ export default function VisitasTable({
 
       <Toast texto={toast} variante="panel" />
     </>
+  );
+}
+
+/** La casilla de "Acciones múltiples": el mismo cuadrado de los diálogos. */
+export function Casilla({ marcada, onAlternar, label }: { marcada: boolean; onAlternar: () => void; label: string }) {
+  return (
+    <button
+      type="button"
+      role="checkbox"
+      aria-checked={marcada}
+      aria-label={label}
+      title={label}
+      onClick={(e) => {
+        e.stopPropagation();
+        onAlternar();
+      }}
+      className="w-7 h-7 grid place-items-center p-0 bg-transparent border-0 cursor-pointer text-[var(--color-text)]"
+    >
+      <span
+        className="w-4 h-4 border-2 border-current grid place-items-center"
+        style={{ background: marcada ? "var(--color-text)" : "transparent" }}
+      >
+        {marcada ? (
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="var(--color-bg)" strokeWidth="4">
+            <path d="M4 12l5 5L20 6" />
+          </svg>
+        ) : null}
+      </span>
+    </button>
   );
 }
 

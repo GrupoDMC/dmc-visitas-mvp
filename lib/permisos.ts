@@ -30,17 +30,24 @@ export const MODULOS: ModuloPermiso[] = [
       { clave: "ver", label: "Ver visitas y actas" },
       { clave: "crear", label: "Agregar visitas (una o masivas)" },
       { clave: "editar", label: "Corregir visitas" },
+      { clave: "editarActa", label: "Editar el acta ya cerrada" },
       { clave: "reprogramar", label: "Cambiar fecha y técnico" },
       { clave: "enviar", label: "Enviar el acta por correo" },
       { clave: "liberar", label: "Liberar visitas en curso" },
       { clave: "cancelar", label: "Cancelar por admin" },
       { clave: "eliminar", label: "Eliminar visitas" },
+      // Solo abre la selección: cada acción en lote pide además su permiso de
+      // arriba (corregir, cancelar por admin o eliminar).
+      { clave: "masivo", label: "Acciones para múltiples visitas" },
     ],
   },
   {
     clave: "reagendas",
     label: "Reagendas y pendientes",
-    acciones: [{ clave: "ver", label: "Ver reagendas y pendientes" }],
+    acciones: [
+      { clave: "ver", label: "Ver reagendas y pendientes" },
+      { clave: "gestionar", label: "Marcar el checklist de gestión" },
+    ],
   },
   {
     clave: "problemas",
@@ -116,7 +123,15 @@ export const TODOS_LOS_PERMISOS: string[] = MODULOS.flatMap((m) => m.acciones.ma
  * rol asignado y la semilla del rol «Coordinador» de la migración 008.
  */
 export const PERMISOS_COORDINADOR: string[] = TODOS_LOS_PERMISOS.filter(
-  (p) => !["visitas.liberar", "visitas.cancelar","visitas.eliminar", "usuarios.roles"].includes(p)
+  (p) =>
+    ![
+      "visitas.editarActa",
+      "visitas.liberar",
+      "visitas.cancelar",
+      "visitas.eliminar",
+      "visitas.masivo",
+      "usuarios.roles",
+    ].includes(p)
 );
 
 export function tiene(permisos: readonly string[], permiso: string): boolean {

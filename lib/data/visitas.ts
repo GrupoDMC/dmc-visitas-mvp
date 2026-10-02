@@ -22,6 +22,7 @@ import type {
   ProblemaItem,
   Reagendamiento,
   Visita,
+  VisitaEdicion,
   VisitaEjecucion,
   VisitaFirma,
   VisitaFoto,
@@ -213,6 +214,38 @@ interface FilaEjecucion {
   app_version: string | null;
   registrado_offline: boolean;
   sincronizado_en: string | null;
+  editable_hasta: string | null;
+  editable_tecnico: boolean;
+}
+
+/**
+ * Cuántos días tiene el técnico para corregir su acta después de cerrarla. El
+ * plazo corre desde la hora de cierre y lo mide la base con su propio reloj:
+ * así no depende del huso del servidor de la app ni del celular.
+ */
+export const DIAS_PARA_EDITAR = 1;
+const EDITABLE_HASTA = `DATEADD(day, ${DIAS_PARA_EDITAR}, hora_termino)`;
+
+interface FilaEdicion {
+  id: number;
+  visita_id: number;
+  origen: OrigenRegistro;
+  por: string | null;
+  motivo: string;
+  secciones: string;
+  detalle: string;
+  editado_en: string;
+}
+
+/**
+ * ¿El error es porque falta la migración 013 (dmc.visita_edicion)?
+ *
+ * Sin ella la app sigue leyendo visitas igual, solo que sin ediciones; lo que
+ * no se puede es guardar una edición.
+ */
+export function faltaMigracionEdicion(err: unknown): boolean {
+  const texto = err instanceof Error ? err.message : String(err);
+  return /invalid object name 'dmc\.visita_edicion'/i.test(texto);
 }
 
 interface FilaTrabajo {
@@ -335,6 +368,7 @@ async function cargar(filtro: Filtro): Promise<Visita[]> {
     firmas,
     reagendas,
     internos,
+    ediciones,
   ] = await Promise.all([
       consultaCon<FilaVisita>(
         `${selectVisita(conMargen)} WHERE ${filtro.where} ORDER BY v.fecha_programada DESC, v.hora_programada, v.id DESC`,
@@ -351,7 +385,10 @@ async function cargar(filtro: Filtro): Promise<Visita[]> {
         `SELECT visita_id, ${F_TS("hora_inicio")} AS hora_inicio, ${F_TS("hora_termino")} AS hora_termino,
                 responsable_nombre, responsable_rut, responsable_telefono, motivo_real_codigo,
                 observaciones, comentario_interno, dispositivo, app_version, registrado_offline,
-                ${F_TS("sincronizado_en")} AS sincronizado_en
+                ${F_TS("sincronizado_en")} AS sincronizado_en,
+                ${F_TS(EDITABLE_HASTA)} AS editable_hasta,
+                CAST(CASE WHEN hora_termino IS NOT NULL AND ${EDITABLE_HASTA} >= SYSDATETIME()
+                          THEN 1 ELSE 0 END AS bit) AS editable_tecnico
            FROM dmc.visita_ejecucion WHERE visita_id IN (${ids})`,
         p()
       ),
@@ -417,6 +454,20 @@ async function cargar(filtro: Filtro): Promise<Visita[]> {
           WHERE vi.visita_id IN (${ids}) ORDER BY vi.orden, vi.id`,
         p()
       ),
+      // Las correcciones al acta ya cerrada. Quién: el técnico si la hizo desde
+      // el celular; si no, el correo de la cuenta del panel.
+      consultaCon<FilaEdicion>(
+        `SELECT e.id, e.visita_id, e.origen, COALESCE(t.nombre_completo, u.email) AS por,
+                e.motivo, e.secciones, e.detalle, ${F_TS("e.editado_en")} AS editado_en
+           FROM dmc.visita_edicion e
+           LEFT JOIN dmc.usuario u ON u.id = e.usuario_id
+           LEFT JOIN dmc.tecnico t ON t.id = e.tecnico_id
+          WHERE e.visita_id IN (${ids}) ORDER BY e.editado_en DESC, e.id DESC`,
+        p()
+      ).catch((err) => {
+        if (faltaMigracionEdicion(err)) return [] as FilaEdicion[];
+        throw err;
+      }),
     ]);
 
   const subPorTrabajo = agrupar(subtrabajos, (s) => num(s.visita_trabajo_id));
@@ -430,6 +481,7 @@ async function cargar(filtro: Filtro): Promise<Visita[]> {
   const ejecucionPorVisita = new Map(ejecuciones.map((e) => [num(e.visita_id), e]));
   const motivosPorVisita = agrupar(motivosVisita, (m) => num(m.visita_id));
   const internosPorVisita = agrupar(internos, (x) => num(x.visita_id));
+  const edicionesPorVisita = agrupar(ediciones, (x) => num(x.visita_id));
 
   return visitas.map((v) => {
     const id = num(v.id);
@@ -538,6 +590,8 @@ async function cargar(filtro: Filtro): Promise<Visita[]> {
             appVersion: ejec.app_version,
             registradoOffline: Boolean(ejec.registrado_offline),
             sincronizadoEn: ejec.sincronizado_en,
+            editableHasta: ejec.editable_hasta,
+            editablePorTecnico: Boolean(ejec.editable_tecnico),
           } satisfies VisitaEjecucion)
         : undefined,
 
@@ -623,6 +677,19 @@ async function cargar(filtro: Filtro): Promise<Visita[]> {
         codigo: x.interno_codigo,
         nombre: x.nombre ?? x.interno_codigo,
       })),
+
+      ediciones: (edicionesPorVisita.get(id) ?? []).map(
+        (e): VisitaEdicion => ({
+          id: num(e.id),
+          visitaId: id,
+          origen: e.origen,
+          por: e.por ?? "—",
+          motivo: e.motivo,
+          secciones: e.secciones.split(" · ").filter(Boolean),
+          detalle: e.detalle.split("\n").filter(Boolean),
+          editadoEn: e.editado_en,
+        })
+      ),
     } satisfies Visita;
   });
 }
@@ -1495,7 +1562,7 @@ function fechaValida(iso: string | null | undefined): Date | null {
 }
 
 /** "data:image/jpeg;base64,AAA…" → { mime, bytes }. Null si no es una imagen. */
-function decodificarImagen(dataUrl: string): { mime: string; bytes: Buffer } | null {
+export function decodificarImagen(dataUrl: string): { mime: string; bytes: Buffer } | null {
   const m = /^data:(image\/[a-z+]+);base64,([A-Za-z0-9+/=\s]+)$/i.exec(String(dataUrl ?? "").trim());
   if (!m) return null;
   const bytes = Buffer.from(m[2].replace(/\s+/g, ""), "base64");
@@ -1533,7 +1600,7 @@ export async function guardarActa(
     }
   }
 
-  const fotos: { mime: string; bytes: Buffer; etiqueta: string | null; interno: boolean }[] = [];
+  const fotos: FotoLista[] = [];
   for (const f of entrada.fotos) {
     const img = decodificarImagen(f.dataUrl);
     if (!img) return { ok: false, error: "Una de las fotos llegó dañada. Quítala y vuelve a tomarla." };
@@ -1622,43 +1689,7 @@ export async function guardarActa(
 
     // 3 · Trabajos realizados. Los que hubiera de un intento anterior se dejan
     //     inactivos, no se borran: acá tampoco se elimina nada.
-    await ej.ejecutar(`UPDATE dmc.visita_trabajo SET activo = 0 WHERE visita_id = @id AND activo = 1`, [
-      ["id", sql.BigInt, id],
-    ]);
-    for (const [i, t] of entrada.trabajos.entries()) {
-      // El motivo solo se guarda si es uno de los que quedaron en el acta: un
-      // borrador viejo podría traer uno que el técnico desmarcó después.
-      const motivoDelTrabajo =
-        t.motivoCodigo && entrada.motivosCodigos.includes(t.motivoCodigo) ? t.motivoCodigo : null;
-      const [fila] = await ej.consulta<{ id: number }>(
-        `INSERT INTO dmc.visita_trabajo (visita_id, trabajo_codigo, motivo_codigo, detalle, orden)
-         OUTPUT INSERTED.id AS id VALUES (@visita, @codigo, @motivo, @detalle, @orden)`,
-        [
-          ["visita", sql.BigInt, id],
-          ["codigo", sql.VarChar(40), t.codigo],
-          ["motivo", sql.VarChar(40), motivoDelTrabajo],
-          ["detalle", sql.NVarChar(sql.MAX), t.detalle || null],
-          ["orden", sql.SmallInt, i + 1],
-        ]
-      );
-      const trabajoId = num(fila.id);
-      const vistas = new Set<string>();
-      for (const [j, s] of t.subtrabajos.entries()) {
-        const etiqueta = s.etiqueta.trim();
-        if (!etiqueta || vistas.has(etiqueta)) continue;
-        vistas.add(etiqueta);
-        await ej.ejecutar(
-          `INSERT INTO dmc.visita_trabajo_subtrabajo (visita_trabajo_id, etiqueta, cantidad, orden)
-           VALUES (@trabajo, @etiqueta, @cantidad, @orden)`,
-          [
-            ["trabajo", sql.BigInt, trabajoId],
-            ["etiqueta", sql.NVarChar(80), etiqueta],
-            ["cantidad", sql.SmallInt, Math.min(99, Math.max(1, s.cantidad || 1))],
-            ["orden", sql.SmallInt, j + 1],
-          ]
-        );
-      }
-    }
+    await escribirTrabajos(ej, id, entrada.trabajos, entrada.motivosCodigos);
 
     // 4 · Problemas levantados. Se limpian los que nacieron acá y todavía no
     //     los agarró nadie más (una visita de resolución, una foto o el panel).
@@ -1671,41 +1702,7 @@ export async function guardarActa(
       [["id", sql.BigInt, id]]
     );
     for (const [i, pr] of entrada.problemas.entries()) {
-      const descripcion = pr.descripcion?.trim() || null;
-      // dmc.problema tiene el trigger tg_problema_cambio (AFTER INSERT), y SQL
-      // Server rechaza OUTPUT sin INTO sobre una tabla con triggers para esa
-      // acción: el id se recoge en una tabla de paso.
-      const [fila] = await ej.consulta<{ id: number }>(
-        `DECLARE @nuevo TABLE (id bigint);
-         INSERT INTO dmc.problema (visita_id, tipo_codigo, estado, descripcion, solucion, orden, resuelto_en)
-         OUTPUT INSERTED.id INTO @nuevo
-         VALUES (@visita, @tipo, @estado, @desc, @sol, @orden,
-                 CASE WHEN @estado = 'RESUELTO' THEN SYSDATETIME() ELSE NULL END);
-         SELECT id FROM @nuevo;`,
-        [
-          ["visita", sql.BigInt, id],
-          ["tipo", sql.VarChar(40), pr.tipoCodigo],
-          ["estado", sql.VarChar(10), pr.estado],
-          ["desc", sql.NVarChar(sql.MAX), descripcion],
-          ["sol", sql.NVarChar(sql.MAX), pr.solucion?.trim() || null],
-          ["orden", sql.SmallInt, i + 1],
-        ]
-      );
-      const problemaId = num(fila.id);
-      const vistas = new Set<string>();
-      for (const it of pr.items) {
-        const etiqueta = it.etiqueta.trim();
-        if (!etiqueta || vistas.has(etiqueta)) continue;
-        vistas.add(etiqueta);
-        await ej.ejecutar(
-          `INSERT INTO dmc.problema_item (problema_id, etiqueta, cantidad) VALUES (@p, @etiqueta, @cantidad)`,
-          [
-            ["p", sql.BigInt, problemaId],
-            ["etiqueta", sql.NVarChar(80), etiqueta],
-            ["cantidad", sql.SmallInt, Math.min(99, Math.max(1, it.cantidad || 1))],
-          ]
-        );
-      }
+      await insertarProblema(ej, id, pr, i + 1);
     }
 
     // 5 · Fotos. Las anteriores no se borran: se dejan inactivas.
@@ -1713,25 +1710,7 @@ export async function guardarActa(
       ["id", sql.BigInt, id],
     ]);
     for (const [i, f] of fotos.entries()) {
-      await ej.ejecutar(
-        `DECLARE @nueva TABLE (id bigint);
-         INSERT INTO dmc.visita_foto (visita_id, etiqueta, archivo_url, contenido, mime, bytes, orden, interno, tomada_en)
-         OUTPUT INSERTED.id INTO @nueva
-         VALUES (@visita, @etiqueta, '', @contenido, @mime, @bytes, @orden, @interno, SYSDATETIME());
-
-         UPDATE dmc.visita_foto
-            SET archivo_url = CONCAT('/api/visita/foto/', CAST(id AS varchar(20)))
-          WHERE id IN (SELECT id FROM @nueva);`,
-        [
-          ["visita", sql.BigInt, id],
-          ["etiqueta", sql.NVarChar(40), f.etiqueta || null],
-          ["contenido", sql.VarBinary(sql.MAX), f.bytes],
-          ["mime", sql.VarChar(40), f.mime],
-          ["bytes", sql.Int, f.bytes.length],
-          ["orden", sql.SmallInt, i + 1],
-          ["interno", sql.Bit, f.interno],
-        ]
-      );
+      await insertarFoto(ej, id, f, i + 1);
     }
 
     // 5b · Videos. Ya estaban subidos mientras el técnico llenaba el acta: acá
@@ -1762,18 +1741,7 @@ export async function guardarActa(
     }
 
     // 5c · Checklist del comentario interno. Se reescribe entero.
-    await ej.ejecutar(`DELETE FROM dmc.visita_interno WHERE visita_id = @id`, [["id", sql.BigInt, id]]);
-    for (const [i, codigo] of [...new Set((entrada.internosCodigos ?? []).filter(Boolean))].entries()) {
-      await ej.ejecutar(
-        `INSERT INTO dmc.visita_interno (visita_id, interno_codigo, orden)
-         SELECT @id, codigo, @orden FROM dmc.catalogo_interno WHERE codigo = @codigo`,
-        [
-          ["id", sql.BigInt, id],
-          ["codigo", sql.VarChar(40), codigo],
-          ["orden", sql.SmallInt, i + 1],
-        ]
-      );
-    }
+    await escribirInternos(ej, id, entrada.internosCodigos ?? []);
 
     // 6 · Firma de la tienda. Es única por (visita, rol): se pisa la anterior.
     await ej.ejecutar(
@@ -1833,8 +1801,159 @@ export async function guardarActa(
   });
 }
 
+// Las piezas del guardado que también usa la edición del acta ya cerrada
+// (lib/data/ediciones): se escriben igual la primera vez que al corregir.
+
+/** Una foto ya decodificada, lista para guardar. */
+export interface FotoLista {
+  mime: string;
+  bytes: Buffer;
+  etiqueta: string | null;
+  interno: boolean;
+}
+
+/**
+ * Reescribe los trabajos realizados. Los que había se dejan inactivos, no se
+ * borran: acá tampoco se elimina nada.
+ */
+export async function escribirTrabajos(
+  ej: Ejecutor,
+  visitaId: number,
+  trabajos: TrabajoActa[],
+  motivosCodigos: string[]
+): Promise<void> {
+  await ej.ejecutar(`UPDATE dmc.visita_trabajo SET activo = 0 WHERE visita_id = @id AND activo = 1`, [
+    ["id", sql.BigInt, visitaId],
+  ]);
+  for (const [i, t] of trabajos.entries()) {
+    // El motivo solo se guarda si es uno de los que quedaron en el acta: un
+    // borrador viejo podría traer uno que el técnico desmarcó después.
+    const motivoDelTrabajo = t.motivoCodigo && motivosCodigos.includes(t.motivoCodigo) ? t.motivoCodigo : null;
+    const [fila] = await ej.consulta<{ id: number }>(
+      `INSERT INTO dmc.visita_trabajo (visita_id, trabajo_codigo, motivo_codigo, detalle, orden)
+       OUTPUT INSERTED.id AS id VALUES (@visita, @codigo, @motivo, @detalle, @orden)`,
+      [
+        ["visita", sql.BigInt, visitaId],
+        ["codigo", sql.VarChar(40), t.codigo],
+        ["motivo", sql.VarChar(40), motivoDelTrabajo],
+        ["detalle", sql.NVarChar(sql.MAX), t.detalle || null],
+        ["orden", sql.SmallInt, i + 1],
+      ]
+    );
+    const trabajoId = num(fila.id);
+    const vistas = new Set<string>();
+    for (const [j, s] of t.subtrabajos.entries()) {
+      const etiqueta = s.etiqueta.trim();
+      if (!etiqueta || vistas.has(etiqueta)) continue;
+      vistas.add(etiqueta);
+      await ej.ejecutar(
+        `INSERT INTO dmc.visita_trabajo_subtrabajo (visita_trabajo_id, etiqueta, cantidad, orden)
+         VALUES (@trabajo, @etiqueta, @cantidad, @orden)`,
+        [
+          ["trabajo", sql.BigInt, trabajoId],
+          ["etiqueta", sql.NVarChar(80), etiqueta],
+          ["cantidad", sql.SmallInt, Math.min(99, Math.max(1, s.cantidad || 1))],
+          ["orden", sql.SmallInt, j + 1],
+        ]
+      );
+    }
+  }
+}
+
+/** Inserta un problema con sus items y devuelve su id. */
+export async function insertarProblema(
+  ej: Ejecutor,
+  visitaId: number,
+  pr: ProblemaActa,
+  orden: number
+): Promise<number> {
+  // dmc.problema tiene el trigger tg_problema_cambio (AFTER INSERT), y SQL
+  // Server rechaza OUTPUT sin INTO sobre una tabla con triggers para esa
+  // acción: el id se recoge en una tabla de paso.
+  const [fila] = await ej.consulta<{ id: number }>(
+    `DECLARE @nuevo TABLE (id bigint);
+     INSERT INTO dmc.problema (visita_id, tipo_codigo, estado, descripcion, solucion, orden, resuelto_en)
+     OUTPUT INSERTED.id INTO @nuevo
+     VALUES (@visita, @tipo, @estado, @desc, @sol, @orden,
+             CASE WHEN @estado = 'RESUELTO' THEN SYSDATETIME() ELSE NULL END);
+     SELECT id FROM @nuevo;`,
+    [
+      ["visita", sql.BigInt, visitaId],
+      ["tipo", sql.VarChar(40), pr.tipoCodigo],
+      ["estado", sql.VarChar(10), pr.estado],
+      ["desc", sql.NVarChar(sql.MAX), pr.descripcion?.trim() || null],
+      ["sol", sql.NVarChar(sql.MAX), pr.solucion?.trim() || null],
+      ["orden", sql.SmallInt, orden],
+    ]
+  );
+  const problemaId = num(fila.id);
+  await insertarItemsDeProblema(ej, problemaId, pr.items);
+  return problemaId;
+}
+
+/** Los items de un problema, sin etiquetas vacías ni repetidas. */
+export async function insertarItemsDeProblema(
+  ej: Ejecutor,
+  problemaId: number,
+  items: SubtrabajoActa[]
+): Promise<void> {
+  const vistas = new Set<string>();
+  for (const it of items) {
+    const etiqueta = it.etiqueta.trim();
+    if (!etiqueta || vistas.has(etiqueta)) continue;
+    vistas.add(etiqueta);
+    await ej.ejecutar(
+      `INSERT INTO dmc.problema_item (problema_id, etiqueta, cantidad) VALUES (@p, @etiqueta, @cantidad)`,
+      [
+        ["p", sql.BigInt, problemaId],
+        ["etiqueta", sql.NVarChar(80), etiqueta],
+        ["cantidad", sql.SmallInt, Math.min(99, Math.max(1, it.cantidad || 1))],
+      ]
+    );
+  }
+}
+
+/** Guarda una foto con sus bytes y le deja la ruta con la que se sirve. */
+export async function insertarFoto(ej: Ejecutor, visitaId: number, f: FotoLista, orden: number): Promise<void> {
+  await ej.ejecutar(
+    `DECLARE @nueva TABLE (id bigint);
+     INSERT INTO dmc.visita_foto (visita_id, etiqueta, archivo_url, contenido, mime, bytes, orden, interno, tomada_en)
+     OUTPUT INSERTED.id INTO @nueva
+     VALUES (@visita, @etiqueta, '', @contenido, @mime, @bytes, @orden, @interno, SYSDATETIME());
+
+     UPDATE dmc.visita_foto
+        SET archivo_url = CONCAT('/api/visita/foto/', CAST(id AS varchar(20)))
+      WHERE id IN (SELECT id FROM @nueva);`,
+    [
+      ["visita", sql.BigInt, visitaId],
+      ["etiqueta", sql.NVarChar(40), f.etiqueta || null],
+      ["contenido", sql.VarBinary(sql.MAX), f.bytes],
+      ["mime", sql.VarChar(40), f.mime],
+      ["bytes", sql.Int, f.bytes.length],
+      ["orden", sql.SmallInt, orden],
+      ["interno", sql.Bit, f.interno],
+    ]
+  );
+}
+
+/** Reescribe entero lo marcado del checklist del comentario interno. */
+export async function escribirInternos(ej: Ejecutor, visitaId: number, codigos: string[]): Promise<void> {
+  await ej.ejecutar(`DELETE FROM dmc.visita_interno WHERE visita_id = @id`, [["id", sql.BigInt, visitaId]]);
+  for (const [i, codigo] of [...new Set(codigos.filter(Boolean))].entries()) {
+    await ej.ejecutar(
+      `INSERT INTO dmc.visita_interno (visita_id, interno_codigo, orden)
+       SELECT @id, codigo, @orden FROM dmc.catalogo_interno WHERE codigo = @codigo`,
+      [
+        ["id", sql.BigInt, visitaId],
+        ["codigo", sql.VarChar(40), codigo],
+        ["orden", sql.SmallInt, i + 1],
+      ]
+    );
+  }
+}
+
 /** La versión de sincronizarMotivos que corre dentro de una transacción. */
-async function sincronizarMotivosCon(
+export async function sincronizarMotivosCon(
   ej: Ejecutor,
   visitaId: number,
   ambito: "PLAN" | "REAL",

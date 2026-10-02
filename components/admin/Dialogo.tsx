@@ -431,7 +431,7 @@ export default function Dialogo({
  * larga. Es lo que usa "Motivo de la visita": una visita puede venir por más de
  * una cosa y antes obligaba a elegir una sola.
  */
-function CasillasMultiples({
+export function CasillasMultiples({
   valor,
   opciones,
   onCambiar,

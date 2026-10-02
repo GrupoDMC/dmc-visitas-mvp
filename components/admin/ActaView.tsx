@@ -19,6 +19,7 @@ import { ESTADO_PROBLEMA_LABEL, ESTADO_PROBLEMA_TAG, ESTADO_VISITA_LABEL, ESTADO
 import { textoFechaVisita } from "@/lib/ui/fecha";
 import { nombreProblema, nombreTrabajo, puede, useReferencias } from "@/lib/ui/referencias";
 import { reloj } from "@/lib/ui/video";
+import { resumenEdicion } from "@/lib/ui/edicion";
 import type { Visita } from "@/lib/types";
 
 const AVISO_ESTADO: Record<string, string> = {
@@ -80,6 +81,9 @@ export default function ActaView({
   const tomadaPor = nombreDeQuienLaTomo(visita);
   const duracion = ejec ? minutosEntre(ejec.horaInicio, ejec.horaTermino) : null;
   const firma = visita.firmas?.[0];
+  const ediciones = visita.ediciones ?? [];
+  // Editar el acta ya cerrada: solo con el permiso, y sin plazo.
+  const editableActa = cerrada && permite("visitas.editarActa");
 
   // Lo del comentario interno va aparte: coordinación lo ve, el cliente no.
   const fotosCliente = (visita.fotos ?? []).filter((f) => !f.interno);
@@ -136,6 +140,7 @@ export default function ActaView({
         </Link>
         {eliminada ? <Tag variant="dark">Eliminada</Tag> : null}
         <Tag variant={ESTADO_VISITA_TAG[visita.estado]}>{ESTADO_VISITA_LABEL[visita.estado]}</Tag>
+        {ediciones.length > 0 ? <Tag variant="outline">Acta editada</Tag> : null}
         <div className="text-[11px] tracking-[.08em] uppercase opacity-62 tabular-nums">{sello}</div>
         {enviada ? (
           <span className="inline-flex items-center gap-2 px-2.5 py-1.5 bg-[var(--color-text)] text-[var(--color-bg)] font-extrabold text-[11px] leading-[1.2] tracking-[.05em]">
@@ -157,6 +162,15 @@ export default function ActaView({
               </svg>
               <span>Enviar por correo</span>
             </button>
+          ) : null}
+          {editableActa ? (
+            <Link href={`/admin/visitas/${encodeURIComponent(visita.folio)}/editar`} className="btn btn-secondary min-h-10 px-3.5">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                <path d="M4 20h4l10-10-4-4L4 16v4z" />
+                <path d="M14 6l4 4" />
+              </svg>
+              <span>Editar acta</span>
+            </Link>
           ) : null}
           {reprogramable && permite("visitas.reprogramar") ? (
             <button onClick={() => setDialogo("reprogramar")} className="btn btn-primary min-h-10 px-3.5">
@@ -205,6 +219,42 @@ export default function ActaView({
           {eliminada.en ? ` desde el ${eliminada.en.slice(0, 10)} a las ${hhmm(eliminada.en)}` : ""} · la eliminó{" "}
           {eliminada.por}. Solo la ve el administrador: para los demás roles y para el técnico no existe, y no cuenta en
           el panel, los gráficos ni los problemas.
+        </div>
+      ) : null}
+
+      {/* El registro de cada corrección al acta: qué parte, por qué, quién y
+          cuándo. Es interno: el PDF no lo menciona. */}
+      {ediciones.length > 0 ? (
+        <div className="mx-4 md:mx-7 mt-5 max-w-[900px] border border-[var(--color-accent-300)] border-l-4 border-l-[var(--color-accent)] bg-[var(--color-accent-100)]">
+          <div className="px-4 py-3 font-extrabold text-[13px] tracking-[.06em] uppercase text-[var(--color-accent-800)]">
+            Esta acta fue editada · {ediciones.length} {ediciones.length === 1 ? "vez" : "veces"}
+          </div>
+          {ediciones.map((e) => (
+            <div key={e.id} className="px-4 py-3.5 border-t border-[var(--color-accent-300)]">
+              <div className="flex flex-wrap gap-1.5">
+                {e.secciones.map((sec) => (
+                  <span key={sec} className="tag tag-dark font-extrabold">
+                    {sec}
+                  </span>
+                ))}
+              </div>
+              <div className="text-[15px] leading-[1.45] mt-2.5">
+                <span className="text-[11px] tracking-[.09em] uppercase opacity-62">Por qué se cambió · </span>
+                {e.motivo}
+              </div>
+              <div className="text-xs opacity-66 mt-1 tabular-nums">{resumenEdicion(e)}</div>
+              <details className="mt-2">
+                <summary className="cursor-pointer text-[13px] underline underline-offset-[3px]">
+                  Ver qué cambió ({e.detalle.length})
+                </summary>
+                <ul className="m-0 mt-2 pl-4.5 text-[13px] leading-[1.5] list-disc">
+                  {e.detalle.map((linea, i) => (
+                    <li key={i}>{linea}</li>
+                  ))}
+                </ul>
+              </details>
+            </div>
+          ))}
         </div>
       ) : null}
 
@@ -749,6 +799,19 @@ export default function ActaView({
               </div>
             </div>
           ))}
+
+          {ediciones.length > 0 ? (
+            <>
+              <div className="text-[10px] tracking-[.12em] uppercase opacity-66 mt-1.5 mb-2.5">Ediciones del acta</div>
+              {[...ediciones].reverse().map((e) => (
+                <div key={e.id} className="pb-3.5">
+                  <div className="font-extrabold text-sm leading-[1.3]">Acta editada · {e.secciones.join(", ")}</div>
+                  <div className="text-xs leading-[1.4] opacity-60 tabular-nums">{resumenEdicion(e)}</div>
+                  <div className="text-[13px] leading-[1.4] mt-1">{e.motivo}</div>
+                </div>
+              ))}
+            </>
+          ) : null}
 
           <div className="text-[10px] tracking-[.12em] uppercase opacity-66 mt-3.5 mb-1">Datos del registro</div>
           {[

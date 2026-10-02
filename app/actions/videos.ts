@@ -11,6 +11,7 @@ import {
   type DatosVideo,
 } from "@/lib/data/videos";
 import { participaEnVisita, tomadaPorOtro } from "@/lib/ui/estado";
+import { tiene } from "@/lib/permisos";
 
 /**
  * Subida del video del trabajo, por partes.
@@ -22,7 +23,13 @@ import { participaEnVisita, tomadaPorOtro } from "@/lib/ui/estado";
  * y el acta solo lleva sus ids.
  *
  * Solo el técnico dueño de la visita puede subir, y solo mientras la visita
- * siga abierta: sobre un acta ya cerrada no se agrega evidencia.
+ * siga abierta o mientras esté corrigiendo su acta dentro del plazo. En ese
+ * segundo caso el clip sube pero queda inactivo: entra al acta recién cuando
+ * se guarda la edición, que es la que deja el registro del cambio.
+ *
+ * Desde el panel también se sube, con el permiso «Editar el acta ya cerrada» y
+ * solo sobre un acta completada: mismo trato, el clip espera inactivo hasta que
+ * se guarde la edición.
  */
 
 export interface ResultadoVideo {
@@ -38,7 +45,8 @@ export interface ResultadoVideo {
 
 /**
  * La visita tiene que ser del técnico (asignado o ayudante), estar todavía
- * abierta y no tenerla tomada el otro.
+ * abierta y no tenerla tomada el otro; o estar ya cerrada pero dentro del plazo
+ * en que el técnico puede editar su acta.
  *
  * Se comprueba en cada trozo, no solo al abrir: entre el primero y el último
  * pueden pasar varios minutos, y en el medio el acta se pudo cerrar o
@@ -46,12 +54,21 @@ export interface ResultadoVideo {
  */
 async function visitaAbierta(folio: string) {
   const sesion = await getSesion();
-  if (!sesion?.tecnico) return null;
+  if (!sesion) return null;
   const visita = await getVisitaParaVideo(folio);
-  if (!visita || !participaEnVisita(visita, sesion.tecnico.id)) return null;
+  if (!visita) return null;
+
+  // El panel: solo para editar un acta ya cerrada, y solo con el permiso.
+  if (sesion.usuario.rol !== "TECNICO") {
+    if (visita.estado !== "COMPLETADA" || !tiene(sesion.permisos, "visitas.editarActa")) return null;
+    return { ...visita, enEdicion: true };
+  }
+
+  if (!sesion.tecnico || !participaEnVisita(visita, sesion.tecnico.id)) return null;
+  if (visita.editablePorTecnico) return { ...visita, enEdicion: true };
   if (visita.estado !== "PROGRAMADA" && visita.estado !== "EN_CURSO") return null;
   if (tomadaPorOtro(visita, sesion.tecnico.id)) return null;
-  return visita;
+  return { ...visita, enEdicion: false };
 }
 
 /** Paso 1: reserva la fila del clip y devuelve su id. */
@@ -137,6 +154,9 @@ export async function cerrarVideoAction(folio: string, videoId: number): Promise
     if (!(await cerrarVideo(videoId, visita.id))) {
       return { ok: false, error: "El video no llegó completo. Vuelve a subirlo." };
     }
+    // Sobre un acta ya cerrada el clip espera inactivo: lo activa la edición
+    // al guardarse. Si el técnico abandona la edición, el acta no cambió.
+    if (visita.enEdicion) await desactivarVideo(videoId, visita.id);
   } catch (err) {
     console.error("[dmc] cerrarVideo:", err);
     return { ok: false, error: "No se pudo terminar de guardar el video." };
@@ -147,7 +167,8 @@ export async function cerrarVideoAction(folio: string, videoId: number): Promise
 /** Quitar un clip del acta. La fila no se borra: queda inactiva. */
 export async function borrarVideoAction(folio: string, videoId: number): Promise<ResultadoVideo> {
   const visita = await visitaAbierta(folio);
-  if (!visita) return { ok: false, error: "Esa visita no está abierta para ti." };
+  // Sobre un acta cerrada los clips solo se quitan guardando la edición.
+  if (!visita || visita.enEdicion) return { ok: false, error: "Esa visita no está abierta para ti." };
 
   try {
     await desactivarVideo(videoId, visita.id);

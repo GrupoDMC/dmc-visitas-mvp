@@ -1,9 +1,11 @@
 "use client";
 
+import Link from "next/link";
 import Tag from "@/components/Tag";
 import VisorFotos, { useVisorFotos } from "@/components/ui/VisorFotos";
 import { ESTADO_PROBLEMA_LABEL, ESTADO_PROBLEMA_TAG, textoMotivosReales } from "@/lib/ui/estado";
 import { nombreProblema, nombreTrabajo, useReferencias } from "@/lib/ui/referencias";
+import { fechaHoraCorta, resumenEdicion } from "@/lib/ui/edicion";
 import type { CatalogoProblema, CatalogoTrabajo, Visita } from "@/lib/types";
 
 /**
@@ -41,6 +43,10 @@ export default function ActaGuardada({
   const internos = visita.internos ?? [];
   const firma = visita.firmas?.[0];
   const nombreMotivo = (codigo: string) => motivos.find((m) => m.codigo === codigo)?.nombre ?? codigo;
+  const ediciones = visita.ediciones ?? [];
+  const cerrada = visita.estado === "COMPLETADA";
+  // El técnico puede corregir su acta hasta un día después de cerrarla.
+  const editable = cerrada && Boolean(ejec?.editablePorTecnico);
 
   const filas: { k: string; v: string }[] = [
     { k: "Motivo", v: textoMotivosReales(visita) },
@@ -78,6 +84,41 @@ export default function ActaGuardada({
               <path d="M12 4v11M7 11l5 5 5-5M4 20h16" />
             </svg>
           </a>
+        ) : null}
+        {editable ? (
+          <>
+            <Link
+              href={`/tecnico/visitas/${encodeURIComponent(visita.folio)}/editar`}
+              className="w-full min-h-[50px] flex items-center justify-between px-4 mt-2.5 border border-[var(--color-divider)] text-[var(--color-text)] font-extrabold text-sm hover:bg-black/[.07]"
+            >
+              <span>Editar el acta</span>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                <path d="M4 20h4l10-10-4-4L4 16v4z" />
+                <path d="M14 6l4 4" />
+              </svg>
+            </Link>
+            <div className="mt-1.5 text-xs opacity-66">
+              Puedes corregirla hasta el {fechaHoraCorta(ejec?.editableHasta)}. La firma de la tienda se conserva.
+            </div>
+          </>
+        ) : cerrada ? (
+          <div className="mt-2.5 text-xs opacity-66">
+            Ya pasó el plazo de un día para editar esta acta. Si hay que corregir algo, pídeselo a coordinación.
+          </div>
+        ) : null}
+        {ediciones.length > 0 ? (
+          <div className="mt-3 px-3.5 py-3 bg-[var(--color-accent-100)] border-l-4 border-[var(--color-accent)]">
+            <div className="text-[10px] tracking-[.12em] uppercase text-[var(--color-accent-800)]">
+              Acta editada · {ediciones.length} {ediciones.length === 1 ? "vez" : "veces"}
+            </div>
+            {ediciones.map((e) => (
+              <div key={e.id} className="mt-2.5 pt-2.5 border-t border-black/[.15] first:border-t-0 first:pt-0 text-[13px] leading-[1.45]">
+                <div className="font-extrabold">{e.secciones.join(" · ")}</div>
+                <div className="mt-0.5">Motivo: {e.motivo}</div>
+                <div className="text-xs opacity-66 mt-0.5">{resumenEdicion(e)}</div>
+              </div>
+            ))}
+          </div>
         ) : null}
         {ejec?.registradoOffline ? (
           <div className="mt-3 px-3.5 py-2.5 bg-[var(--color-surface)] border-l-4 border-[var(--color-text)] text-[13px] leading-[1.45]">

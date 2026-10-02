@@ -213,8 +213,8 @@ El esquema completo vive en [`sql/dmc_contingencia_sqlserver.sql`](sql/dmc_conti
 | Grupo | Tablas |
 | --- | --- |
 | Maestros | `cliente`, `mall`, `sucursal`, `tecnico`, `usuario` |
-| Catálogos | `catalogo_motivo`, `catalogo_problema` (+ `_opcion`), `catalogo_trabajo` (+ `_subtrabajo`) |
-| Visitas | `visita`, `visita_ejecucion`, `visita_estado_historial`, `reagendamiento`, `visita_trabajo` (+ `_subtrabajo`), `visita_foto`, `visita_firma` |
+| Catálogos | `catalogo_motivo`, `catalogo_problema` (+ `_opcion`), `catalogo_trabajo` (+ `_subtrabajo`), `catalogo_interno`, `catalogo_pendiente` |
+| Visitas | `visita`, `visita_ejecucion`, `visita_estado_historial`, `visita_edicion`, `reagendamiento`, `visita_trabajo` (+ `_subtrabajo`), `visita_foto`, `visita_firma` |
 | Problemas | `problema`, `problema_item`, `problema_historial`, `problema_visita_resolucion` |
 | Acta y sincronización | `acta_envio` (+ `_adjunto`), `visita_borrador`, `sincronizacion_cola` |
 | Accesos | `checklist_plantilla`, `solicitud_password` |
@@ -239,6 +239,8 @@ Sobre una base ya creada, los cambios van en archivos aparte y numerados:
 | [`sql/migracion-010-margen-de-dias.sql`](sql/migracion-010-margen-de-dias.sql) | `dmc.visita.fecha_hasta`: el margen de días de una visita, que se puede hacer cualquier día entre `fecha_programada` y `fecha_hasta`. Sin ella la app arranca igual, pero no se puede agendar con margen |
 | [`sql/migracion-011-malls.sql`](sql/migracion-011-malls.sql) | `dmc.mall` y `dmc.sucursal.mall_id`: los malls y las tiendas que hay en cada uno, para agendar de una vez las tiendas de un mall. Agrega los permisos `malls.*` a cada rol según lo que ya podía hacer con las sucursales. Sin ella la app arranca igual, pero Maestros › Malls queda vacío y no se puede guardar |
 | [`sql/migracion-012-comuna-y-region-del-mall.sql`](sql/migracion-012-comuna-y-region-del-mall.sql) | `dmc.mall.comuna` y `dmc.mall.region`: el mall guarda su ubicación igual que la sucursal. Los malls que ya existen quedan con las dos vacías hasta completarlas. Sin ella la app arranca igual, pero los malls no se pueden guardar |
+| [`sql/migracion-013-edicion-de-acta.sql`](sql/migracion-013-edicion-de-acta.sql) | `dmc.visita_edicion`: el registro de cada corrección hecha a un acta ya cerrada (quién, cuándo, desde dónde, qué partes, qué cambió y por qué). Sin ella la app arranca igual y las actas se ven, pero no se puede guardar ninguna edición |
+| [`sql/migracion-014-gestion-de-pendientes.sql`](sql/migracion-014-gestion-de-pendientes.sql) | `dmc.catalogo_pendiente` (la Lista 5 del Checklist: los pasos de gestión de una visita que no se pudo hacer) y `dmc.visita_pendiente_gestion` (lo marcado en cada visita, con quién y cuándo). Agrega el permiso `reagendas.gestionar` a cada rol que ya veía reagendas y pendientes. Sin ella la app arranca igual y «Reagendas y pendientes» muestra todo lo demás, pero no hay checklist de gestión que marcar ni guardar |
 
 ```bash
 sqlcmd -S <host>,<puerto> -d DMC_Contingencia -i sql/migracion-002-mejoras.sql
@@ -252,6 +254,8 @@ sqlcmd -S <host>,<puerto> -d DMC_Contingencia -i sql/migracion-009-notas-y-motiv
 sqlcmd -S <host>,<puerto> -d DMC_Contingencia -i sql/migracion-010-margen-de-dias.sql
 sqlcmd -S <host>,<puerto> -d DMC_Contingencia -i sql/migracion-011-malls.sql
 sqlcmd -S <host>,<puerto> -d DMC_Contingencia -i sql/migracion-012-comuna-y-region-del-mall.sql
+sqlcmd -S <host>,<puerto> -d DMC_Contingencia -i sql/migracion-013-edicion-de-acta.sql
+sqlcmd -S <host>,<puerto> -d DMC_Contingencia -i sql/migracion-014-gestion-de-pendientes.sql
 ```
 
 Son idempotentes: se pueden correr varias veces, y en orden.
@@ -406,6 +410,32 @@ Hecho:
 - **Liberar** — botón del acta en el panel (permiso `visitas.liberar`, por defecto solo el
   administrador) para una visita En curso: anula ese inicio, borra la ejecución a medio abrir y la
   deja Programada para que cualquiera de los dos la inicie de nuevo.
+- **Acciones para múltiples visitas** — botón *Acciones múltiples* de la tabla de visitas (y de
+  Reagendas): las filas pasan a marcarse y abajo queda la barra con *Editar o reagendar*, *Cancelar
+  por admin* y *Eliminar*. Pide el permiso `visitas.masivo` —por defecto solo el administrador— **y
+  además** el de cada acción (`visitas.editar`, `visitas.cancelar`, `visitas.eliminar`). El diálogo
+  funciona como *Visitas masivas*: arriba lo que es igual para todas y abajo la lista, donde cada
+  visita se despliega para darle un valor propio o se quita del lote. Al editar, lo vacío no cambia;
+  una reagendada, pendiente o cancelada con fecha nueva vuelve a Programada, y a las completadas, en
+  curso o cerradas por admin no se les mueve fecha, hora ni técnico. Eliminar pide escribir
+  «ELIMINAR N». Cada visita se resuelve por separado (`lib/data/visitas-lote.ts`): la que no se
+  puede queda en la lista con su explicación y las demás se aplican. No necesita migración.
+- **Editar el acta ya cerrada** — un acta Completada se puede corregir. El técnico, desde el celular
+  (*Ver acta guardada › Editar el acta*), hasta **un día** después de cerrarla (`DIAS_PARA_EDITAR` en
+  `lib/data/visitas.ts`; el plazo lo mide la base desde `hora_termino`). Quien tenga el permiso
+  `visitas.editarActa` —por defecto solo el administrador—, desde el panel y **sin plazo**
+  (*Editar acta* en el acta). En los dos casos:
+  - el formulario parte de lo guardado y cada dato vuelve a su sección;
+  - **la firma de la tienda no se toca** (ni la imagen ni la hora); solo se corrige el nombre o el RUT
+    que van bajo ella cuando eran los del responsable y eso es lo que se corrigió;
+  - nada se borra: trabajos, fotos y videos quitados quedan inactivos, y un problema se corrige en su
+    misma fila para que conserve su estado y su historial;
+  - es obligatorio escribir **por qué** se edita, y el servidor calcula **qué cambió** comparando
+    contra lo guardado. Queda en `dmc.visita_edicion` y se ve en el acta del panel («Esta acta fue
+    editada»), en la tabla de visitas (marca *Editada*), en la trazabilidad y en el acta del celular;
+  - desde el panel también se agregan videos, eligiendo un archivo: se recorta al minuto y se baja
+    a 720p en el navegador si hace falta, y sube por partes igual que desde el celular;
+  - **el PDF no dice nada**: sale con los datos corregidos y sin ninguna marca de edición.
 - **Recuperación de contraseña** — sin servidor de correo: la solicitud queda en
   `dmc.solicitud_password` y el administrador la atiende en *Maestros › Usuarios › Contraseñas
   pedidas*, que es la pestaña vecina a la de las cuentas.

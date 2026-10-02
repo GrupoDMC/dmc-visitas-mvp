@@ -12,6 +12,8 @@ import { fmtRut, fmtTel, mensajeRut, rutCompleto, rutDvCorrecto, telCompleto } f
 import { comprimirFoto } from "@/lib/ui/imagen";
 import { mb, reloj, repararDuracionPreview, trozoBase64, VIDEO_TROZO_BYTES } from "@/lib/ui/video";
 import { guardarActaAction } from "@/app/actions/visitas";
+import { editarActaTecnicoAction } from "@/app/actions/ediciones";
+import { fechaHoraCorta, formularioDesdeActa } from "@/lib/ui/edicion";
 import {
   abrirVideoAction,
   borrarVideoAction,
@@ -41,6 +43,7 @@ import {
   type VideoForm,
 } from "@/lib/ui/borrador";
 import type { ActaEntrada } from "@/lib/data/visitas";
+import type { EdicionActaEntrada } from "@/lib/data/ediciones";
 import type {
   CatalogoInterno,
   CatalogoMotivo,
@@ -74,6 +77,7 @@ export default function FormularioVisita({
   catalogoProblema,
   catalogoInterno,
   borradorServidor,
+  edicion = false,
 }: {
   visita: Visita;
   motivos: CatalogoMotivo[];
@@ -82,13 +86,31 @@ export default function FormularioVisita({
   catalogoInterno: CatalogoInterno[];
   /** Respaldo del acta a medio llenar que quedó en el servidor, si lo hay. */
   borradorServidor?: { payload: string; guardadoEn: string } | null;
+  /**
+   * true = se corrige un acta ya cerrada. El formulario parte de lo guardado
+   * en la base, la firma de la tienda no se toca, no hay borrador ni cola (se
+   * guarda con señal o no se guarda) y al confirmar se pide el porqué.
+   */
+  edicion?: boolean;
 }) {
   const router = useRouter();
   const { toast, aviso } = useToast();
 
+  // Al editar, todo arranca de lo que quedó en el acta.
+  const [inicial] = useState(() => {
+    if (!edicion) return null;
+    const acta = formularioDesdeActa(visita);
+    autoId = Math.max(autoId, acta.siguienteId);
+    return acta;
+  });
+
   const [paso, setPaso] = useState<"form" | "preview" | "ok" | "encolada">("form");
-  const [abierta, setAbierta] = useState<Seccion | null>("sucursal");
-  const [guardadas, setGuardadas] = useState<Partial<Record<Seccion, boolean>>>({});
+  const [abierta, setAbierta] = useState<Seccion | null>(edicion ? null : "sucursal");
+  const [guardadas, setGuardadas] = useState<Partial<Record<Seccion, boolean>>>(() =>
+    edicion ? Object.fromEntries(SECCIONES.map((k) => [k, true])) : {}
+  );
+  /** Por qué se edita el acta: obligatorio, queda en el registro. */
+  const [motivoEdicion, setMotivoEdicion] = useState("");
   const [confirmar, setConfirmar] = useState<ConfirmarCfg | null>(null);
   const [horaInicio, setHoraInicio] = useState("—");
   const [horaTermino, setHoraTermino] = useState("—");
@@ -96,12 +118,12 @@ export default function FormularioVisita({
   const [errorGuardado, setErrorGuardado] = useState<string | null>(null);
 
   // 1 · Sucursal y responsable
-  const [respNombre, setRespNombre] = useState(visita.responsableNombre ?? "");
+  const [respNombre, setRespNombre] = useState(inicial?.respNombre ?? visita.responsableNombre ?? "");
   const [respRut, setRespRut] = useState(
     // Lo que ya haya en el acta manda; si no, lo que se anotó al agendar.
-    fmtRut(visita.ejecucion?.responsableRut ?? visita.responsableRut ?? "")
+    inicial?.respRut ?? fmtRut(visita.ejecucion?.responsableRut ?? visita.responsableRut ?? "")
   );
-  const [respTel, setRespTel] = useState(fmtTel(visita.responsableTelefono ?? ""));
+  const [respTel, setRespTel] = useState(inicial?.respTel ?? fmtTel(visita.responsableTelefono ?? ""));
 
   // 2 · Motivo y trabajo realizado. Los que agendó coordinación vienen ya
   // marcados y no se pueden quitar; el técnico solo puede sumar otros.
@@ -118,19 +140,19 @@ export default function FormularioVisita({
   const [motivosCodigos, setMotivosCodigos] = useState<string[]>(() =>
     conAgendados(visita.ejecucion?.motivosRealesCodigos ?? [])
   );
-  const [obs, setObs] = useState("");
-  const [trabajos, setTrabajos] = useState<TrabajoForm[]>([]);
+  const [obs, setObs] = useState(inicial?.obs ?? "");
+  const [trabajos, setTrabajos] = useState<TrabajoForm[]>(inicial?.trabajos ?? []);
 
   // 3 · Problemas detectados
-  const [problemas, setProblemas] = useState<ProblemaForm[]>([]);
+  const [problemas, setProblemas] = useState<ProblemaForm[]>(inicial?.problemas ?? []);
 
   // 4 · Comentario interno: su checklist, el texto, y fotos y videos marcados
   //     como internos. Nada de esto lo ve el cliente.
-  const [interno, setInterno] = useState("");
-  const [internos, setInternos] = useState<string[]>([]);
+  const [interno, setInterno] = useState(inicial?.interno ?? "");
+  const [internos, setInternos] = useState<string[]>(inicial?.internos ?? []);
 
   // 5 · Fotos y videos (los del trabajo y los internos, separados por `interno`)
-  const [fotos, setFotos] = useState<FotoForm[]>([]);
+  const [fotos, setFotos] = useState<FotoForm[]>(inicial?.fotos ?? []);
   // El video no se acumula en el formulario como las fotos: se sube a
   // dmc.visita_video en cuanto se termina de grabar, porque un minuto en 720p
   // pesa unos 11 MB y no cabe ni en una Server Action ni en localStorage. Por
@@ -151,7 +173,7 @@ export default function FormularioVisita({
   );
 
   // 6 · Firma
-  const [firma, setFirma] = useState<FirmaGuardada | null>(null);
+  const [firma, setFirma] = useState<FirmaGuardada | null>(inicial?.firma ?? null);
 
   // Hojas inferiores
   const [sheet, setSheet] = useState<"trabajo" | "problema" | "firma" | "camara" | "video" | null>(null);
@@ -168,10 +190,12 @@ export default function FormularioVisita({
     subs: [],
     agregados: [],
   });
-  const [np, setNp] = useState<{ codigo: string; items: ProblemaItemForm[]; desc: string }>({
+  /** `editando` = id de la fila que se está corrigiendo; null si es un problema nuevo. */
+  const [np, setNp] = useState<{ codigo: string; items: ProblemaItemForm[]; desc: string; editando: number | null }>({
     codigo: "",
     items: [],
     desc: "",
+    editando: null,
   });
   /** Los motivos no marcados se esconden tras "Agregar otro motivo" para no llenar la pantalla. */
   const [verOtrosMotivos, setVerOtrosMotivos] = useState(false);
@@ -267,6 +291,13 @@ export default function FormularioVisita({
     if (yaRecuperado.current) return;
     yaRecuperado.current = true;
 
+    // Al editar un acta cerrada no hay borrador que recuperar: se parte de la base.
+    if (edicion) {
+      setConSenal(hayConexion());
+      setListo(true);
+      return;
+    }
+
     const local = leerBorrador(visita.folio);
     let remoto: BorradorActa | null = null;
     if (borradorServidor?.payload) {
@@ -292,11 +323,11 @@ export default function FormularioVisita({
     setOtrasPendientes(actasEnCola().filter((a) => a.folio !== visita.folio).length);
     setConSenal(hayConexion());
     setListo(true);
-  }, [visita.folio, borradorServidor, aplicarBorrador]);
+  }, [visita.folio, borradorServidor, aplicarBorrador, edicion]);
 
   // Guardado en el celular: al ritmo al que se escribe, no en cada tecla.
   useEffect(() => {
-    if (!listo || paso === "ok" || paso === "encolada") return;
+    if (edicion || !listo || paso === "ok" || paso === "encolada") return;
     const t = setTimeout(() => {
       const b = construirBorrador();
       if (!borradorConDatos(b)) return;
@@ -307,13 +338,13 @@ export default function FormularioVisita({
       setRespaldo({ guardadoEn: b.guardadoEn, sinFotos: Boolean(guardado?.sinFotos) });
     }, 800);
     return () => clearTimeout(t);
-  }, [listo, paso, construirBorrador, visita.folio]);
+  }, [edicion, listo, paso, construirBorrador, visita.folio]);
 
   // Respaldo en el servidor: cada tanto y solo si hay señal. Las fotos no
   // suben acá —pesan demasiado para mandarlas cada medio minuto—, así que la
   // copia del servidor recupera el texto y no las imágenes.
   useEffect(() => {
-    if (!listo || paso === "ok" || paso === "encolada") return;
+    if (edicion || !listo || paso === "ok" || paso === "encolada") return;
     const id = setInterval(() => {
       const b = borradorRef.current;
       if (!b || !hayConexion() || subidoRef.current === b.guardadoEn) return;
@@ -324,7 +355,7 @@ export default function FormularioVisita({
       });
     }, CADA_CUANTO_SUBE);
     return () => clearInterval(id);
-  }, [listo, paso, visita.folio]);
+  }, [edicion, listo, paso, visita.folio]);
 
   // Aviso de señal: lo que decide si el acta se manda o se encola.
   useEffect(() => {
@@ -345,15 +376,20 @@ export default function FormularioVisita({
   const nGuardadas = SECCIONES.filter((k) => guardadas[k]).length;
   const puedeRevisar =
     (!!guardadas.sucursal || !faltaEnSeccion("sucursal")) && (!!guardadas.motivo || !faltaEnSeccion("motivo"));
-  const puedeGuardar = puedeRevisar && !!firma && !guardando;
+  // Al editar la firma ya está en el acta y no se pide de nuevo; lo que sí se
+  // pide es el porqué del cambio.
+  const motivoEdicionListo = motivoEdicion.trim().length >= 5;
+  const puedeGuardar = puedeRevisar && (edicion ? motivoEdicionListo : !!firma) && !guardando;
 
   const falta = useMemo(() => {
     const f: string[] = [];
     if (!guardadas.sucursal) f.push("los datos del responsable");
     if (!guardadas.motivo) f.push("el motivo");
-    if (!firma) f.push("la firma de la tienda");
+    if (edicion) {
+      if (!motivoEdicionListo) f.push("escribir por qué se edita el acta");
+    } else if (!firma) f.push("la firma de la tienda");
     return f;
-  }, [guardadas.sucursal, guardadas.motivo, firma]);
+  }, [guardadas.sucursal, guardadas.motivo, firma, edicion, motivoEdicionListo]);
 
   const nombreMotivos = (codigos: string[]) =>
     codigos.map((c) => motivos.find((m) => m.codigo === c)?.nombre ?? c).join(" · ") || "Sin motivo";
@@ -484,7 +520,73 @@ export default function FormularioVisita({
     [visita.folio, aviso, router]
   );
 
+  /** La corrección del acta cerrada, tal como viaja al servidor. */
+  function armarEdicion(): EdicionActaEntrada {
+    return {
+      folio: visita.folio,
+      motivoEdicion: motivoEdicion.trim(),
+      edicionesVistas: visita.ediciones?.length ?? 0,
+      responsableNombre: respNombre.trim(),
+      responsableRut: respRut.trim() || null,
+      responsableTelefono: respTel.trim() || null,
+      motivosCodigos,
+      observaciones: obs.trim() || null,
+      comentarioInterno: interno.trim() || null,
+      internosCodigos: internos,
+      trabajos: trabajos
+        .filter((t) => motivosCodigos.includes(motivoDe(t)))
+        .map((t) => ({
+          codigo: t.codigo,
+          motivoCodigo: motivoDe(t),
+          detalle: t.detalle?.trim() || null,
+          subtrabajos: t.subs.map((sx) => ({ etiqueta: sx.etiqueta, cantidad: sx.cantidad })),
+        })),
+      problemas: problemas.map((pr) => ({
+        id: pr.dbId ?? null,
+        tipoCodigo: pr.codigo,
+        descripcion: pr.desc.trim() || null,
+        items: pr.items.map((it) => ({ etiqueta: it.etiqueta, cantidad: it.cantidad })),
+      })),
+      // Las fotos que ya estaban van por su id; solo las nuevas viajan enteras.
+      fotosConservadas: fotos.filter((f) => f.dbId).map((f) => f.dbId!),
+      fotosNuevas: fotos
+        .filter((f) => !f.dbId)
+        .map((f) => ({ dataUrl: f.src, etiqueta: null, interno: Boolean(f.interno) })),
+      videosIds: videosListos.map((v) => v.id),
+      videosInternosIds: videosListos.filter((v) => v.interno).map((v) => v.id),
+    };
+  }
+
+  /**
+   * Guarda la corrección. Sin cola ni reintentos: un acta ya cerrada no se
+   * edita a ciegas, así que si no hay señal se avisa y no se guarda nada.
+   */
+  async function guardarEdicion() {
+    if (!hayConexion()) {
+      setErrorGuardado("No hay señal. La edición necesita conexión: no se guardó nada, inténtalo cuando vuelva.");
+      return aviso("Sin señal: no se guardó la edición");
+    }
+    setGuardando(true);
+    setErrorGuardado(null);
+    try {
+      const res = await editarActaTecnicoAction(armarEdicion());
+      if (!res.ok) {
+        setErrorGuardado(res.error ?? "No se pudo guardar la edición.");
+        return aviso(res.error ?? "No se pudo guardar la edición");
+      }
+      setPaso("ok");
+      router.refresh();
+    } catch (err) {
+      console.error("[dmc] no se pudo guardar la edición del acta:", err);
+      setErrorGuardado("No se pudo llegar al servidor. No se guardó nada: inténtalo otra vez.");
+      aviso("No se guardó la edición");
+    } finally {
+      setGuardando(false);
+    }
+  }
+
   async function guardarVisita() {
+    if (edicion) return guardarEdicion();
     const entrada = armarEntrada();
     if (!entrada) return aviso("Falta la firma de la tienda");
 
@@ -659,18 +761,20 @@ export default function FormularioVisita({
           </svg>
         </div>
         <h1 className="font-extrabold text-[34px] leading-[1.05] tracking-[-.03em] mt-5 mb-2">
-          Visita
+          {edicion ? "Cambios" : "Visita"}
           <br />
-          guardada
+          {edicion ? "guardados" : "guardada"}
         </h1>
         <div className="text-[13px] tabular-nums opacity-60">
-          {visita.folio} · {visita.sucursal?.nombre} · {horaTermino}
+          {visita.folio} · {visita.sucursal?.nombre}
+          {edicion ? "" : ` · ${horaTermino}`}
         </div>
         <div className="h-0.5 bg-[var(--color-divider)] mt-5 mb-4" />
         <div className="flex gap-2.5 items-start px-3.5 py-3 bg-[var(--color-surface)] border-l-4 border-[var(--color-text)]">
           <div className="text-[13px]">
-            Guardada en el servidor y marcada como completada. Coordinación ya la ve así en el panel, y a ti deja de
-            aparecerte en curso.
+            {edicion
+              ? "El acta quedó corregida y la firma de la tienda se conservó. La edición quedó registrada con lo que cambiaste y el motivo: coordinación la ve en el panel."
+              : "Guardada en el servidor y marcada como completada. Coordinación ya la ve así en el panel, y a ti deja de aparecerte en curso."}
           </div>
         </div>
         <div className="mt-auto pt-6.5 flex flex-col gap-2.5">
@@ -678,7 +782,7 @@ export default function FormularioVisita({
             onClick={() => router.push("/tecnico/visitas")}
             className="w-full min-h-[58px] flex items-center justify-between px-4.5 bg-[var(--color-accent)] text-[var(--color-bg)] font-extrabold text-base cursor-pointer text-left hover:bg-[var(--color-accent-hover)]"
           >
-            <span>Siguiente visita</span>
+            <span>{edicion ? "Volver a mis visitas" : "Siguiente visita"}</span>
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
               <path d="M5 12h14M13 6l6 6-6 6" />
             </svg>
@@ -712,19 +816,25 @@ export default function FormularioVisita({
     return (
       <div className="animate-fade-in">
         <div className="px-4 pt-5">
-          <div className="text-[10px] tracking-[.15em] uppercase text-[var(--color-accent-active)]">Antes de guardar</div>
+          <div className="text-[10px] tracking-[.15em] uppercase text-[var(--color-accent-active)]">
+            {edicion ? "Edición del acta" : "Antes de guardar"}
+          </div>
           <h1 className="font-extrabold text-[28px] leading-[1.06] tracking-[-.03em] mt-2 mb-1.5">
-            Revisa lo que
+            {edicion ? "Revisa cómo" : "Revisa lo que"}
             <br />
-            se va a guardar
+            {edicion ? "queda el acta" : "se va a guardar"}
           </h1>
-          <p className="m-0 mb-4 text-sm opacity-60">Lee cada punto con el encargado de la tienda antes de confirmar.</p>
+          <p className="m-0 mb-4 text-sm opacity-60">
+            {edicion
+              ? "Así va a quedar el acta corregida. La firma de la tienda es la misma de cuando se cerró."
+              : "Lee cada punto con el encargado de la tienda antes de confirmar."}
+          </p>
         </div>
 
         <div className="mx-4 border border-[var(--color-divider)] bg-[var(--color-surface-3)]">
           <div className="px-4 py-3.5 border-b-2 border-[var(--color-divider)] flex items-center gap-2.5">
             <div className="font-extrabold text-[13px] tracking-[.06em] uppercase">Acta de visita</div>
-            <span className="tag tag-accent ml-auto">Quedará Completada</span>
+            <span className="tag tag-accent ml-auto">{edicion ? "Acta corregida" : "Quedará Completada"}</span>
           </div>
           <div className="px-4 pt-1 pb-3.5">
             {resumen.map((r) => (
@@ -874,6 +984,23 @@ export default function FormularioVisita({
         </div>
 
         <div className="px-4 pt-4.5 pb-6.5">
+          {edicion ? (
+            <div className="mb-3.5">
+              <label htmlFor="f-motivo-edicion" className="block text-[11px] tracking-[.09em] uppercase opacity-60 mb-1.5">
+                ¿Por qué se edita el acta?
+                <span className="opacity-66 normal-case tracking-normal"> (obligatorio · queda en el registro)</span>
+              </label>
+              <textarea
+                id="f-motivo-edicion"
+                rows={3}
+                value={motivoEdicion}
+                onChange={(e) => setMotivoEdicion(e.target.value)}
+                autoComplete="off"
+                placeholder="Ej: anoté mal el RUT del encargado; faltaba agregar el cambio de la antena 2"
+                className={`${entrada} min-h-[96px] leading-[1.4] resize-y`}
+              />
+            </div>
+          ) : null}
           {falta.length > 0 ? (
             <div className="px-3.5 py-3 mb-3 bg-[var(--color-accent-200)] border-l-4 border-[var(--color-accent)] text-[13px] text-[var(--color-accent-800)]">
               Falta {falta.join(", ")}.
@@ -900,7 +1027,7 @@ export default function FormularioVisita({
               color: puedeGuardar ? "var(--color-bg)" : "var(--color-surface-3)",
             }}
           >
-            <span>{guardando ? "Guardando…" : "Guardar visita"}</span>
+            <span>{guardando ? "Guardando…" : edicion ? "Guardar cambios" : "Guardar visita"}</span>
             <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4">
               <path d="M4 12l5 5L20 6" />
             </svg>
@@ -913,7 +1040,9 @@ export default function FormularioVisita({
             Volver a corregir
           </button>
           <p className="mt-2.5 mb-0 text-xs opacity-66">
-            Al confirmar, la visita queda cerrada y coordinación la ve completada al instante.
+            {edicion
+              ? "Al confirmar queda registrado qué cambiaste, cuándo y por qué. El PDF del acta sale con los datos corregidos."
+              : "Al confirmar, la visita queda cerrada y coordinación la ve completada al instante."}
           </p>
         </div>
         <Toast texto={toast} />
@@ -937,7 +1066,7 @@ export default function FormularioVisita({
       <div className="px-4 pt-4.5 pb-3.5">
         <div className="flex items-center gap-2.5">
           <div className="text-xs tabular-nums tracking-[.08em] opacity-66">{visita.folio}</div>
-          <span className="tag tag-accent">En curso desde {horaInicio}</span>
+          <span className="tag tag-accent">{edicion ? "Editando acta cerrada" : `En curso desde ${horaInicio}`}</span>
         </div>
         <h1 className="font-extrabold text-2xl leading-[1.1] tracking-[-.025em] mt-2.5 mb-0.5">{visita.sucursal?.nombre}</h1>
         <div className="text-[13px] opacity-66">
@@ -952,9 +1081,18 @@ export default function FormularioVisita({
           <span>
             {nGuardadas} de {SECCIONES.length} secciones listas
           </span>
-          <span>El acta se cierra al final</span>
+          <span>{edicion ? "Los cambios se guardan al final" : "El acta se cierra al final"}</span>
         </div>
 
+        {edicion ? (
+          <div className="mt-3 px-3.5 py-3 bg-[var(--color-surface)] border-l-4 border-[var(--color-text)] text-[13px] leading-[1.45]">
+            Estás corrigiendo un acta ya cerrada. Todo parte de lo que quedó guardado y la firma de la tienda se
+            conserva. Nada cambia hasta que confirmes al final, y ahí se pide el motivo.
+            {visita.ejecucion?.editableHasta
+              ? ` Puedes editarla hasta el ${fechaHoraCorta(visita.ejecucion.editableHasta)}.`
+              : ""}
+          </div>
+        ) : (
         <EstadoBorrador
           respaldo={respaldo}
           recuperado={recuperado}
@@ -999,6 +1137,7 @@ export default function FormularioVisita({
           }
           onEnviarPendiente={() => void reintentarPendiente(true)}
         />
+        )}
       </div>
 
       <div className="border-t-2 border-[var(--color-divider)]">
@@ -1287,6 +1426,15 @@ export default function FormularioVisita({
                   ) : null}
                   {p.desc ? <div className="text-sm opacity-75 mt-2">{p.desc}</div> : null}
                   <button
+                    onClick={() => {
+                      setNp({ codigo: p.codigo, items: p.items.map((z) => ({ ...z })), desc: p.desc, editando: p.id });
+                      setSheet("problema");
+                    }}
+                    className="min-h-10 mt-2 mr-4 p-0 bg-transparent border-0 text-[var(--color-text)] font-extrabold text-xs underline underline-offset-[3px] cursor-pointer"
+                  >
+                    Corregir
+                  </button>
+                  <button
                     onClick={() =>
                       setConfirmar({
                         titulo: "¿Quitar este problema?",
@@ -1305,7 +1453,7 @@ export default function FormularioVisita({
 
             <button
               onClick={() => {
-                setNp({ codigo: "", items: [], desc: "" });
+                setNp({ codigo: "", items: [], desc: "", editando: null });
                 setSheet("problema");
               }}
               className="w-full min-h-[54px] flex items-center gap-2.5 px-4 mt-3 bg-transparent border border-dashed border-black/[.5] text-[var(--color-text)] font-extrabold text-sm cursor-pointer text-left hover:bg-black/[.06]"
@@ -1502,7 +1650,11 @@ export default function FormularioVisita({
           n={6}
           titulo="Firma de la tienda"
           ok={!!firma}
-          chip={firma ? { variante: "accent", texto: "Firmada" } : { variante: "neutral", texto: "Pendiente" }}
+          chip={
+            firma
+              ? { variante: "accent", texto: edicion ? "Se conserva" : "Firmada" }
+              : { variante: "neutral", texto: edicion ? "Sin firma" : "Pendiente" }
+          }
           onToggle={() => toggleSeccion("firmas")}
         />
         {abierta === "firmas" ? (
@@ -1525,6 +1677,13 @@ export default function FormularioVisita({
                   className="w-full h-[76px] object-contain object-left mt-2 border-b border-black/[.35]"
                 />
               ) : null}
+              {edicion ? (
+                <p className="m-0 mt-3 text-[13px] leading-[1.45] opacity-70">
+                  {firma
+                    ? "La firma es la que dejó la tienda al cerrar el acta: al editar se conserva tal cual y no se vuelve a firmar."
+                    : "Esta acta se cerró sin firma. Al editar no se puede agregar."}
+                </p>
+              ) : (
               <button
                 onClick={() => setSheet("firma")}
                 className="w-full min-h-[50px] flex items-center justify-between px-3.5 mt-3 border border-[var(--color-divider)] font-extrabold text-sm cursor-pointer text-left"
@@ -1538,8 +1697,11 @@ export default function FormularioVisita({
                   <path d="M3 20c4 0 5-14 9-14s2 9 5 9 4-3 4-3" />
                 </svg>
               </button>
+              )}
             </div>
-            <BotonGuardar texto="Guardar esta sección" habilitado={!!firma} onClick={() => guardarSeccion("firmas")} />
+            {edicion ? null : (
+              <BotonGuardar texto="Guardar esta sección" habilitado={!!firma} onClick={() => guardarSeccion("firmas")} />
+            )}
           </Cuerpo>
         ) : null}
       </div>
@@ -1567,7 +1729,7 @@ export default function FormularioVisita({
             color: puedeRevisar ? "var(--color-bg)" : "var(--color-surface-3)",
           }}
         >
-          <span>Revisar y guardar</span>
+          <span>{edicion ? "Revisar los cambios" : "Revisar y guardar"}</span>
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
             <path d="M5 12h14M13 6l6 6-6 6" />
           </svg>
@@ -1731,7 +1893,7 @@ export default function FormularioVisita({
 
       {/* ── Hoja: agregar un problema ── */}
       {sheet === "problema" ? (
-        <Sheet titulo="Nuevo problema" onClose={() => setSheet(null)}>
+        <Sheet titulo={np.editando === null ? "Nuevo problema" : "Corregir problema"} onClose={() => setSheet(null)}>
           <div className="p-4 flex flex-col gap-3.5">
             <div>
               <PasoTitulo n="1" texto="¿Qué tipo de problema es?" />
@@ -1831,14 +1993,23 @@ export default function FormularioVisita({
                   return aviso(`Marca al menos un ${probSel?.singular ?? "detalle"}`);
                 }
                 if (!probTieneOpciones && !np.desc.trim()) return aviso("Escribe qué encontraste");
-                setProblemas((prev) => [
-                  ...prev,
-                  { id: autoId++, codigo: np.codigo, items: [...np.items], desc: np.desc.trim(), sol: "", estado: "ABIERTO" },
-                ]);
+                if (np.editando === null) {
+                  setProblemas((prev) => [
+                    ...prev,
+                    { id: autoId++, codigo: np.codigo, items: [...np.items], desc: np.desc.trim(), sol: "", estado: "ABIERTO" },
+                  ]);
+                } else {
+                  // Se corrige en su misma fila: conserva su id de la base y su estado.
+                  setProblemas((prev) =>
+                    prev.map((x) =>
+                      x.id === np.editando ? { ...x, codigo: np.codigo, items: [...np.items], desc: np.desc.trim() } : x
+                    )
+                  );
+                }
                 setGuardadas((g) => ({ ...g, problemas: false }));
                 setSheet(null);
                 setAbierta("problemas");
-                aviso("Problema agregado a la ficha");
+                aviso(np.editando === null ? "Problema agregado a la ficha" : "Problema corregido");
               }}
               className="w-full min-h-[58px] flex items-center justify-between px-4.5 border-0 font-extrabold text-base cursor-pointer text-left hover:brightness-95"
               style={{
@@ -1846,7 +2017,7 @@ export default function FormularioVisita({
                 color: probListo ? "var(--color-bg)" : "var(--color-surface-3)",
               }}
             >
-              <span>Agregar a la visita</span>
+              <span>{np.editando === null ? "Agregar a la visita" : "Guardar la corrección"}</span>
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4">
                 <path d="M12 5v14M5 12h14" />
               </svg>
@@ -2066,7 +2237,15 @@ export default function FormularioVisita({
     setVideos((prev) =>
       prev.map((v) =>
         v.id === filaId
-          ? { ...v, id: videoId, src: cerrado.archivoUrl ?? v.src, progreso: null, error: null }
+          ? {
+              ...v,
+              id: videoId,
+              // Al editar un acta cerrada el clip queda inactivo hasta guardar
+              // y el servidor todavía no lo sirve: se sigue viendo el local.
+              src: edicion ? v.src : cerrado.archivoUrl ?? v.src,
+              progreso: null,
+              error: null,
+            }
           : v
       )
     );
@@ -2109,7 +2288,8 @@ export default function FormularioVisita({
     clipsRef.current.delete(video.id);
     setVideos((prev) => prev.filter((v) => v.id !== video.id));
     setGuardadas((g) => ({ ...g, [video.interno ? "interno" : "fotos"]: false }));
-    if (video.id > 0) {
+    // Al editar un acta cerrada el clip se quita recién al guardar la edición.
+    if (video.id > 0 && !edicion) {
       void borrarVideoAction(visita.folio, video.id).catch(() => {
         // Que no se pueda marcar inactivo ahora no importa: al cerrar el acta
         // se desactiva igual todo lo que no venga en videosIds.

@@ -165,6 +165,18 @@ export interface CatalogoInterno {
   activo: boolean;
 }
 
+/**
+ * Paso del checklist con que coordinación gestiona una visita reagendada o
+ * pendiente ("Repuesto pedido", "Tienda confirmó acceso"). Solo vive en el panel.
+ */
+export interface CatalogoPendiente {
+  id: number;
+  codigo: string;
+  nombre: string;
+  orden: number;
+  activo: boolean;
+}
+
 export interface VisitaTrabajoSubtrabajo {
   id: number;
   visitaTrabajoId: number;
@@ -220,6 +232,30 @@ export interface VisitaEjecucion {
   appVersion: string | null;
   registradoOffline: boolean;
   sincronizadoEn: string | null;
+  /**
+   * Hasta cuándo el técnico puede corregir el acta: un día después de
+   * cerrarla. Null si todavía no se cierra. El administrador no tiene plazo.
+   */
+  editableHasta: string | null;
+  /** true mientras ese plazo siga abierto. Lo decide la base, con su reloj. */
+  editablePorTecnico: boolean;
+}
+
+/** Una corrección hecha al acta después de cerrarla (dmc.visita_edicion). */
+export interface VisitaEdicion {
+  id: number;
+  visitaId: number;
+  /** MOVIL = la hizo el técnico en el celular; WEB = se hizo desde el panel. */
+  origen: OrigenRegistro;
+  /** Quién la hizo: el nombre del técnico o el correo de la cuenta del panel. */
+  por: string;
+  /** Por qué se cambió, en palabras de quien editó. */
+  motivo: string;
+  /** Qué partes del acta se tocaron. */
+  secciones: string[];
+  /** Qué cambió exactamente, una línea por cambio. */
+  detalle: string[];
+  editadoEn: string;
 }
 
 export interface VisitaFoto {
@@ -335,6 +371,8 @@ export interface Visita {
   /** Lo marcado del checklist del comentario interno, con su nombre. */
   internos?: { codigo: string; nombre: string }[];
   reagendamientos?: Reagendamiento[];
+  /** Las correcciones hechas al acta ya cerrada, de la más nueva a la más vieja. */
+  ediciones?: VisitaEdicion[];
   /**
    * Solo viene en una visita eliminada, y esas solo las lee el administrador:
    * quién la sacó de circulación y cuándo. Para todo el resto no existe.
@@ -369,4 +407,5 @@ export interface ChecklistPlantilla {
   problemas: number;
   trabajos: number;
   internos: number;
+  pendientes: number;
 }

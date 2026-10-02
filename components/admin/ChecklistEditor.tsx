@@ -16,6 +16,7 @@ import type { BorradorChecklist } from "@/lib/data/catalogos";
 import type {
   CatalogoInterno,
   CatalogoMotivo,
+  CatalogoPendiente,
   CatalogoProblema,
   CatalogoTrabajo,
   ChecklistPlantilla,
@@ -67,7 +68,7 @@ interface Grupo {
 let contadorClave = 0;
 const nuevaClave = () => `k${(contadorClave += 1)}`;
 
-function aMotivos(lista: (CatalogoMotivo | CatalogoInterno)[]): Motivo[] {
+function aMotivos(lista: (CatalogoMotivo | CatalogoInterno | CatalogoPendiente)[]): Motivo[] {
   return lista.map((m) => ({ key: nuevaClave(), id: m.id, codigo: m.codigo, nombre: m.nombre }));
 }
 
@@ -146,12 +147,17 @@ export default function ChecklistEditor({
   tiposIniciales,
   trabajosIniciales,
   internosIniciales,
+  pendientesIniciales,
+  gestionDisponible,
   plantillaInicial,
 }: {
   motivosIniciales: CatalogoMotivo[];
   tiposIniciales: CatalogoProblema[];
   trabajosIniciales: CatalogoTrabajo[];
   internosIniciales: CatalogoInterno[];
+  pendientesIniciales: CatalogoPendiente[];
+  /** false = falta la migración 014: la Lista 5 se muestra, pero no se puede guardar. */
+  gestionDisponible: boolean;
   plantillaInicial: ChecklistPlantilla | null;
 }) {
   const router = useRouter();
@@ -167,6 +173,7 @@ export default function ChecklistEditor({
   const [tipos, setTipos] = useState<Grupo[]>(() => aGruposProblema(tiposIniciales));
   const [trabajos, setTrabajos] = useState<Grupo[]>(inicial.trabajos);
   const [internos, setInternos] = useState<Motivo[]>(() => aMotivos(internosIniciales));
+  const [pendientes, setPendientes] = useState<Motivo[]>(() => aMotivos(pendientesIniciales));
   const [plantilla, setPlantilla] = useState(plantillaInicial);
 
   const [abiertoTipo, setAbiertoTipo] = useState<string | null>(null);
@@ -183,6 +190,7 @@ export default function ChecklistEditor({
     tipos: tiposIniciales.length,
     trabajos: trabajosIniciales.length,
     internos: internosIniciales.length,
+    pendientes: pendientesIniciales.length,
   });
 
   // Tras guardar, el servidor vuelve a mandar las listas ya escritas: el
@@ -193,14 +201,16 @@ export default function ChecklistEditor({
     setTipos(aGruposProblema(tiposIniciales));
     setTrabajos(aGruposTrabajo(trabajosIniciales, m));
     setInternos(aMotivos(internosIniciales));
+    setPendientes(aMotivos(pendientesIniciales));
     enBase.current = {
       motivos: motivosIniciales.length,
       tipos: tiposIniciales.length,
       trabajos: trabajosIniciales.length,
       internos: internosIniciales.length,
+      pendientes: pendientesIniciales.length,
     };
     setSucio(false);
-  }, [motivosIniciales, tiposIniciales, trabajosIniciales, internosIniciales]);
+  }, [motivosIniciales, tiposIniciales, trabajosIniciales, internosIniciales, pendientesIniciales]);
 
   // Con cambios sin guardar, cerrar la pestaña pide confirmación al navegador.
   useEffect(() => {
@@ -239,6 +249,10 @@ export default function ChecklistEditor({
     () => internos.map((m, i) => ({ m, i })).filter(({ m }) => coincide(m.nombre)),
     [internos, coincide]
   );
+  const pendientesVisibles = useMemo(
+    () => pendientes.map((m, i) => ({ m, i })).filter(({ m }) => coincide(m.nombre)),
+    [pendientes, coincide]
+  );
 
   const nombreMotivoPorClave = (key: string) => motivos.find((m) => m.key === key)?.nombre.trim() ?? "";
 
@@ -258,25 +272,29 @@ export default function ChecklistEditor({
       motivos: t.motivos.map(nombreMotivoPorClave).filter(Boolean),
     })),
     internos: internos.map((m) => ({ id: m.id, nombre: m.nombre })),
+    pendientes: pendientes.map((m) => ({ id: m.id, nombre: m.nombre })),
   });
 
   const vacios =
     motivos.filter((m) => !m.nombre.trim()).length +
     tipos.filter((t) => !t.nombre.trim()).length +
     trabajos.filter((t) => !t.nombre.trim()).length +
-    internos.filter((m) => !m.nombre.trim()).length;
+    internos.filter((m) => !m.nombre.trim()).length +
+    pendientes.filter((m) => !m.nombre.trim()).length;
 
   const seDesactivan =
     Math.max(0, enBase.current.motivos - motivos.filter((m) => m.id !== null).length) +
     Math.max(0, enBase.current.tipos - tipos.filter((t) => t.id !== null).length) +
     Math.max(0, enBase.current.trabajos - trabajos.filter((t) => t.id !== null).length) +
-    Math.max(0, enBase.current.internos - internos.filter((m) => m.id !== null).length);
+    Math.max(0, enBase.current.internos - internos.filter((m) => m.id !== null).length) +
+    Math.max(0, enBase.current.pendientes - pendientes.filter((m) => m.id !== null).length);
 
   const nuevos =
     motivos.filter((m) => m.id === null).length +
     tipos.filter((t) => t.id === null).length +
     trabajos.filter((t) => t.id === null).length +
-    internos.filter((m) => m.id === null).length;
+    internos.filter((m) => m.id === null).length +
+    pendientes.filter((m) => m.id === null).length;
 
   // ── Guardado ──────────────────────────────────────────────────────────────
 
@@ -285,7 +303,7 @@ export default function ChecklistEditor({
     if (vacios > 0) return aviso("Hay entradas sin nombre. Escríbelas o quítalas antes de guardar.");
 
     const lineas = [
-      `Van a quedar ${motivos.length} motivos, ${tipos.length} tipos de problema, ${trabajos.length} trabajos y ${internos.length} ítems del comentario interno.`,
+      `Van a quedar ${motivos.length} motivos, ${tipos.length} tipos de problema, ${trabajos.length} trabajos, ${internos.length} ítems del comentario interno y ${pendientes.length} pasos de gestión de pendientes.`,
       nuevos > 0 ? `Se agregan ${nuevos} entradas nuevas.` : "",
       seDesactivan > 0
         ? `${seDesactivan} entradas dejan de aparecer en el celular. No se borra nada: las visitas y actas ya registradas las siguen mostrando.`
@@ -311,7 +329,7 @@ export default function ChecklistEditor({
     const r = res.resumen;
     aviso(
       r
-        ? `Checklist guardado · ${r.motivos} motivos, ${r.problemas} tipos, ${r.trabajos} trabajos, ${r.internos} internos` +
+        ? `Checklist guardado · ${r.motivos} motivos, ${r.problemas} tipos, ${r.trabajos} trabajos, ${r.internos} internos, ${r.pendientes} de gestión` +
             (r.desactivados ? ` · ${r.desactivados} entradas desactivadas` : "")
         : "Checklist guardado"
     );
@@ -343,7 +361,7 @@ export default function ChecklistEditor({
       titulo: "¿Reiniciar a tu plantilla?",
       texto:
         `Las listas vuelven a la plantilla que fijaste ` +
-        `(${plantilla.motivos} motivos, ${plantilla.problemas} tipos, ${plantilla.trabajos} trabajos, ${plantilla.internos} internos). ` +
+        `(${plantilla.motivos} motivos, ${plantilla.problemas} tipos, ${plantilla.trabajos} trabajos, ${plantilla.internos} internos, ${plantilla.pendientes} de gestión). ` +
         "Todo lo que hayas agregado después deja de aparecer en el celular. Nada se borra de la base.",
       cta: "Reiniciar checklist",
       accion: async () => {
@@ -368,6 +386,11 @@ export default function ChecklistEditor({
   function agregarInterno() {
     editar(setInternos, (prev) => [...prev, { key: nuevaClave(), id: null, codigo: null, nombre: "" }]);
     aviso("Ítem agregado · escribe su nombre y guarda");
+  }
+
+  function agregarPendiente() {
+    editar(setPendientes, (prev) => [...prev, { key: nuevaClave(), id: null, codigo: null, nombre: "" }]);
+    aviso("Paso agregado · escribe su nombre y guarda");
   }
 
   function agregarGrupo(set: React.Dispatch<React.SetStateAction<Grupo[]>>, abrir: (k: string) => void) {
@@ -414,7 +437,7 @@ export default function ChecklistEditor({
     });
   }
 
-  const total = motivos.length + tipos.length + trabajos.length + internos.length;
+  const total = motivos.length + tipos.length + trabajos.length + internos.length + pendientes.length;
 
   /** Un motivo que se quita del borrador también se suelta de los trabajos. */
   const quitarMotivo = (key: string) => {
@@ -662,6 +685,48 @@ export default function ChecklistEditor({
           ) : null}
         </Bloque>
 
+        {/* Lista 5 · Gestión de pendientes */}
+        <Bloque
+          numero="Lista 5"
+          titulo="Gestión de pendientes"
+          bajada="Los pasos que coordinación va marcando en «Reagendas y pendientes» mientras destraba una visita que no se pudo hacer. Solo se ve en el panel: el técnico y el cliente no la ven."
+          cta="Nuevo paso"
+          onAgregar={agregarPendiente}
+        >
+          {!gestionDisponible ? (
+            <div className="mb-3 px-3.5 py-3 bg-[var(--color-accent-200)] border-l-4 border-[var(--color-accent)] text-[13px] text-[var(--color-accent-800)] max-w-[720px]">
+              Esta lista necesita la migración 014 en la base. Hasta que se corra, lo que agregues acá no se puede
+              guardar.
+            </div>
+          ) : null}
+          <FilasSimples
+            grupo="pendiente"
+            lista={pendientes}
+            visibles={pendientesVisibles}
+            bloqueado={!!filtro}
+            que="paso"
+            placeholder="Ej: Repuesto pedido a bodega"
+            onEditar={(fn) => editar(setPendientes, fn)}
+            onPedirQuitar={(m) =>
+              setConfirmar({
+                titulo: "¿Quitar este paso?",
+                texto: `«${m.nombre || "Sin nombre"}» deja de aparecer en el checklist de «Reagendas y pendientes». No se borra: lo que ya se marcó con él queda guardado, pero deja de contarse. El cambio se aplica al guardar.`,
+                cta: "Quitar paso",
+                accion: () => editar(setPendientes, (prev) => prev.filter((x) => x.key !== m.key)),
+              })
+            }
+          />
+          {pendientes.length === 0 ? (
+            <Vacio>
+              Sin pasos: en «Reagendas y pendientes» cada visita se ve con toda su información, pero sin checklist que
+              marcar.
+            </Vacio>
+          ) : null}
+          {pendientes.length > 0 && pendientesVisibles.length === 0 ? (
+            <Vacio>Ningún paso coincide con «{busqueda}».</Vacio>
+          ) : null}
+        </Bloque>
+
         {/* Plantilla propia */}
         <div className="border-t-2 border-[var(--color-divider)] pt-4.5 mt-2">
           <div className="text-[10px] tracking-[.15em] uppercase text-[var(--color-accent-active)]">Tu plantilla</div>
@@ -670,7 +735,7 @@ export default function ChecklistEditor({
           </h2>
           <p className="m-0 mb-3.5 text-[13px] opacity-68 max-w-[70ch]">
             {plantilla
-              ? `Guardada con ${plantilla.motivos} motivos, ${plantilla.problemas} tipos de problema, ${plantilla.trabajos} trabajos y ${plantilla.internos} ítems internos. Vuelve a fijarla cuando cambies las listas y quieras que ese sea el nuevo punto de partida.`
+              ? `Guardada con ${plantilla.motivos} motivos, ${plantilla.problemas} tipos de problema, ${plantilla.trabajos} trabajos, ${plantilla.internos} ítems internos y ${plantilla.pendientes} pasos de gestión. Vuelve a fijarla cuando cambies las listas y quieras que ese sea el nuevo punto de partida.`
               : "Todavía no has fijado ninguna. Arma las listas como las quieres y fíjalas: desde ahí, «Reiniciar» siempre las devuelve a ese estado."}
           </p>
           <div className="flex items-center gap-2.5 flex-wrap">
