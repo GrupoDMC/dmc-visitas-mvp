@@ -1,7 +1,11 @@
 import ChecklistEditor from "@/components/admin/ChecklistEditor";
 import {
   getPlantilla,
+  hayEstadosProblema,
   hayGestionPendientes,
+  hayGestionProblemas,
+  listarEstadosProblema,
+  listarGestionProblemas,
   listarInternos,
   listarMotivos,
   listarPendientes,
@@ -16,13 +20,29 @@ export const dynamic = "force-dynamic";
 
 export default async function ChecklistPage() {
   if (!(await sesionCon("checklist.ver"))) return <SinAcceso />;
-  const [motivos, tipos, trabajos, internos, pendientes, gestionDisponible, plantilla] = await Promise.all([
+  const [
+    motivos,
+    tipos,
+    trabajos,
+    internos,
+    pendientes,
+    gestionDisponible,
+    gestionProblemas,
+    gestionProblemasDisponible,
+    estadosProblema,
+    estadosProblemaDisponible,
+    plantilla,
+  ] = await Promise.all([
     listarMotivos(),
     listarProblemas(),
     listarTrabajos(),
     listarInternos(),
     listarPendientes(),
     hayGestionPendientes(),
+    listarGestionProblemas(),
+    hayGestionProblemas(),
+    listarEstadosProblema(),
+    hayEstadosProblema(),
     getPlantilla(PLANTILLA_PROPIA),
   ]);
 
@@ -34,6 +54,10 @@ export default async function ChecklistPage() {
       internosIniciales={internos}
       pendientesIniciales={pendientes}
       gestionDisponible={gestionDisponible}
+      gestionProblemasIniciales={gestionProblemas}
+      gestionProblemasDisponible={gestionProblemasDisponible}
+      estadosProblemaIniciales={estadosProblema.filter((e) => e.activo)}
+      estadosProblemaDisponible={estadosProblemaDisponible}
       plantillaInicial={plantilla}
     />
   );

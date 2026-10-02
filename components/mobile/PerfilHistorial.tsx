@@ -5,9 +5,8 @@ import Link from "next/link";
 import Sheet from "./Sheet";
 import Tag from "@/components/Tag";
 import VisorFotos, { useVisorFotos } from "@/components/ui/VisorFotos";
+import EstadoProblemaTag from "@/components/EstadoProblemaTag";
 import {
-  ESTADO_PROBLEMA_LABEL,
-  ESTADO_PROBLEMA_TAG,
   ESTADO_VISITA_BARRA,
   ESTADO_VISITA_LABEL,
   ESTADO_VISITA_TAG,
@@ -439,9 +438,7 @@ function ActaSheet({ visita, tecnicoId, onCerrar }: { visita: Visita; tecnicoId:
                       <div className="font-extrabold text-sm leading-[1.25] text-[var(--color-accent-800)]">
                         {nombreProblema(catalogoProblema, p.tipoCodigo)}
                       </div>
-                      <Tag variant={ESTADO_PROBLEMA_TAG[p.estado]} className="ml-auto">
-                        {ESTADO_PROBLEMA_LABEL[p.estado]}
-                      </Tag>
+                      <EstadoProblemaTag estado={p.estado} className="ml-auto" />
                     </div>
                     {p.items.length > 0 ? (
                       <div className="flex flex-wrap gap-1.5 mt-2">

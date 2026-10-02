@@ -1,9 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import Tag from "@/components/Tag";
 import VisorFotos, { useVisorFotos } from "@/components/ui/VisorFotos";
-import { ESTADO_PROBLEMA_LABEL, ESTADO_PROBLEMA_TAG, textoMotivosReales } from "@/lib/ui/estado";
+import EstadoProblemaTag from "@/components/EstadoProblemaTag";
+import { textoMotivosReales } from "@/lib/ui/estado";
 import { nombreProblema, nombreTrabajo, useReferencias } from "@/lib/ui/referencias";
 import { fechaHoraCorta, resumenEdicion } from "@/lib/ui/edicion";
 import type { CatalogoProblema, CatalogoTrabajo, Visita } from "@/lib/types";
@@ -175,9 +175,7 @@ export default function ActaGuardada({
                   <div className="font-extrabold text-sm leading-[1.25] text-[var(--color-accent-800)]">
                     {nombreProblema(catalogoProblemas, p.tipoCodigo)}
                   </div>
-                  <Tag variant={ESTADO_PROBLEMA_TAG[p.estado]} className="ml-auto">
-                    {ESTADO_PROBLEMA_LABEL[p.estado]}
-                  </Tag>
+                  <EstadoProblemaTag estado={p.estado} className="ml-auto" />
                 </div>
                 {p.items.length > 0 ? (
                   <div className="flex flex-wrap gap-1.5 mt-2">

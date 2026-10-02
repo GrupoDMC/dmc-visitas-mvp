@@ -1,4 +1,4 @@
-import type { EstadoVisita, EstadoProblema } from "@/lib/types";
+import type { CatalogoEstadoProblema, EstadoVisita, EstadoProblema } from "@/lib/types";
 
 export const ESTADO_VISITA_LABEL: Record<EstadoVisita, string> = {
   PROGRAMADA: "Programada",
@@ -76,17 +76,34 @@ export const ESTADO_VISITA_BARRA: Record<EstadoVisita, string> = {
   CANCELADA_ADMIN: "var(--color-neutral-500)",
 };
 
-export const ESTADO_PROBLEMA_LABEL: Record<EstadoProblema, string> = {
-  ABIERTO: "Abierto",
-  PENDIENTE: "Pendiente",
-  RESUELTO: "Resuelto",
-};
+/** Los dos estados que el sistema conoce por nombre; el resto son intermedios. */
+export const ESTADO_PROBLEMA_INICIAL = "ABIERTO";
+export const ESTADO_PROBLEMA_CIERRE = "RESUELTO";
 
-export const ESTADO_PROBLEMA_TAG: Record<EstadoProblema, TagVariant> = {
-  ABIERTO: "accent",
-  PENDIENTE: "outline",
-  RESUELTO: "dark",
-};
+/**
+ * Los tres estados de siempre. Es con lo que nace la Lista 7 del Checklist y
+ * lo que se usa mientras la base no tenga el catálogo (migración 016).
+ */
+export const ESTADOS_PROBLEMA_BASE: CatalogoEstadoProblema[] = [
+  { id: null, codigo: "ABIERTO", nombre: "Abierto", orden: 1, activo: true },
+  { id: null, codigo: "PENDIENTE", nombre: "Espera repuesto", orden: 2, activo: true },
+  { id: null, codigo: "RESUELTO", nombre: "Resuelto", orden: 3, activo: true },
+];
+
+/** El nombre de un estado tal como está hoy en el checklist; si no está, su código. */
+export function etiquetaEstadoProblema(codigo: string, catalogo: CatalogoEstadoProblema[]): string {
+  return (
+    catalogo.find((e) => e.codigo === codigo)?.nombre ??
+    ESTADOS_PROBLEMA_BASE.find((e) => e.codigo === codigo)?.nombre ??
+    codigo
+  );
+}
+
+/** Abierto resalta, resuelto va oscuro y todo estado intermedio va en contorno. */
+export function tagEstadoProblema(codigo: string): TagVariant {
+  if (codigo === ESTADO_PROBLEMA_INICIAL) return "accent";
+  return codigo === ESTADO_PROBLEMA_CIERRE ? "dark" : "outline";
+}
 
 export const ESTADO_PROBLEMA_COLOR: Record<EstadoProblema, string> = {
   ABIERTO: "var(--color-accent)",

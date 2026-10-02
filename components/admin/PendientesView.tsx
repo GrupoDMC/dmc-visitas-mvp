@@ -11,9 +11,8 @@ import VisitasLoteDialogo, { type AccionLote } from "@/components/admin/VisitasL
 import { Casilla } from "@/components/admin/VisitasTable";
 import { Toast, useToast } from "@/components/ui/Toast";
 import { marcarGestionPendienteAction } from "@/app/actions/admin";
+import EstadoProblemaTag from "@/components/EstadoProblemaTag";
 import {
-  ESTADO_PROBLEMA_LABEL,
-  ESTADO_PROBLEMA_TAG,
   ESTADO_VISITA_LABEL,
   ESTADO_VISITA_TAG,
   textoMotivos,
@@ -694,7 +693,7 @@ function Tarjeta({
                           <div className="font-extrabold text-sm leading-[1.25]">
                             {nombreProblema(ref.problemas, pr.tipoCodigo)}
                           </div>
-                          <Tag variant={ESTADO_PROBLEMA_TAG[pr.estado]}>{ESTADO_PROBLEMA_LABEL[pr.estado]}</Tag>
+                          <EstadoProblemaTag estado={pr.estado} />
                           <button
                             onClick={() => router.push(`/admin/visitas/${pr.folio}`)}
                             className="ml-auto min-h-7 px-2 bg-transparent border border-black/[.3] text-[10px] leading-none tracking-[.07em] uppercase cursor-pointer hover:bg-black/[.07]"

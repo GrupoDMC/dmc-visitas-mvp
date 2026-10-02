@@ -19,7 +19,23 @@ export type EstadoVisita =
    */
   | "CANCELADA_ADMIN";
 
-export type EstadoProblema = "ABIERTO" | "PENDIENTE" | "RESUELTO";
+/**
+ * El código de un estado de problema (dmc.catalogo_problema_estado). Ya no
+ * son tres fijos: la Lista 7 del Checklist agrega estados intermedios. Los dos
+ * que el sistema conoce por nombre son ABIERTO (con el que nace) y RESUELTO
+ * (el único que lo cierra).
+ */
+export type EstadoProblema = string;
+
+export interface CatalogoEstadoProblema {
+  /** null en los tres de respaldo, cuando la base todavía no tiene el catálogo. */
+  id: number | null;
+  codigo: string;
+  nombre: string;
+  orden: number;
+  /** false = ya no se ofrece, pero los problemas que lo tienen lo siguen mostrando. */
+  activo: boolean;
+}
 
 export type OrigenRegistro = "MOVIL" | "WEB";
 
@@ -176,6 +192,12 @@ export interface CatalogoPendiente {
   orden: number;
   activo: boolean;
 }
+
+/**
+ * Paso del checklist con que coordinación lleva un problema hasta cerrarlo
+ * ("Repuesto cotizado", "Cliente aprobó"). Solo vive en el panel.
+ */
+export type CatalogoGestionProblema = CatalogoPendiente;
 
 export interface VisitaTrabajoSubtrabajo {
   id: number;
@@ -408,4 +430,5 @@ export interface ChecklistPlantilla {
   trabajos: number;
   internos: number;
   pendientes: number;
+  gestionProblemas: number;
 }

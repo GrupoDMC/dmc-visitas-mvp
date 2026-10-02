@@ -1,7 +1,10 @@
 import "server-only";
 import { agrupar, consulta, consultaCon, ejecutar, num, sql } from "@/lib/data/sql";
+import { ESTADO_PROBLEMA_CIERRE, ESTADO_PROBLEMA_INICIAL, ESTADOS_PROBLEMA_BASE } from "@/lib/ui/estado";
 import type {
+  CatalogoEstadoProblema,
   CatalogoInterno,
+  CatalogoGestionProblema,
   CatalogoMotivo,
   CatalogoPendiente,
   CatalogoProblema,
@@ -217,6 +220,157 @@ export async function listarPendientes(): Promise<CatalogoPendiente[]> {
   }));
 }
 
+/** La Lista 6 necesita la migración 015. Sin ella el resto del checklist sigue andando. */
+export class FaltaMigracionGestionProblemas extends Error {
+  constructor() {
+    super("Falta la migración 015: dmc.catalogo_problema_gestion");
+    this.name = "FaltaMigracionGestionProblemas";
+  }
+}
+
+let conGestionProblemas = false;
+
+/** ¿Está la migración 015? Una vez que aparece no se vuelve a preguntar. */
+export async function hayGestionProblemas(): Promise<boolean> {
+  if (conGestionProblemas) return true;
+  const [fila] = await consulta<{ id: number | null }>(`SELECT OBJECT_ID('dmc.problema_gestion', 'U') AS id`);
+  conGestionProblemas = fila?.id != null;
+  return conGestionProblemas;
+}
+
+/** Los pasos del checklist de gestión de problemas. */
+export async function listarGestionProblemas(): Promise<CatalogoGestionProblema[]> {
+  if (!(await hayGestionProblemas())) return [];
+  const filas = await consulta<FilaMotivo>(
+    `SELECT id, codigo, nombre, orden, activo
+       FROM dmc.catalogo_problema_gestion WHERE activo = 1 ORDER BY orden, id`
+  );
+  return filas.map((f) => ({
+    id: num(f.id),
+    codigo: f.codigo,
+    nombre: f.nombre,
+    orden: f.orden,
+    activo: Boolean(f.activo),
+  }));
+}
+
+/** La Lista 7 necesita la migración 016. Sin ella siguen los tres estados de siempre. */
+export class FaltaMigracionEstadosProblema extends Error {
+  constructor() {
+    super("Falta la migración 016: dmc.catalogo_problema_estado");
+    this.name = "FaltaMigracionEstadosProblema";
+  }
+}
+
+let conEstadosProblema = false;
+
+/** ¿Está la migración 016? Una vez que aparece no se vuelve a preguntar. */
+export async function hayEstadosProblema(): Promise<boolean> {
+  if (conEstadosProblema) return true;
+  const [fila] = await consulta<{ id: number | null }>(
+    `SELECT OBJECT_ID('dmc.catalogo_problema_estado', 'U') AS id`
+  );
+  conEstadosProblema = fila?.id != null;
+  return conEstadosProblema;
+}
+
+/**
+ * Los estados de un problema, en su orden. Vienen también los inactivos: un
+ * problema que quedó en un estado ya quitado tiene que seguir mostrando su
+ * nombre. Quien ofrece estados para elegir filtra por `activo`.
+ */
+export async function listarEstadosProblema(): Promise<CatalogoEstadoProblema[]> {
+  if (!(await hayEstadosProblema())) return ESTADOS_PROBLEMA_BASE;
+  const filas = await consulta<FilaMotivo>(
+    `SELECT id, codigo, nombre, orden, activo
+       FROM dmc.catalogo_problema_estado ORDER BY activo DESC, orden, id`
+  );
+  return filas.map((f) => ({
+    id: num(f.id),
+    codigo: f.codigo,
+    nombre: f.nombre,
+    orden: f.orden,
+    activo: Boolean(f.activo),
+  }));
+}
+
+/** "En cotización" → EN_COTIZAC: el código cabe en dmc.problema.estado, que mide 10. */
+function codigoDeEstado(nombre: string, usados: Set<string>): string {
+  const base =
+    nombre
+      .toUpperCase()
+      .normalize("NFD")
+      .replace(/\p{Diacritic}/gu, "")
+      .replace(/[^A-Z0-9]+/g, "_")
+      .replace(/^_|_$/g, "") || "ESTADO";
+  let codigo = base.slice(0, 10).replace(/_$/, "");
+  let n = 2;
+  while (usados.has(codigo)) {
+    const sufijo = `_${n}`;
+    codigo = base.slice(0, 10 - sufijo.length).replace(/_$/, "") + sufijo;
+    n += 1;
+  }
+  usados.add(codigo);
+  return codigo;
+}
+
+/**
+ * Guarda la Lista 7. Igual que las otras: la posición es el orden, lo que no
+ * viene se desactiva y nada se borra. La diferencia es que ABIERTO y RESUELTO
+ * nunca se desactivan, aunque el borrador no los traiga: el primero es con el
+ * que nace un problema y el segundo es el que lo cierra.
+ */
+async function guardarEstadosProblema(items: MotivoBorrador[]): Promise<{ vivos: number; desactivados: number }> {
+  const filas = await consulta<{ id: number; codigo: string; nombre: string }>(
+    `SELECT id, codigo, nombre FROM dmc.catalogo_problema_estado`
+  );
+  const ids = new Set(filas.map((f) => num(f.id)));
+  const porNombre = new Map(filas.map((f) => [f.nombre.trim().toLowerCase(), num(f.id)]));
+  const codigos = new Set(filas.map((f) => f.codigo));
+  const vivos: number[] = [];
+
+  for (const [i, item] of items.entries()) {
+    const nombre = item.nombre.trim();
+    if (!nombre) continue;
+    // El id llega del navegador: si no existe, se busca por nombre (un estado
+    // quitado antes se reactiva en vez de chocar con la unicidad).
+    const previo = item.id !== null && ids.has(item.id) ? item.id : porNombre.get(nombre.toLowerCase());
+    if (previo !== undefined && !vivos.includes(previo)) {
+      await ejecutar(
+        `UPDATE dmc.catalogo_problema_estado SET nombre = @nombre, orden = @orden, activo = 1 WHERE id = @id`,
+        [
+          ["nombre", sql.NVarChar(80), nombre],
+          ["orden", sql.SmallInt, i + 1],
+          ["id", sql.BigInt, previo],
+        ]
+      );
+      vivos.push(previo);
+      continue;
+    }
+    const [fila] = await consultaCon<{ id: number }>(
+      `INSERT INTO dmc.catalogo_problema_estado (codigo, nombre, orden, activo)
+       OUTPUT INSERTED.id AS id VALUES (@codigo, @nombre, @orden, 1)`,
+      [
+        ["codigo", sql.VarChar(10), codigoDeEstado(nombre, codigos)],
+        ["nombre", sql.NVarChar(80), nombre],
+        ["orden", sql.SmallInt, i + 1],
+      ]
+    );
+    vivos.push(num(fila.id));
+  }
+
+  const lista = vivos.length ? vivos.join(",") : "0";
+  const desactivados = await ejecutar(
+    `UPDATE dmc.catalogo_problema_estado SET activo = 0
+      WHERE activo = 1 AND id NOT IN (${lista})
+        AND codigo NOT IN ('${ESTADO_PROBLEMA_INICIAL}', '${ESTADO_PROBLEMA_CIERRE}')`
+  );
+  const [cuenta] = await consulta<{ n: number }>(
+    `SELECT COUNT(*) AS n FROM dmc.catalogo_problema_estado WHERE activo = 1`
+  );
+  return { vivos: num(cuenta?.n ?? 0), desactivados };
+}
+
 // ── Guardado en bloque ──────────────────────────────────────────────────────
 
 /** Una entrada del borrador. `id` en null significa que es nueva. */
@@ -258,6 +412,10 @@ export interface BorradorChecklist {
   internos?: MotivoBorrador[];
   /** Checklist de gestión de reagendas y pendientes. Misma forma que los motivos. */
   pendientes?: MotivoBorrador[];
+  /** Checklist de gestión de problemas. Misma forma que los motivos. */
+  gestionProblemas?: MotivoBorrador[];
+  /** Los estados de un problema. Misma forma que los motivos. */
+  estadosProblema?: MotivoBorrador[];
 }
 
 export interface ResumenChecklist {
@@ -266,6 +424,8 @@ export interface ResumenChecklist {
   trabajos: number;
   internos: number;
   pendientes: number;
+  gestionProblemas: number;
+  estadosProblema: number;
   desactivados: number;
 }
 
@@ -415,22 +575,61 @@ export async function guardarChecklist(borrador: BorradorChecklist): Promise<Res
     throw new FaltaMigracionPendientes();
   }
 
+  // ── Checklist de gestión de problemas ── (misma regla, con la migración 015)
+  let vivosGestionProblema = 0;
+  if (await hayGestionProblemas()) {
+    if (borrador.gestionProblemas) {
+      const gestion = await guardarListaSimple("dmc.catalogo_problema_gestion", borrador.gestionProblemas, "GESTION");
+      vivosGestionProblema = gestion.vivos.length;
+      desactivados += gestion.desactivados;
+    } else {
+      vivosGestionProblema = (await listarGestionProblemas()).length;
+    }
+  } else if (borrador.gestionProblemas?.some((x) => x.nombre.trim())) {
+    throw new FaltaMigracionGestionProblemas();
+  }
+
+  // ── Estados del problema ── (migración 016)
+  // Sin la migración solo se reclama si la lista dejó de ser la de siempre.
+  let vivosEstado = ESTADOS_PROBLEMA_BASE.length;
+  if (await hayEstadosProblema()) {
+    if (borrador.estadosProblema) {
+      const estados = await guardarEstadosProblema(borrador.estadosProblema);
+      vivosEstado = estados.vivos;
+      desactivados += estados.desactivados;
+    } else {
+      vivosEstado = (await listarEstadosProblema()).filter((e) => e.activo).length;
+    }
+  } else if (borrador.estadosProblema) {
+    const nombres = borrador.estadosProblema.map((e) => e.nombre.trim()).filter(Boolean);
+    const deSiempre = ESTADOS_PROBLEMA_BASE.map((e) => e.nombre);
+    if (nombres.length !== deSiempre.length || nombres.some((n, i) => n !== deSiempre[i])) {
+      throw new FaltaMigracionEstadosProblema();
+    }
+  }
+
   return {
     motivos: vivosMotivo.length,
     problemas: vivosProblema.length,
     trabajos: vivosTrabajo.length,
     internos: vivosInterno,
     pendientes: vivosPendiente,
+    gestionProblemas: vivosGestionProblema,
+    estadosProblema: vivosEstado,
     desactivados,
   };
 }
 
 /**
- * Motivos, checklist interno y gestión de pendientes: las tres tablas son una
+ * Motivos, checklist interno y las dos listas de gestión: todas son una
  * lista plana de (codigo, nombre, orden, activo), así que se guardan igual.
  */
 async function guardarListaSimple(
-  tabla: "dmc.catalogo_motivo" | "dmc.catalogo_interno" | "dmc.catalogo_pendiente",
+  tabla:
+    | "dmc.catalogo_motivo"
+    | "dmc.catalogo_interno"
+    | "dmc.catalogo_pendiente"
+    | "dmc.catalogo_problema_gestion",
   items: MotivoBorrador[],
   respaldo: string
 ): Promise<{ vivos: number[]; idPorNombre: Map<string, number>; desactivados: number }> {
@@ -558,12 +757,13 @@ async function desactivarSobrantes(tabla: string, vivos: number[], extra = "1 = 
 export const PLANTILLA_PROPIA = "Mi plantilla";
 
 export async function guardarPlantilla(nombre: string, usuarioId: number | null): Promise<ChecklistPlantilla> {
-  const [motivos, problemas, trabajos, internos, pendientes] = await Promise.all([
+  const [motivos, problemas, trabajos, internos, pendientes, gestionProblemas] = await Promise.all([
     listarMotivos(),
     listarProblemas(),
     listarTrabajos(),
     listarInternos(),
     listarPendientes(),
+    listarGestionProblemas(),
   ]);
   const nombreMotivo = (codigo: string) => motivos.find((m) => m.codigo === codigo)?.nombre;
 
@@ -592,6 +792,7 @@ export async function guardarPlantilla(nombre: string, usuarioId: number | null)
     })),
     internos: internos.map((x) => ({ id: null, nombre: x.nombre })),
     pendientes: pendientes.map((x) => ({ id: null, nombre: x.nombre })),
+    gestionProblemas: gestionProblemas.map((x) => ({ id: null, nombre: x.nombre })),
   };
 
   await ejecutar(
@@ -640,6 +841,7 @@ async function leerPlantilla(nombre: string): Promise<{ fila: FilaPlantilla; dat
         // Plantillas guardadas antes de que existieran: sin estas listas.
         internos: datos.internos,
         pendientes: datos.pendientes,
+        gestionProblemas: datos.gestionProblemas,
       },
     };
   } catch {
@@ -662,6 +864,7 @@ export async function getPlantilla(nombre: string): Promise<ChecklistPlantilla |
     trabajos: leida.datos.trabajos.length,
     internos: leida.datos.internos?.length ?? 0,
     pendientes: leida.datos.pendientes?.length ?? 0,
+    gestionProblemas: leida.datos.gestionProblemas?.length ?? 0,
   };
 }
 
@@ -674,12 +877,13 @@ export async function aplicarPlantilla(nombre: string): Promise<ResumenChecklist
   const leida = await leerPlantilla(nombre);
   if (!leida) throw new Error("Todavía no has guardado ninguna plantilla.");
 
-  const [motivos, problemas, trabajos, internos, pendientes] = await Promise.all([
+  const [motivos, problemas, trabajos, internos, pendientes, gestionProblemas] = await Promise.all([
     listarMotivos(),
     listarProblemas(),
     listarTrabajos(),
     listarInternos(),
     listarPendientes(),
+    listarGestionProblemas(),
   ]);
 
   const idPorNombre = <T extends { id: number; nombre: string }>(lista: T[], buscado: string) =>
@@ -703,6 +907,10 @@ export async function aplicarPlantilla(nombre: string): Promise<ResumenChecklist
     })),
     internos: leida.datos.internos?.map((x) => ({ id: idPorNombre(internos, x.nombre), nombre: x.nombre })),
     pendientes: leida.datos.pendientes?.map((x) => ({ id: idPorNombre(pendientes, x.nombre), nombre: x.nombre })),
+    gestionProblemas: leida.datos.gestionProblemas?.map((x) => ({
+      id: idPorNombre(gestionProblemas, x.nombre),
+      nombre: x.nombre,
+    })),
   };
 
   return guardarChecklist(borrador);

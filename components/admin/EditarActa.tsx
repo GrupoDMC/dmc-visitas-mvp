@@ -4,10 +4,12 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import Tag from "@/components/Tag";
+import AdminHeader from "@/components/admin/AdminHeader";
+import SelectBuscable from "@/components/ui/SelectBuscable";
 import { Toast, useToast } from "@/components/ui/Toast";
 import { editarActaAdminAction } from "@/app/actions/ediciones";
-import { ESTADO_PROBLEMA_LABEL, ESTADO_PROBLEMA_TAG } from "@/lib/ui/estado";
-import { formularioDesdeActa } from "@/lib/ui/edicion";
+import EstadoProblemaTag from "@/components/EstadoProblemaTag";
+import { fechaHoraCorta, formularioDesdeActa } from "@/lib/ui/edicion";
 import { fmtRut, fmtTel, mensajeRut } from "@/lib/ui/formato";
 import { comprimirFoto } from "@/lib/ui/imagen";
 import { trabajoVaConMotivo } from "@/lib/ui/referencias";
@@ -227,6 +229,7 @@ export default function EditarActa({
     const problema = falta();
     if (problema) {
       setError(problema);
+      irA("guardar");
       return aviso(problema);
     }
     setGuardando(true);
@@ -276,272 +279,372 @@ export default function EditarActa({
     }
   }
 
+  // Qué secciones llevan cambios, comparando contra lo que se cargó. Es solo
+  // para orientar a quien edita: el registro de verdad lo arma el servidor.
+  const huellas = {
+    responsable: JSON.stringify([respNombre.trim(), respRut, respTel]),
+    trabajo: JSON.stringify([
+      motivosMarcados,
+      trabajos.map((t) => [t.codigo, motivoDe(t), t.subs.map((x) => [x.etiqueta, x.cantidad]).sort()]),
+      obs.trim(),
+    ]),
+    problemas: JSON.stringify(
+      problemas.map((x) => [x.dbId ?? 0, x.codigo, x.items.map((i) => [i.etiqueta, i.cantidad]).sort(), x.desc.trim()])
+    ),
+    interno: JSON.stringify([
+      [...internos].sort(),
+      interno.trim(),
+      fotos.filter((f) => f.interno).map((f) => f.id),
+      videos.filter((v) => v.interno).map((v) => v.id),
+    ]),
+    media: JSON.stringify([fotos.filter((f) => !f.interno).map((f) => f.id), videos.filter((v) => !v.interno).map((v) => v.id)]),
+  };
+  const [huellasIniciales] = useState(huellas);
+  const SECCIONES = [
+    { clave: "responsable", titulo: "Responsable de tienda" },
+    { clave: "trabajo", titulo: "Motivo y trabajo realizado" },
+    { clave: "problemas", titulo: "Problemas detectados" },
+    { clave: "interno", titulo: "Comentario interno" },
+    { clave: "media", titulo: "Fotos y video del trabajo" },
+  ] as const;
+  type Clave = (typeof SECCIONES)[number]["clave"];
+  const cambio = (clave: Clave) => huellas[clave] !== huellasIniciales[clave];
+  const conCambios = SECCIONES.filter((x) => cambio(x.clave));
+  const hayCambios = conCambios.length > 0;
+
+  function irA(clave: string) {
+    document.getElementById(`ea-sec-${clave}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  const quitarFoto = (id: number) => setFotos((prev) => prev.filter((f) => f.id !== id));
+  const quitarVideo = (id: number) => setVideos((prev) => prev.filter((v) => v.id !== id));
+  const ejec = visita.ejecucion;
+
   return (
-    <div className="pb-12 animate-fade-in">
-      <div className="flex items-center gap-3 flex-wrap px-4 md:px-7 py-3.5 border-b border-[var(--color-divider-soft)]">
+    <div className="pb-16 animate-fade-in">
+      <AdminHeader kicker={`Visitas · ${visita.folio}`} title="Editar acta">
+        <span className="text-[13px] opacity-66 tabular-nums max-sm:hidden">
+          {hayCambios
+            ? `${conCambios.length} ${conCambios.length === 1 ? "sección con cambios" : "secciones con cambios"}`
+            : "Sin cambios todavía"}
+        </span>
         <Link href={hrefActa} className="btn btn-secondary min-h-10 px-3.5">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
-            <path d="M19 12H5M11 6l-6 6 6 6" />
-          </svg>
-          <span>Volver al acta sin guardar</span>
+          Cancelar
         </Link>
-        <Tag variant="accent">Editando acta cerrada</Tag>
-      </div>
+        <button
+          type="button"
+          onClick={() => void guardar()}
+          disabled={guardando || !hayCambios}
+          className="btn btn-primary min-h-10 px-4"
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6">
+            <path d="M4 12l5 5L20 6" />
+          </svg>
+          <span>{guardando ? "Guardando…" : "Guardar cambios"}</span>
+        </button>
+      </AdminHeader>
 
-      <div className="px-4 md:px-7 pt-7 max-w-[900px]">
-        <div className="text-[10px] tracking-[.15em] uppercase text-[var(--color-accent-active)]">Editar acta</div>
-        <h1 className="font-extrabold text-[30px] md:text-[40px] leading-[1.04] tracking-[-.035em] mt-2.5 mb-1.5 tabular-nums">
-          {visita.folio}
-        </h1>
-        <p className="m-0 mb-5 text-[15px] opacity-60">
-          {visita.cliente?.nombreFantasia} · {visita.sucursal?.nombre} · {visita.tecnico?.nombreCompleto}
-        </p>
-        <div className="px-4 py-3.5 mb-6 bg-[var(--color-surface)] border-l-4 border-[var(--color-text)] text-[13px] leading-[1.5]">
-          Cada dato está en su sección, tal como quedó guardado. Nada cambia hasta que aprietes «Guardar cambios» al
-          final. Ahí queda registrado qué cambiaste, cuándo y por qué; el PDF del acta sale con los datos corregidos y
-          sin ninguna marca de edición. La firma de la tienda no se toca.
-        </div>
-
-        {/* ── 1 · Responsable ── */}
-        <Tarjeta n={1} titulo="Responsable de tienda">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="field min-w-0 sm:col-span-2">
-              <label htmlFor="ea-nombre">Nombre</label>
-              <input
-                id="ea-nombre"
-                className="input"
-                value={respNombre}
-                onChange={(e) => setRespNombre(e.target.value)}
-                autoComplete="off"
-              />
+      <div className="px-4 md:px-7 pt-6 grid grid-cols-1 xl:grid-cols-[minmax(0,860px)_264px] gap-x-8 items-start">
+        <div className="min-w-0 flex flex-col gap-6">
+          {/* De qué acta se trata, y las reglas del juego en una línea. */}
+          <div className="border border-[var(--color-divider-soft)] bg-[var(--color-surface-3)]">
+            <div className="grid grid-cols-2 sm:grid-cols-4">
+              {[
+                { k: "Cliente", v: visita.cliente?.nombreFantasia ?? "—" },
+                { k: "Sucursal", v: visita.sucursal?.nombre ?? "—" },
+                { k: "Técnico", v: visita.tecnico?.nombreCompleto ?? "—" },
+                { k: "Acta cerrada", v: ejec?.horaTermino ? fechaHoraCorta(ejec.horaTermino) : "—" },
+              ].map((d) => (
+                <div key={d.k} className="px-4 py-3 min-w-0 border-r border-b border-[var(--color-divider-faint)]">
+                  <div className="text-[10px] tracking-[.11em] uppercase opacity-62">{d.k}</div>
+                  <div className="text-[14px] font-extrabold leading-[1.3] mt-1 truncate" title={d.v}>
+                    {d.v}
+                  </div>
+                </div>
+              ))}
             </div>
-            <div className="field min-w-0">
-              <label htmlFor="ea-rut">RUT</label>
-              <input
-                id="ea-rut"
-                className="input tabular-nums"
-                value={respRut}
-                onChange={(e) => setRespRut(fmtRut(e.target.value))}
-                placeholder="11.111.111-1"
-                autoComplete="off"
-              />
-              {errorRut ? <div className="mt-1 text-xs text-[var(--color-accent-800)]">{errorRut}</div> : null}
-            </div>
-            <div className="field min-w-0">
-              <label htmlFor="ea-tel">Teléfono</label>
-              <input
-                id="ea-tel"
-                className="input tabular-nums"
-                value={respTel}
-                onChange={(e) => setRespTel(fmtTel(e.target.value))}
-                placeholder="+56 9 1234 5678"
-                autoComplete="off"
-              />
+            <div className="flex gap-3 items-start px-4 py-3 text-[13px] leading-[1.5]">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="flex-none mt-0.5 opacity-70">
+                <circle cx="12" cy="12" r="9" />
+                <path d="M12 11v5M12 7.5v.5" />
+              </svg>
+              <span className="opacity-80">
+                Nada cambia hasta que aprietes «Guardar cambios». Ahí queda registrado qué cambiaste, cuándo y por
+                qué. El PDF sale con los datos corregidos, sin ninguna marca, y la firma de la tienda no se toca.
+              </span>
             </div>
           </div>
-        </Tarjeta>
 
-        {/* ── 2 · Motivos y trabajo realizado ── */}
-        <Tarjeta n={2} titulo="Motivo y trabajo realizado">
-          <div className="flex flex-col gap-4">
-            {motivosMarcados.map((codigo) => {
-              const suyos = trabajos.filter((t) => motivoDe(t) === codigo);
-              const porAgregar = catalogoTrabajo.filter(
-                (t) => trabajoVaConMotivo(t, codigo) && !suyos.some((x) => x.codigo === t.codigo)
-              );
-              return (
-                <div key={codigo} className="border border-black/[.3] border-l-4 border-l-[var(--color-accent)]">
-                  <div className="flex items-center gap-3 px-4 py-3 bg-[var(--color-surface)] border-b border-black/[.2]">
-                    <div className="font-extrabold text-[15px] flex-1 min-w-0">{nombreMotivo(codigo)}</div>
-                    {agendados.includes(codigo) ? (
-                      <span className="text-[11px] tracking-[.09em] uppercase opacity-60">Agendado</span>
-                    ) : (
-                      <button type="button" onClick={() => quitarMotivo(codigo)} className="btn btn-ghost min-h-8 text-[13px]">
-                        Quitar motivo{suyos.length ? ` y sus ${suyos.length === 1 ? "trabajo" : "trabajos"}` : ""}
-                      </button>
-                    )}
-                  </div>
-
-                  <div className="px-4 py-4 flex flex-col gap-3.5">
-                    {suyos.map((t) => {
-                      const cat = catalogoTrabajo.find((c) => c.codigo === t.codigo);
-                      // Lo del checklist de hoy más lo que el acta ya traía y
-                      // el checklist dejó de ofrecer: eso tampoco se pierde.
-                      const opciones = [
-                        ...(cat?.subtrabajos ?? []).map((s) => ({ etiqueta: s.etiqueta, conCantidad: s.permiteCantidad })),
-                        ...t.subs
-                          .filter((s) => !(cat?.subtrabajos ?? []).some((c) => c.etiqueta === s.etiqueta))
-                          .map((s) => ({ etiqueta: s.etiqueta, conCantidad: s.cantidad > 1 })),
-                      ];
-                      return (
-                        <div key={t.id} className="border border-black/[.25] bg-white px-4 py-3.5">
-                          <div className="flex items-start gap-3">
-                            <div className="font-extrabold text-base flex-1 min-w-0">{nombreTrabajo(t.codigo)}</div>
-                            <button
-                              type="button"
-                              onClick={() => setTrabajos((prev) => prev.filter((x) => x.id !== t.id))}
-                              className="btn btn-ghost min-h-8 text-[13px] flex-none"
-                            >
-                              Quitar trabajo
-                            </button>
-                          </div>
-                          {opciones.length > 0 ? (
-                            <>
-                              <div className="text-[11px] tracking-[.09em] uppercase opacity-62 mt-2.5 mb-1.5">
-                                {cat?.grupoLabel ?? "Subtrabajos"}
-                              </div>
-                              <ListaMarcable
-                                opciones={opciones}
-                                marcados={t.subs}
-                                onCambiar={(fn) => cambiarSubs(t.id, fn)}
-                              />
-                            </>
-                          ) : null}
-                          {t.detalle ? <div className="text-[13px] opacity-70 mt-2.5">{t.detalle}</div> : null}
-                        </div>
-                      );
-                    })}
-                    {suyos.length === 0 ? (
-                      <div className="text-[13px] opacity-66">Este motivo no tiene trabajos registrados.</div>
-                    ) : null}
-                    {porAgregar.length > 0 ? (
-                      <div className="field max-w-[420px]">
-                        <label htmlFor={`ea-agregar-${codigo}`}>Agregar un trabajo a este motivo</label>
-                        <select
-                          id={`ea-agregar-${codigo}`}
-                          className="input"
-                          value=""
-                          onChange={(e) => {
-                            const elegido = e.target.value;
-                            if (!elegido) return;
-                            const id = nuevoId();
-                            setTrabajos((prev) => [...prev, { id, codigo: elegido, motivo: codigo, subs: [], detalle: "" }]);
-                          }}
-                        >
-                          <option value="">Elige el trabajo…</option>
-                          {porAgregar.map((c) => (
-                            <option key={c.codigo} value={c.codigo}>
-                              {c.nombre}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                    ) : null}
-                  </div>
-                </div>
-              );
-            })}
-
-            {motivos.some((m) => !motivosCodigos.includes(m.codigo)) ? (
-              <div>
-                <div className="text-[11px] tracking-[.09em] uppercase opacity-62 mb-2">
-                  La visita fue también por otro motivo
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {motivos
-                    .filter((m) => !motivosCodigos.includes(m.codigo))
-                    .map((m) => (
-                      <button
-                        key={m.codigo}
-                        type="button"
-                        onClick={() => setMotivosCodigos((prev) => [...prev, m.codigo])}
-                        className="btn btn-secondary min-h-9 px-3 text-[13px] font-normal"
-                      >
-                        + {m.nombre}
-                      </button>
-                    ))}
-                </div>
+          {/* ── 1 · Responsable ── */}
+          <Seccion
+            id="responsable"
+            n={1}
+            titulo="Responsable de tienda"
+            ayuda="Quien recibió al técnico y firmó el acta."
+            cambio={cambio("responsable")}
+          >
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-5 gap-y-4">
+              <div className="field min-w-0 sm:col-span-2">
+                <label htmlFor="ea-nombre">Nombre</label>
+                <input
+                  id="ea-nombre"
+                  className="input"
+                  value={respNombre}
+                  onChange={(e) => setRespNombre(e.target.value)}
+                  placeholder="Nombre y apellido"
+                  autoComplete="off"
+                />
               </div>
-            ) : null}
-
-            <div className="field">
-              <label htmlFor="ea-obs">Detalle del trabajo (lo ve el cliente)</label>
-              <textarea id="ea-obs" className="input" rows={3} value={obs} onChange={(e) => setObs(e.target.value)} />
+              <div className="field min-w-0">
+                <label htmlFor="ea-rut">RUT</label>
+                <input
+                  id="ea-rut"
+                  className="input tabular-nums"
+                  value={respRut}
+                  onChange={(e) => setRespRut(fmtRut(e.target.value))}
+                  placeholder="11.111.111-1"
+                  autoComplete="off"
+                  aria-invalid={!!errorRut}
+                  style={errorRut ? { borderColor: "var(--color-accent)" } : undefined}
+                />
+                {errorRut ? <div className="mt-1.5 text-xs text-[var(--color-accent-800)]">{errorRut}</div> : null}
+              </div>
+              <div className="field min-w-0">
+                <label htmlFor="ea-tel">Teléfono</label>
+                <input
+                  id="ea-tel"
+                  className="input tabular-nums"
+                  value={respTel}
+                  onChange={(e) => setRespTel(fmtTel(e.target.value))}
+                  placeholder="+56 9 1234 5678"
+                  autoComplete="off"
+                />
+              </div>
             </div>
-          </div>
-        </Tarjeta>
+          </Seccion>
 
-        {/* ── 3 · Problemas ── */}
-        <Tarjeta n={3} titulo={`Problemas detectados (${problemas.length})`}>
-          <div className="flex flex-col gap-3.5">
-            {problemas.map((p, i) => {
-              const cat = catalogoProblema.find((c) => c.codigo === p.codigo);
-              const opciones = [
-                ...(cat?.opciones ?? []).map((o) => ({ etiqueta: o.etiqueta, conCantidad: o.permiteCantidad })),
-                ...p.items
-                  .filter((it) => !(cat?.opciones ?? []).some((o) => o.etiqueta === it.etiqueta))
-                  .map((it) => ({ etiqueta: it.etiqueta, conCantidad: true })),
-              ];
-              return (
-                <div key={p.id} className="border border-black/[.3] bg-white">
-                  <div className="flex items-center gap-2.5 flex-wrap px-4 py-3 bg-[var(--color-surface)] border-b border-black/[.2]">
-                    <div className="font-extrabold text-xs tracking-[.09em] uppercase">Problema {i + 1}</div>
-                    {p.dbId ? (
-                      <Tag variant={ESTADO_PROBLEMA_TAG[p.estado]}>{ESTADO_PROBLEMA_LABEL[p.estado]}</Tag>
-                    ) : (
-                      <Tag variant="outline">Nuevo</Tag>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => setProblemas((prev) => prev.filter((x) => x.id !== p.id))}
-                      className="btn btn-ghost min-h-8 text-[13px] ml-auto"
-                    >
-                      Quitar problema
-                    </button>
-                  </div>
-                  <div className="px-4 py-4 flex flex-col gap-3.5">
-                    <div className="field max-w-[420px]">
-                      <label htmlFor={`ea-tipo-${p.id}`}>Tipo de problema</label>
-                      <select
-                        id={`ea-tipo-${p.id}`}
-                        className="input"
-                        value={p.codigo}
-                        // Cada tipo tiene sus propias opciones: al cambiarlo, lo marcado del anterior no aplica.
-                        onChange={(e) => cambiarProblema(p.id, { codigo: e.target.value, items: [] })}
-                      >
-                        {!cat ? <option value={p.codigo}>{p.codigo}</option> : null}
-                        {catalogoProblema.map((c) => (
-                          <option key={c.codigo} value={c.codigo}>
-                            {c.nombre}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    {opciones.length > 0 ? (
-                      <div>
-                        <div className="text-[11px] tracking-[.09em] uppercase opacity-62 mb-1.5">
-                          {cat?.grupoLabel ?? "Detalle"}
-                        </div>
-                        <ListaMarcable
-                          opciones={opciones}
-                          marcados={p.items}
-                          onCambiar={(fn) => cambiarProblema(p.id, { items: fn(p.items) })}
-                        />
+          {/* ── 2 · Motivos y trabajo realizado ── */}
+          <Seccion
+            id="trabajo"
+            n={2}
+            titulo="Motivo y trabajo realizado"
+            ayuda="Cada motivo con lo que se hizo en él. Lo marcado es lo que sale en el acta."
+            cambio={cambio("trabajo")}
+          >
+            <div className="flex flex-col gap-5">
+              {motivosMarcados.map((codigo) => {
+                const suyos = trabajos.filter((t) => motivoDe(t) === codigo);
+                const porAgregar = catalogoTrabajo.filter(
+                  (t) => trabajoVaConMotivo(t, codigo) && !suyos.some((x) => x.codigo === t.codigo)
+                );
+                return (
+                  <div key={codigo} className="border border-[var(--color-divider-soft)] border-l-4 border-l-[var(--color-accent)] bg-white">
+                    <div className="flex items-center gap-3 px-4 py-3 border-b border-[var(--color-divider-faint)]">
+                      <div className="min-w-0 flex-1">
+                        <div className="text-[10px] tracking-[.12em] uppercase text-[var(--color-accent-active)]">Motivo</div>
+                        <div className="font-extrabold text-[16px] leading-[1.25] mt-0.5">{nombreMotivo(codigo)}</div>
                       </div>
-                    ) : null}
-                    <div className="field">
-                      <label htmlFor={`ea-desc-${p.id}`}>
-                        {opciones.length > 0 ? "Nota (opcional)" : "Qué se encontró"}
-                      </label>
-                      <textarea
-                        id={`ea-desc-${p.id}`}
-                        className="input"
-                        rows={2}
-                        value={p.desc}
-                        onChange={(e) => cambiarProblema(p.id, { desc: e.target.value })}
+                      {agendados.includes(codigo) ? (
+                        <span className="tag tag-neutral flex-none" title="Lo agendó coordinación: se cambia en «Corregir visita»">
+                          Agendado
+                        </span>
+                      ) : (
+                        <BotonQuitar
+                          etiqueta={`Quitar el motivo ${nombreMotivo(codigo)}${suyos.length ? " y sus trabajos" : ""}`}
+                          onClick={() => quitarMotivo(codigo)}
+                        />
+                      )}
+                    </div>
+
+                    <div className="px-4 py-4 flex flex-col gap-3">
+                      {suyos.map((t) => {
+                        const cat = catalogoTrabajo.find((c) => c.codigo === t.codigo);
+                        // Lo del checklist de hoy más lo que el acta ya traía y
+                        // el checklist dejó de ofrecer: eso tampoco se pierde.
+                        const opciones = [
+                          ...(cat?.subtrabajos ?? []).map((x) => ({ etiqueta: x.etiqueta, conCantidad: x.permiteCantidad })),
+                          ...t.subs
+                            .filter((x) => !(cat?.subtrabajos ?? []).some((c) => c.etiqueta === x.etiqueta))
+                            .map((x) => ({ etiqueta: x.etiqueta, conCantidad: x.cantidad > 1 })),
+                        ];
+                        return (
+                          <div key={t.id} className="border border-[var(--color-divider-faint)] bg-[var(--color-surface-3)]">
+                            <div className="flex items-center gap-3 pl-4 pr-2 py-2">
+                              <div className="font-extrabold text-[15px] leading-[1.3] flex-1 min-w-0">{nombreTrabajo(t.codigo)}</div>
+                              {t.subs.length > 0 ? (
+                                <span className="text-[11px] opacity-62 tabular-nums flex-none">
+                                  {t.subs.length} {t.subs.length === 1 ? "marcado" : "marcados"}
+                                </span>
+                              ) : null}
+                              <BotonQuitar
+                                etiqueta={`Quitar el trabajo ${nombreTrabajo(t.codigo)}`}
+                                onClick={() => setTrabajos((prev) => prev.filter((x) => x.id !== t.id))}
+                              />
+                            </div>
+                            {opciones.length > 0 ? (
+                              <div className="px-4 pb-4">
+                                <div className="text-[10px] tracking-[.11em] uppercase opacity-62 mb-2">
+                                  {cat?.grupoLabel ?? "Subtrabajos"}
+                                </div>
+                                <ListaMarcable opciones={opciones} marcados={t.subs} onCambiar={(fn) => cambiarSubs(t.id, fn)} />
+                              </div>
+                            ) : null}
+                            {t.detalle ? <div className="px-4 pb-3.5 text-[13px] opacity-70">{t.detalle}</div> : null}
+                          </div>
+                        );
+                      })}
+                      {suyos.length === 0 ? (
+                        <div className="px-3.5 py-3 border border-dashed border-[var(--color-divider)] text-[13px] opacity-70">
+                          Este motivo todavía no tiene trabajos. Agrega al menos uno o quita el motivo.
+                        </div>
+                      ) : null}
+                      {porAgregar.length > 0 ? (
+                        <div className="max-w-[440px]">
+                          <SelectBuscable
+                            id={`ea-agregar-${codigo}`}
+                            valor=""
+                            opciones={porAgregar.map((c) => ({ v: c.codigo, t: c.nombre }))}
+                            onChange={(elegido) => {
+                              if (!elegido) return;
+                              const id = nuevoId();
+                              setTrabajos((prev) => [...prev, { id, codigo: elegido, motivo: codigo, subs: [], detalle: "" }]);
+                            }}
+                            placeholder="+ Agregar un trabajo a este motivo…"
+                            ariaLabel={`Agregar un trabajo a ${nombreMotivo(codigo)}`}
+                          />
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+                );
+              })}
+
+              {motivos.some((m) => !motivosCodigos.includes(m.codigo)) ? (
+                <div>
+                  <div className="text-[11px] tracking-[.09em] uppercase opacity-62 mb-2">
+                    ¿La visita fue también por otro motivo?
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {motivos
+                      .filter((m) => !motivosCodigos.includes(m.codigo))
+                      .map((m) => (
+                        <button
+                          key={m.codigo}
+                          type="button"
+                          onClick={() => setMotivosCodigos((prev) => [...prev, m.codigo])}
+                          className="inline-flex items-center gap-1.5 min-h-9 px-3 bg-transparent border border-dashed border-[var(--color-divider)] text-[13px] text-[var(--color-text)] cursor-pointer hover:bg-black/[.06] hover:border-solid"
+                        >
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6">
+                            <path d="M12 5v14M5 12h14" />
+                          </svg>
+                          {m.nombre}
+                        </button>
+                      ))}
+                  </div>
+                </div>
+              ) : null}
+
+              <div className="field pt-1">
+                <label htmlFor="ea-obs">Detalle del trabajo · lo ve el cliente</label>
+                <textarea
+                  id="ea-obs"
+                  className="input leading-[1.5]"
+                  rows={3}
+                  value={obs}
+                  onChange={(e) => setObs(e.target.value)}
+                  placeholder="Sin detalle escrito"
+                />
+              </div>
+            </div>
+          </Seccion>
+
+          {/* ── 3 · Problemas ── */}
+          <Seccion
+            id="problemas"
+            n={3}
+            titulo="Problemas detectados"
+            ayuda="El estado de cada problema se cambia en Problemas. Uno que coordinación ya gestionó se puede corregir, pero no quitar."
+            cuenta={problemas.length}
+            cambio={cambio("problemas")}
+          >
+            <div className="flex flex-col gap-3.5">
+              {problemas.map((p, i) => {
+                const cat = catalogoProblema.find((c) => c.codigo === p.codigo);
+                const opciones = [
+                  ...(cat?.opciones ?? []).map((o) => ({ etiqueta: o.etiqueta, conCantidad: o.permiteCantidad })),
+                  ...p.items
+                    .filter((it) => !(cat?.opciones ?? []).some((o) => o.etiqueta === it.etiqueta))
+                    .map((it) => ({ etiqueta: it.etiqueta, conCantidad: true })),
+                ];
+                return (
+                  <div key={p.id} className="border border-[var(--color-divider-soft)] bg-white">
+                    <div className="flex items-center gap-2.5 pl-4 pr-2 py-2 border-b border-[var(--color-divider-faint)]">
+                      <span className="w-6 h-6 flex-none grid place-items-center bg-[var(--color-text)] text-[var(--color-bg)] font-extrabold text-[11px] tabular-nums">
+                        {i + 1}
+                      </span>
+                      <div className="font-extrabold text-[15px] leading-[1.3] flex-1 min-w-0 truncate">
+                        {nombreProblema(p.codigo)}
+                      </div>
+                      {p.dbId ? (
+                        <EstadoProblemaTag estado={p.estado} />
+                      ) : (
+                        <Tag variant="accent">Nuevo</Tag>
+                      )}
+                      <BotonQuitar
+                        etiqueta={`Quitar el problema ${i + 1}`}
+                        onClick={() => setProblemas((prev) => prev.filter((x) => x.id !== p.id))}
                       />
                     </div>
+                    <div className="px-4 py-4 flex flex-col gap-4">
+                      <div className="field max-w-[440px]">
+                        <label htmlFor={`ea-tipo-${p.id}`}>Tipo de problema</label>
+                        <SelectBuscable
+                          id={`ea-tipo-${p.id}`}
+                          valor={p.codigo}
+                          opciones={[
+                            ...(cat ? [] : [{ v: p.codigo, t: p.codigo }]),
+                            ...catalogoProblema.map((c) => ({ v: c.codigo, t: c.nombre })),
+                          ]}
+                          // Cada tipo tiene sus propias opciones: al cambiarlo, lo marcado del anterior no aplica.
+                          onChange={(v) => {
+                            if (v && v !== p.codigo) cambiarProblema(p.id, { codigo: v, items: [] });
+                          }}
+                          ariaLabel="Tipo de problema"
+                        />
+                      </div>
+                      {opciones.length > 0 ? (
+                        <div>
+                          <div className="text-[10px] tracking-[.11em] uppercase opacity-62 mb-2">
+                            {cat?.grupoLabel ?? "Detalle"}
+                          </div>
+                          <ListaMarcable
+                            opciones={opciones}
+                            marcados={p.items}
+                            onCambiar={(fn) => cambiarProblema(p.id, { items: fn(p.items) })}
+                          />
+                        </div>
+                      ) : null}
+                      <div className="field">
+                        <label htmlFor={`ea-desc-${p.id}`}>{opciones.length > 0 ? "Nota · opcional" : "Qué se encontró"}</label>
+                        <textarea
+                          id={`ea-desc-${p.id}`}
+                          className="input leading-[1.5]"
+                          style={{ minHeight: 68 }}
+                          rows={2}
+                          value={p.desc}
+                          onChange={(e) => cambiarProblema(p.id, { desc: e.target.value })}
+                        />
+                      </div>
+                    </div>
                   </div>
-                </div>
-              );
-            })}
-            {problemas.length === 0 ? (
-              <div className="text-[13px] opacity-66">Esta acta no tiene problemas registrados.</div>
-            ) : null}
-            {catalogoProblema.length > 0 ? (
-              <div>
-                <button
-                  type="button"
+                );
+              })}
+              {problemas.length === 0 ? (
+                <div className="text-[13px] opacity-66">Esta acta no tiene problemas registrados.</div>
+              ) : null}
+              {catalogoProblema.length > 0 ? (
+                <BotonAgregar
+                  texto="Agregar un problema"
                   onClick={() => {
                     const id = nuevoId();
                     setProblemas((prev) => [
@@ -549,150 +652,226 @@ export default function EditarActa({
                       { id, codigo: catalogoProblema[0].codigo, items: [], desc: "", sol: "", estado: "ABIERTO" },
                     ]);
                   }}
-                  className="btn btn-secondary min-h-10 px-4"
-                >
-                  + Agregar un problema
-                </button>
-              </div>
-            ) : null}
-            <p className="m-0 text-xs opacity-66">
-              El estado de cada problema (abierto, pendiente, resuelto) se cambia en Problemas, no acá. Un problema que
-              coordinación ya gestionó se puede corregir, pero no quitar.
-            </p>
-          </div>
-        </Tarjeta>
+                />
+              ) : null}
+            </div>
+          </Seccion>
 
-        {/* ── 4 · Comentario interno ── */}
-        <Tarjeta n={4} titulo="Comentario interno · no lo ve el cliente">
-          <div className="flex flex-col gap-3.5">
-            {catalogoInterno.length > 0 || internos.length > 0 ? (
-              <div className="flex flex-col gap-1.5">
-                {[
-                  ...catalogoInterno.map((x) => ({ codigo: x.codigo, nombre: x.nombre })),
-                  ...(visita.internos ?? []).filter((x) => !catalogoInterno.some((c) => c.codigo === x.codigo)),
-                ].map((x) => (
-                  <label key={x.codigo} className="flex items-center gap-2.5 text-[14px] cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={internos.includes(x.codigo)}
-                      onChange={(e) =>
-                        setInternos((prev) =>
-                          e.target.checked ? [...prev, x.codigo] : prev.filter((c) => c !== x.codigo)
-                        )
-                      }
-                    />
-                    {x.nombre}
-                  </label>
-                ))}
+          {/* ── 4 · Comentario interno ── */}
+          <Seccion
+            id="interno"
+            n={4}
+            titulo="Comentario interno"
+            ayuda="Solo para coordinación: nada de esto sale en el acta que recibe el cliente."
+            cambio={cambio("interno")}
+          >
+            <div className="flex flex-col gap-5">
+              {catalogoInterno.length > 0 || internos.length > 0 ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {[
+                    ...catalogoInterno.map((x) => ({ codigo: x.codigo, nombre: x.nombre })),
+                    ...(visita.internos ?? []).filter((x) => !catalogoInterno.some((c) => c.codigo === x.codigo)),
+                  ].map((x) => {
+                    const activo = internos.includes(x.codigo);
+                    return (
+                      <Marca
+                        key={x.codigo}
+                        activo={activo}
+                        texto={x.nombre}
+                        onClick={() =>
+                          setInternos((prev) => (activo ? prev.filter((c) => c !== x.codigo) : [...prev, x.codigo]))
+                        }
+                      />
+                    );
+                  })}
+                </div>
+              ) : null}
+              <div className="field">
+                <label htmlFor="ea-interno">Descripción</label>
+                <textarea
+                  id="ea-interno"
+                  className="input leading-[1.5]"
+                  rows={3}
+                  value={interno}
+                  onChange={(e) => setInterno(e.target.value)}
+                  placeholder="Sin comentario interno"
+                />
               </div>
-            ) : null}
-            <div className="field">
-              <label htmlFor="ea-interno">Descripción</label>
-              <textarea
-                id="ea-interno"
-                className="input"
-                rows={3}
-                value={interno}
-                onChange={(e) => setInterno(e.target.value)}
+              <Fotos
+                titulo="Fotos internas"
+                fotos={fotos.filter((f) => f.interno)}
+                onQuitar={quitarFoto}
+                onAgregar={(e) => agregarFotos(e, true)}
+              />
+              <Videos
+                titulo="Videos internos"
+                videos={videos.filter((v) => v.interno)}
+                nuevos={videosNuevos}
+                onQuitar={quitarVideo}
+                onAgregar={(e) => void agregarVideo(e, true)}
+                subida={subida?.interno ? subida : null}
+                ocupado={!!subida}
               />
             </div>
-            <Fotos
-              titulo="Fotos internas"
-              fotos={fotos.filter((f) => f.interno)}
-              onQuitar={(id) => setFotos((prev) => prev.filter((f) => f.id !== id))}
-              onAgregar={(e) => agregarFotos(e, true)}
-            />
-            <Videos
-              titulo="Videos internos"
-              videos={videos.filter((v) => v.interno)}
-              nuevos={videosNuevos}
-              onQuitar={(id) => setVideos((prev) => prev.filter((v) => v.id !== id))}
-              onAgregar={(e) => void agregarVideo(e, true)}
-              subida={subida?.interno ? subida : null}
-              ocupado={!!subida}
-            />
-          </div>
-        </Tarjeta>
+          </Seccion>
 
-        {/* ── 5 · Fotos y video del trabajo ── */}
-        <Tarjeta n={5} titulo="Fotos y video del trabajo">
-          <div className="flex flex-col gap-4">
-            <Fotos
-              titulo="Fotos del trabajo"
-              fotos={fotos.filter((f) => !f.interno)}
-              onQuitar={(id) => setFotos((prev) => prev.filter((f) => f.id !== id))}
-              onAgregar={(e) => agregarFotos(e, false)}
-            />
-            <Videos
-              titulo="Videos del trabajo"
-              videos={videos.filter((v) => !v.interno)}
-              nuevos={videosNuevos}
-              onQuitar={(id) => setVideos((prev) => prev.filter((v) => v.id !== id))}
-              onAgregar={(e) => void agregarVideo(e, false)}
-              subida={subida && !subida.interno ? subida : null}
-              ocupado={!!subida}
-            />
-            <p className="m-0 text-xs opacity-66">
-              Lo que quites no se borra de la base: queda guardado e inactivo, y su número queda en el registro de la
-              edición. Un video que pase de 1 minuto o de 720p se recorta y se reescala solo al agregarlo.
-            </p>
-          </div>
-        </Tarjeta>
+          {/* ── 5 · Fotos y video del trabajo ── */}
+          <Seccion
+            id="media"
+            n={5}
+            titulo="Fotos y video del trabajo"
+            ayuda="Lo que quites no se borra: queda guardado e inactivo, y su número va al registro. Un video de más de 1 minuto o 720p se ajusta solo al agregarlo."
+            cambio={cambio("media")}
+          >
+            <div className="flex flex-col gap-5">
+              <Fotos
+                titulo="Fotos del trabajo"
+                fotos={fotos.filter((f) => !f.interno)}
+                onQuitar={quitarFoto}
+                onAgregar={(e) => agregarFotos(e, false)}
+              />
+              <Videos
+                titulo="Videos del trabajo"
+                videos={videos.filter((v) => !v.interno)}
+                nuevos={videosNuevos}
+                onQuitar={quitarVideo}
+                onAgregar={(e) => void agregarVideo(e, false)}
+                subida={subida && !subida.interno ? subida : null}
+                ocupado={!!subida}
+              />
+            </div>
+          </Seccion>
 
-        {/* ── 6 · Firma ── */}
-        <Tarjeta n={6} titulo="Firma de la tienda · no se modifica">
-          {firma ? (
-            <div className="flex gap-5 items-end flex-wrap">
-              <div className="flex-[0_1_300px] min-w-0">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={firma.imagen} alt={`Firma de ${firma.nombre}`} className="h-[78px] w-full object-contain object-left-bottom" />
-                <div className="h-px bg-[var(--color-text)] mt-1.5" />
-                <div className="text-sm mt-1.5">{firma.nombre}</div>
-                <div className="text-[10px] tracking-[.09em] uppercase opacity-62">
-                  Responsable de tienda · {firma.rut || "—"}
+          {/* ── 6 · Firma ── */}
+          <Seccion id="firma" n={6} titulo="Firma de la tienda" ayuda="Se conserva tal cual: no se edita." candado>
+            {firma ? (
+              <div className="flex gap-6 items-center flex-wrap">
+                <div className="flex-[0_1_300px] min-w-0 bg-white border border-[var(--color-divider-faint)] px-4 pt-3 pb-3.5">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={firma.imagen} alt={`Firma de ${firma.nombre}`} className="h-[78px] w-full object-contain object-left-bottom" />
+                  <div className="h-px bg-[var(--color-text)] mt-1.5" />
+                  <div className="text-sm font-extrabold mt-1.5">{firma.nombre}</div>
+                  <div className="text-[10px] tracking-[.09em] uppercase opacity-62">
+                    Responsable de tienda · {firma.rut || "—"}
+                  </div>
                 </div>
+                <p className="m-0 flex-1 min-w-[220px] text-[13px] leading-[1.55] opacity-70">
+                  Es la firma que dejó la tienda al cerrar el acta, con su hora. Si corriges el nombre o el RUT del
+                  responsable y eran los mismos que van bajo la firma, ese texto se corrige también; la firma no.
+                </p>
               </div>
-              <p className="m-0 flex-1 min-w-[220px] text-[13px] opacity-70">
-                La firma es la que dejó la tienda al cerrar el acta y se conserva tal cual, con su hora. Si corriges el
-                nombre o el RUT del responsable y eran los mismos que van bajo la firma, ese texto se corrige también.
+            ) : (
+              <div className="text-[13px] opacity-66">Esta acta se cerró sin firma.</div>
+            )}
+          </Seccion>
+
+          {/* ── Guardar ── */}
+          <section id="ea-sec-guardar" className="scroll-mt-[120px] border-2 border-[var(--color-text)] bg-white">
+            <div className="px-5 pt-5 pb-1">
+              <div className="text-[10px] tracking-[.15em] uppercase text-[var(--color-accent-active)]">Para terminar</div>
+              <div className="font-extrabold text-[20px] leading-[1.2] tracking-[-.02em] mt-1.5">¿Por qué se edita el acta?</div>
+              <p className="m-0 mt-1 text-[13px] opacity-66">
+                Es obligatorio y queda en el registro de la visita junto con lo que cambiaste.
               </p>
             </div>
-          ) : (
-            <div className="text-[13px] opacity-66">Esta acta se cerró sin firma.</div>
-          )}
-        </Tarjeta>
+            <div className="px-5 py-4">
+              <textarea
+                id="ea-motivo"
+                className="input leading-[1.5]"
+                rows={3}
+                value={motivoEdicion}
+                onChange={(e) => setMotivoEdicion(e.target.value)}
+                aria-label="Por qué se edita el acta"
+                placeholder="Ej: el técnico anotó mal el RUT del encargado; faltaba registrar el cambio de la antena 2"
+              />
 
-        {/* ── Guardar ── */}
-        <div className="mt-8 border-2 border-[var(--color-text)] bg-[var(--color-surface-3)] px-5 py-5">
-          <div className="field">
-            <label htmlFor="ea-motivo">¿Por qué se edita el acta? (obligatorio · queda en el registro)</label>
-            <textarea
-              id="ea-motivo"
-              className="input"
-              rows={3}
-              value={motivoEdicion}
-              onChange={(e) => setMotivoEdicion(e.target.value)}
-              placeholder="Ej: el técnico anotó mal el RUT del encargado; faltaba registrar el cambio de la antena 2"
-            />
-          </div>
-          {error ? (
-            <div
-              role="alert"
-              className="mt-3.5 px-3.5 py-3 bg-[var(--color-accent-200)] border-l-4 border-[var(--color-accent)] text-[13px] text-[var(--color-accent-800)]"
-            >
-              {error}
+              <div className="mt-4 text-[10px] tracking-[.11em] uppercase opacity-62 mb-2">Lo que cambiaste</div>
+              {hayCambios ? (
+                <div className="flex flex-wrap gap-1.5">
+                  {conCambios.map((x) => (
+                    <button
+                      key={x.clave}
+                      type="button"
+                      onClick={() => irA(x.clave)}
+                      className="tag tag-dark font-extrabold border-0 cursor-pointer"
+                      title="Ir a la sección"
+                    >
+                      {x.titulo}
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-[13px] opacity-66">Todavía nada: el acta está como quedó guardada.</div>
+              )}
+
+              {error ? (
+                <div
+                  role="alert"
+                  className="mt-4 px-3.5 py-3 bg-[var(--color-accent-200)] border-l-4 border-[var(--color-accent)] text-[13px] leading-[1.45] text-[var(--color-accent-800)]"
+                >
+                  {error}
+                </div>
+              ) : null}
             </div>
-          ) : null}
-          <div className="flex items-center gap-3 flex-wrap mt-4">
-            <button type="button" onClick={() => void guardar()} disabled={guardando} className="btn btn-primary min-h-11 px-5">
-              {guardando ? "Guardando…" : "Guardar cambios"}
-            </button>
-            <Link href={hrefActa} className="btn btn-secondary min-h-11 px-4">
-              Cancelar
-            </Link>
-            <span className="text-[13px] opacity-66">Si no cambiaste nada, no se guarda ni se registra nada.</span>
-          </div>
+            <div className="flex items-center gap-3 flex-wrap px-5 py-4 border-t border-[var(--color-divider-faint)] bg-[var(--color-surface-3)]">
+              <button
+                type="button"
+                onClick={() => void guardar()}
+                disabled={guardando || !hayCambios}
+                className="btn btn-primary min-h-11 px-5"
+              >
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6">
+                  <path d="M4 12l5 5L20 6" />
+                </svg>
+                <span>{guardando ? "Guardando…" : "Guardar cambios"}</span>
+              </button>
+              <Link href={hrefActa} className="btn btn-secondary min-h-11 px-4">
+                Salir sin guardar
+              </Link>
+            </div>
+          </section>
         </div>
+
+        {/* Índice: dónde estoy y qué llevo cambiado. Solo en pantallas anchas. */}
+        <aside className="hidden xl:block sticky top-[112px]">
+          <div className="border border-[var(--color-divider-soft)] bg-[var(--color-surface-3)]">
+            <div className="px-4 py-3 border-b border-[var(--color-divider-faint)] text-[10px] tracking-[.14em] uppercase opacity-66">
+              Secciones del acta
+            </div>
+            {[...SECCIONES, { clave: "firma", titulo: "Firma de la tienda" } as const].map((x, i) => {
+              const tocada = x.clave !== "firma" && cambio(x.clave);
+              return (
+                <button
+                  key={x.clave}
+                  type="button"
+                  onClick={() => irA(x.clave)}
+                  className="w-full flex items-center gap-2.5 px-4 min-h-10 bg-transparent border-0 border-b border-[var(--color-divider-faint)] text-left text-[13px] text-[var(--color-text)] cursor-pointer hover:bg-black/[.05]"
+                >
+                  <span className="w-4 text-[11px] tabular-nums opacity-55 flex-none">{i + 1}</span>
+                  <span className={`flex-1 min-w-0 truncate ${tocada ? "font-extrabold" : ""}`}>{x.titulo}</span>
+                  {tocada ? (
+                    <span className="w-2 h-2 flex-none bg-[var(--color-accent)]" title="Con cambios" />
+                  ) : x.clave === "firma" ? (
+                    <Candado />
+                  ) : null}
+                </button>
+              );
+            })}
+            <button
+              type="button"
+              onClick={() => irA("guardar")}
+              className="w-full flex items-center gap-2.5 px-4 min-h-11 bg-transparent border-0 text-left text-[13px] font-extrabold text-[var(--color-accent-active)] cursor-pointer hover:bg-black/[.05]"
+            >
+              <span className="flex-1">Motivo y guardar</span>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4">
+                <path d="M12 5v14M6 13l6 6 6-6" />
+              </svg>
+            </button>
+          </div>
+          <p className="m-0 mt-3 text-xs leading-[1.5] opacity-62">
+            El punto rojo marca las secciones que llevan cambios sin guardar.
+          </p>
+        </aside>
       </div>
 
       <Toast texto={toast} variante="panel" />
@@ -702,17 +881,152 @@ export default function EditarActa({
 
 // ─────────────────────────────── piezas locales ───────────────────────────────
 
-function Tarjeta({ n, titulo, children }: { n: number; titulo: string; children: React.ReactNode }) {
+function Candado() {
   return (
-    <section className="mt-6 border border-[var(--color-divider)] bg-[var(--color-surface-3)]">
-      <div className="flex items-center gap-3 px-5 py-3.5 border-b-2 border-[var(--color-divider)]">
-        <span className="w-6.5 h-6.5 flex-none grid place-items-center bg-[var(--color-text)] text-[var(--color-bg)] font-extrabold text-xs tabular-nums">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" className="flex-none opacity-55">
+      <rect x="5" y="11" width="14" height="10" />
+      <path d="M8 11V7a4 4 0 018 0v4" />
+    </svg>
+  );
+}
+
+function Seccion({
+  id,
+  n,
+  titulo,
+  ayuda,
+  cuenta,
+  cambio = false,
+  candado = false,
+  children,
+}: {
+  id: string;
+  n: number;
+  titulo: string;
+  ayuda?: string;
+  /** Cuántos elementos tiene la sección, junto al título. */
+  cuenta?: number;
+  /** La sección lleva cambios sin guardar. */
+  cambio?: boolean;
+  /** La sección solo se mira. */
+  candado?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <section
+      id={`ea-sec-${id}`}
+      className="scroll-mt-[120px] border border-[var(--color-divider-soft)] bg-[var(--color-surface-3)]"
+    >
+      <div className="flex items-start gap-3.5 px-5 py-4 border-b border-[var(--color-divider-soft)]">
+        <span
+          className="w-7 h-7 flex-none grid place-items-center font-extrabold text-xs tabular-nums mt-0.5"
+          style={{
+            background: cambio ? "var(--color-accent)" : "var(--color-text)",
+            color: "var(--color-bg)",
+          }}
+        >
           {n}
         </span>
-        <div className="font-extrabold text-[13px] tracking-[.06em] uppercase">{titulo}</div>
+        <div className="min-w-0 flex-1">
+          <div className="font-extrabold text-[17px] leading-[1.25] tracking-[-.01em]">
+            {titulo}
+            {cuenta !== undefined ? <span className="font-normal opacity-55 tabular-nums"> · {cuenta}</span> : null}
+          </div>
+          {ayuda ? <div className="text-[13px] leading-[1.45] opacity-66 mt-0.5">{ayuda}</div> : null}
+        </div>
+        {cambio ? (
+          <span className="tag tag-accent flex-none mt-0.5">Con cambios</span>
+        ) : candado ? (
+          <span className="tag tag-neutral flex-none mt-0.5 gap-1.5">
+            <Candado />
+            No se modifica
+          </span>
+        ) : null}
       </div>
       <div className="px-5 py-5">{children}</div>
     </section>
+  );
+}
+
+/** Quitar algo de la lista: un ícono discreto que se enciende al pasar el mouse. */
+function BotonQuitar({ etiqueta, onClick }: { etiqueta: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={etiqueta}
+      title={etiqueta}
+      className="w-9 h-9 flex-none grid place-items-center bg-transparent border-0 cursor-pointer text-[var(--color-text)] opacity-55 hover:opacity-100 hover:bg-[var(--color-accent-100)] hover:text-[var(--color-accent-active)]"
+    >
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13" />
+        <path d="M10 11v6M14 11v6" />
+      </svg>
+    </button>
+  );
+}
+
+function BotonAgregar({ texto, onClick }: { texto: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="w-full min-h-12 flex items-center justify-center gap-2 bg-transparent border border-dashed border-[var(--color-divider)] text-[var(--color-text)] font-extrabold text-sm cursor-pointer hover:bg-black/[.05] hover:border-solid"
+    >
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4">
+        <path d="M12 5v14M5 12h14" />
+      </svg>
+      {texto}
+    </button>
+  );
+}
+
+/** Una casilla del checklist: toda la fila se aprieta, y marcada queda destacada. */
+function Marca({
+  activo,
+  texto,
+  onClick,
+  children,
+}: {
+  activo: boolean;
+  texto: string;
+  onClick: () => void;
+  /** Lo que va a la derecha cuando está marcada: el contador de cantidad. */
+  children?: React.ReactNode;
+}) {
+  return (
+    <div
+      className="flex items-stretch min-h-11"
+      style={{
+        background: activo ? "var(--color-accent-100)" : "#fff",
+        border: `1px solid ${activo ? "var(--color-accent)" : "var(--color-divider-faint)"}`,
+      }}
+    >
+      <button
+        type="button"
+        role="checkbox"
+        aria-checked={activo}
+        onClick={onClick}
+        className="flex-1 min-w-0 flex items-center gap-2.5 px-3 py-2 bg-transparent border-0 cursor-pointer text-left text-[14px] leading-[1.3] text-[var(--color-text)]"
+        style={{ fontWeight: activo ? 800 : 400 }}
+      >
+        <span
+          className="w-[18px] h-[18px] flex-none grid place-items-center border-2"
+          style={{
+            borderColor: activo ? "var(--color-accent)" : "var(--color-neutral-500)",
+            background: activo ? "var(--color-accent)" : "transparent",
+          }}
+        >
+          {activo ? (
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3.6">
+              <path d="M4 12l5 5L20 6" />
+            </svg>
+          ) : null}
+        </span>
+        <span className="min-w-0">{texto}</span>
+      </button>
+      {children}
+    </div>
   );
 }
 
@@ -726,43 +1040,62 @@ function ListaMarcable({
   marcados: SubSeleccion[];
   onCambiar: (fn: (prev: SubSeleccion[]) => SubSeleccion[]) => void;
 }) {
+  const sumar = (etiqueta: string, delta: number) =>
+    onCambiar((prev) =>
+      prev.map((x) => (x.etiqueta === etiqueta ? { ...x, cantidad: Math.min(99, Math.max(1, x.cantidad + delta)) } : x))
+    );
   return (
-    <div className="flex flex-col gap-1.5">
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
       {opciones.map((o) => {
         const marcado = marcados.find((x) => x.etiqueta === o.etiqueta);
         return (
-          <div key={o.etiqueta} className="flex items-center gap-3 min-h-9">
-            <label className="flex items-center gap-2.5 text-[14px] cursor-pointer flex-1 min-w-0">
-              <input
-                type="checkbox"
-                checked={!!marcado}
-                onChange={(e) =>
-                  onCambiar((prev) =>
-                    e.target.checked
-                      ? [...prev, { etiqueta: o.etiqueta, cantidad: 1 }]
-                      : prev.filter((x) => x.etiqueta !== o.etiqueta)
-                  )
-                }
-              />
-              <span className={marcado ? "font-extrabold" : ""}>{o.etiqueta}</span>
-            </label>
+          <Marca
+            key={o.etiqueta}
+            activo={!!marcado}
+            texto={o.etiqueta}
+            onClick={() =>
+              onCambiar((prev) =>
+                marcado ? prev.filter((x) => x.etiqueta !== o.etiqueta) : [...prev, { etiqueta: o.etiqueta, cantidad: 1 }]
+              )
+            }
+          >
             {marcado && o.conCantidad ? (
-              <input
-                type="number"
-                min={1}
-                max={99}
-                value={marcado.cantidad}
-                aria-label={`Cantidad de ${o.etiqueta}`}
-                onChange={(e) => {
-                  const n = Math.min(99, Math.max(1, Math.round(Number(e.target.value)) || 1));
-                  onCambiar((prev) => prev.map((x) => (x.etiqueta === o.etiqueta ? { ...x, cantidad: n } : x)));
-                }}
-                className="input w-[76px] min-h-9 py-1 tabular-nums flex-none"
-              />
+              <div className="flex-none flex items-center border-l border-[var(--color-accent-300)]">
+                <button
+                  type="button"
+                  onClick={() => sumar(o.etiqueta, -1)}
+                  disabled={marcado.cantidad <= 1}
+                  aria-label={`Uno menos de ${o.etiqueta}`}
+                  className="w-8 self-stretch bg-transparent border-0 cursor-pointer font-extrabold text-[17px] leading-none text-[var(--color-text)] hover:bg-[var(--color-accent-200)] disabled:opacity-30 disabled:cursor-default"
+                >
+                  −
+                </button>
+                <span className="min-w-[26px] text-center font-extrabold text-[14px] tabular-nums" aria-live="polite">
+                  {marcado.cantidad}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => sumar(o.etiqueta, 1)}
+                  disabled={marcado.cantidad >= 99}
+                  aria-label={`Uno más de ${o.etiqueta}`}
+                  className="w-8 self-stretch bg-transparent border-0 cursor-pointer font-extrabold text-[17px] leading-none text-[var(--color-text)] hover:bg-[var(--color-accent-200)] disabled:opacity-30 disabled:cursor-default"
+                >
+                  +
+                </button>
+              </div>
             ) : null}
-          </div>
+          </Marca>
         );
       })}
+    </div>
+  );
+}
+
+function Subtitulo({ texto, cuenta }: { texto: string; cuenta: number }) {
+  return (
+    <div className="flex items-baseline gap-2 mb-2.5">
+      <div className="text-[11px] tracking-[.09em] uppercase opacity-62">{texto}</div>
+      <div className="text-[11px] tabular-nums opacity-45">{cuenta}</div>
     </div>
   );
 }
@@ -780,38 +1113,41 @@ function Fotos({
 }) {
   return (
     <div>
-      <div className="text-[11px] tracking-[.09em] uppercase opacity-62 mb-2">
-        {titulo} ({fotos.length})
-      </div>
+      <Subtitulo texto={titulo} cuenta={fotos.length} />
       <div className="grid grid-cols-3 sm:grid-cols-5 gap-2.5">
         {fotos.map((f) => (
-          <div key={f.id} className="relative aspect-square border border-black/[.35] overflow-hidden bg-[var(--color-surface)]">
+          <div
+            key={f.id}
+            className="group relative aspect-square overflow-hidden bg-[var(--color-surface)]"
+            style={{ border: `1px solid ${f.dbId ? "var(--color-divider-soft)" : "var(--color-accent)"}` }}
+          >
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={f.src} alt="" className="w-full h-full object-cover" loading="lazy" />
             {!f.dbId ? (
-              <span className="absolute left-0 bottom-0 px-1.5 py-0.5 bg-[var(--color-accent)] text-[var(--color-bg)] text-[10px] font-extrabold uppercase tracking-[.06em]">
+              <span className="absolute left-0 bottom-0 px-1.5 py-0.5 bg-[var(--color-accent)] text-white text-[10px] font-extrabold uppercase tracking-[.06em]">
                 Nueva
               </span>
             ) : null}
             <button
               type="button"
               onClick={() => onQuitar(f.id)}
-              aria-label="Quitar foto"
+              aria-label="Quitar la foto del acta"
               title="Quitar del acta"
-              className="absolute top-0 right-0 w-8 h-8 grid place-items-center bg-[var(--color-text)] text-[var(--color-bg)] border-0 cursor-pointer"
+              className="absolute top-1.5 right-1.5 w-7 h-7 grid place-items-center bg-[rgba(32,30,29,.78)] text-white border-0 cursor-pointer opacity-80 group-hover:opacity-100 hover:bg-[var(--color-accent)] focus-visible:opacity-100"
             >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8">
                 <path d="M6 6l12 12M18 6L6 18" />
               </svg>
             </button>
           </div>
         ))}
-        <label className="relative aspect-square flex flex-col items-center justify-center gap-1.5 border border-dashed border-black/[.5] cursor-pointer text-center hover:bg-black/[.05]">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M12 5v14M5 12h14" />
+        <label className="relative aspect-square flex flex-col items-center justify-center gap-1.5 border border-dashed border-[var(--color-divider)] cursor-pointer text-center hover:bg-black/[.05] hover:border-solid focus-within:outline focus-within:outline-2 focus-within:outline-[var(--color-accent)]">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+            <path d="M3 8h3l2-3h8l2 3h3v12H3z" />
+            <path d="M12 10.5v6M9 13.5h6" />
           </svg>
           <span className="font-extrabold text-[10px] tracking-[.08em] uppercase">Agregar fotos</span>
-          <input type="file" accept="image/*" multiple onChange={onAgregar} className="absolute w-px h-px opacity-0 pointer-events-none" />
+          <input type="file" accept="image/*" multiple onChange={onAgregar} className="absolute w-px h-px opacity-0" />
         </label>
       </div>
     </div>
@@ -840,54 +1176,56 @@ function Videos({
 }) {
   return (
     <div>
-      <div className="text-[11px] tracking-[.09em] uppercase opacity-62 mb-2">
-        {titulo} ({videos.length})
-      </div>
+      <Subtitulo texto={titulo} cuenta={videos.length} />
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
         {videos.map((v) => (
-          <figure key={v.id} className="m-0 border border-black/[.35] bg-[var(--color-surface)]">
-            <video src={v.archivoUrl} controls preload="metadata" playsInline className="w-full aspect-video bg-black object-contain" />
-            <figcaption className="flex items-center gap-2 px-2.5 py-1.5 text-[11px] tabular-nums">
+          <figure
+            key={v.id}
+            className="m-0 bg-white"
+            style={{ border: `1px solid ${nuevos.has(v.id) ? "var(--color-accent)" : "var(--color-divider-soft)"}` }}
+          >
+            <video src={v.archivoUrl} controls preload="metadata" playsInline className="w-full aspect-video bg-black object-contain block" />
+            <figcaption className="flex items-center gap-2 pl-3 pr-1 text-[12px] tabular-nums">
               {nuevos.has(v.id) ? (
-                <span className="px-1.5 py-0.5 bg-[var(--color-accent)] text-[var(--color-bg)] text-[10px] font-extrabold uppercase tracking-[.06em]">
+                <span className="px-1.5 py-0.5 bg-[var(--color-accent)] text-white text-[10px] font-extrabold uppercase tracking-[.06em]">
                   Nuevo
                 </span>
               ) : null}
-              <span className="opacity-70">{v.duracionSeg ? reloj(v.duracionSeg) : "—"}</span>
-              <button type="button" onClick={() => onQuitar(v.id)} className="btn btn-ghost min-h-7 text-[12px] ml-auto">
-                Quitar del acta
-              </button>
+              <span className="opacity-70">
+                {v.duracionSeg ? reloj(v.duracionSeg) : "—"}
+                {v.ancho && v.alto ? ` · ${v.ancho}x${v.alto}` : ""}
+              </span>
+              <span className="ml-auto">
+                <BotonQuitar etiqueta="Quitar el video del acta" onClick={() => onQuitar(v.id)} />
+              </span>
             </figcaption>
           </figure>
         ))}
+
+        {subida ? (
+          <div className="aspect-video sm:aspect-auto sm:min-h-[120px] flex flex-col justify-center gap-2 px-4 border border-[var(--color-accent)] bg-[var(--color-accent-100)]">
+            <div className="font-extrabold text-[13px]">{subida.paso}</div>
+            <div className="h-1.5 bg-[var(--color-accent-300)] overflow-hidden">
+              <div className="h-full bg-[var(--color-accent)] transition-[width] duration-300" style={{ width: `${subida.pct}%` }} />
+            </div>
+            <div className="text-xs opacity-70 tabular-nums">{subida.pct}% · no cierres esta página</div>
+          </div>
+        ) : (
+          <label
+            className={`relative min-h-[120px] flex flex-col items-center justify-center gap-1.5 border border-dashed border-[var(--color-divider)] text-center focus-within:outline focus-within:outline-2 focus-within:outline-[var(--color-accent)] ${
+              ocupado ? "opacity-45 cursor-not-allowed" : "cursor-pointer hover:bg-black/[.05] hover:border-solid"
+            }`}
+          >
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+              <path d="M3 7h11v10H3z" />
+              <path d="M14 11l7-4v10l-7-4z" />
+            </svg>
+            <span className="font-extrabold text-[10px] tracking-[.08em] uppercase">Agregar un video</span>
+            <span className="text-[11px] opacity-62">Desde un archivo · hasta 1 minuto</span>
+            <input type="file" accept="video/*" disabled={ocupado} onChange={onAgregar} className="absolute w-px h-px opacity-0" />
+          </label>
+        )}
       </div>
-      {subida ? (
-        <div className="mt-2.5 max-w-[420px]">
-          <div className="h-1 bg-[var(--color-divider)] overflow-hidden">
-            <div className="h-full bg-[var(--color-accent)] transition-[width] duration-300" style={{ width: `${subida.pct}%` }} />
-          </div>
-          <div className="mt-1 text-xs opacity-66 tabular-nums">
-            {subida.paso} {subida.pct}%
-          </div>
-        </div>
-      ) : (
-        <label
-          className={`btn btn-secondary min-h-10 px-4 mt-2.5 relative ${ocupado ? "opacity-45 cursor-not-allowed" : ""}`}
-        >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M3 7h11v10H3z" />
-            <path d="M14 11l7-4v10l-7-4z" />
-          </svg>
-          <span>Agregar un video</span>
-          <input
-            type="file"
-            accept="video/*"
-            disabled={ocupado}
-            onChange={onAgregar}
-            className="absolute w-px h-px opacity-0 pointer-events-none"
-          />
-        </label>
-      )}
     </div>
   );
 }

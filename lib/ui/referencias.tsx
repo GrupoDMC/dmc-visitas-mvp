@@ -2,6 +2,7 @@
 
 import { createContext, useContext } from "react";
 import type {
+  CatalogoEstadoProblema,
   CatalogoMotivo,
   CatalogoProblema,
   CatalogoTrabajo,
@@ -35,6 +36,8 @@ export interface Referencias {
   motivos: CatalogoMotivo[];
   problemas: CatalogoProblema[];
   trabajos: CatalogoTrabajo[];
+  /** Los estados de un problema, activos e inactivos, en su orden. */
+  estadosProblema: CatalogoEstadoProblema[];
 }
 
 export const REFERENCIAS_VACIAS: Referencias = {
@@ -47,6 +50,7 @@ export const REFERENCIAS_VACIAS: Referencias = {
   motivos: [],
   problemas: [],
   trabajos: [],
+  estadosProblema: [],
 };
 
 const Contexto = createContext<Referencias>(REFERENCIAS_VACIAS);

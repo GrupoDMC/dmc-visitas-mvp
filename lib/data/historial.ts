@@ -1,6 +1,7 @@
 import "server-only";
 import { consultaCon, num, sql, F_FECHA } from "@/lib/data/sql";
-import { ESTADO_PROBLEMA_LABEL, ESTADO_PROBLEMA_TAG, type TagVariant } from "@/lib/ui/estado";
+import { listarEstadosProblema } from "@/lib/data/catalogos";
+import { etiquetaEstadoProblema, tagEstadoProblema, type TagVariant } from "@/lib/ui/estado";
 import type { EstadoProblema } from "@/lib/types";
 
 // "Última visita al local" del detalle móvil: qué dejó registrado la visita
@@ -65,7 +66,8 @@ export async function getHistorialLocal(sucursalId: number | undefined, excluirV
   if (!anterior) return SIN_HISTORIAL;
   const visitaId = num(anterior.id);
 
-  const [trabajos, problemas] = await Promise.all([
+  const [estados, trabajos, problemas] = await Promise.all([
+    listarEstadosProblema(),
     consultaCon<{ nombre: string }>(
       `SELECT ISNULL(c.nombre, w.trabajo_codigo) AS nombre
          FROM dmc.visita_trabajo w
@@ -91,8 +93,8 @@ export async function getHistorialLocal(sucursalId: number | undefined, excluirV
     problemas: problemas.map((p) => ({
       tipo: p.tipo,
       detalle: [p.descripcion, p.solucion].filter(Boolean).join(" "),
-      estado: ESTADO_PROBLEMA_LABEL[p.estado],
-      tag: ESTADO_PROBLEMA_TAG[p.estado],
+      estado: etiquetaEstadoProblema(p.estado, estados),
+      tag: tagEstadoProblema(p.estado),
     })),
     sinProblemas: problemas.length === 0,
   };

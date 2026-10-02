@@ -1361,12 +1361,16 @@ export async function reprogramarVisita(input: {
   return true;
 }
 
-/** Cambio de estado y/o reclasificación de tipo desde "Problemas". */
+/**
+ * Cambio de estado y/o reclasificación de tipo desde "Problemas". La nota,
+ * si viene, queda en la bitácora junto a cada cambio que se hizo.
+ */
 export async function actualizarProblema(
   problemaId: number,
   estado: EstadoProblema,
   tipoCodigo: string,
-  usuarioId: number | null
+  usuarioId: number | null,
+  nota: string | null = null
 ): Promise<boolean> {
   const [actual] = await consultaCon<{ estado: EstadoProblema; tipo_codigo: string }>(
     `SELECT estado, tipo_codigo FROM dmc.problema WHERE id = @id`,
@@ -1401,13 +1405,14 @@ export async function actualizarProblema(
   ] as const) {
     if (antes === ahora) continue;
     await ejecutar(
-      `INSERT INTO dmc.problema_historial (problema_id, campo, valor_anterior, valor_nuevo, usuario_id)
-       VALUES (@id, @campo, @antes, @ahora, @usuario)`,
+      `INSERT INTO dmc.problema_historial (problema_id, campo, valor_anterior, valor_nuevo, motivo, usuario_id)
+       VALUES (@id, @campo, @antes, @ahora, @nota, @usuario)`,
       [
         ["id", sql.BigInt, problemaId],
         ["campo", sql.VarChar(20), campo],
         ["antes", sql.NVarChar(40), antes],
         ["ahora", sql.NVarChar(40), ahora],
+        ["nota", sql.NVarChar(sql.MAX), nota],
         ["usuario", sql.BigInt, usuarioId],
       ]
     );

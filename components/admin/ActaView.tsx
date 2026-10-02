@@ -15,7 +15,8 @@ import VisitaDialogo, {
 import VisorFotos, { useVisorFotos } from "@/components/ui/VisorFotos";
 import { Toast, useToast } from "@/components/ui/Toast";
 import { enviarActaAction } from "@/app/actions/admin";
-import { ESTADO_PROBLEMA_LABEL, ESTADO_PROBLEMA_TAG, ESTADO_VISITA_LABEL, ESTADO_VISITA_TAG, nombreDeQuienLaTomo, textoMotivos, textoMotivosReales } from "@/lib/ui/estado";
+import EstadoProblemaTag from "@/components/EstadoProblemaTag";
+import { ESTADO_VISITA_LABEL, ESTADO_VISITA_TAG, nombreDeQuienLaTomo, textoMotivos, textoMotivosReales } from "@/lib/ui/estado";
 import { textoFechaVisita } from "@/lib/ui/fecha";
 import { nombreProblema, nombreTrabajo, puede, useReferencias } from "@/lib/ui/referencias";
 import { reloj } from "@/lib/ui/video";
@@ -475,9 +476,7 @@ export default function ActaView({
                         <div className="font-extrabold text-xs tracking-[.09em] uppercase">
                           Problema {i + 1} de {visita.problemas!.length}
                         </div>
-                        <Tag variant={ESTADO_PROBLEMA_TAG[p.estado]} className="ml-auto">
-                          {ESTADO_PROBLEMA_LABEL[p.estado]}
-                        </Tag>
+                        <EstadoProblemaTag estado={p.estado} className="ml-auto" />
                       </div>
                       <div className="px-4.5 pt-4 pb-1.5">
                         <div className="pb-3.5 border-b border-black/[.18]">

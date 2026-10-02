@@ -306,6 +306,43 @@ CREATE TABLE dmc.catalogo_pendiente (
 );
 GO
 
+-- Checklist de gestión de problemas: los pasos que coordinación marca en el
+-- panel mientras lleva una falla hasta cerrarla.
+CREATE TABLE dmc.catalogo_problema_gestion (
+    id              bigint        IDENTITY(1,1) NOT NULL,
+    codigo          varchar(40)   NOT NULL,
+    nombre          nvarchar(80)  NOT NULL,     -- "Repuesto cotizado"
+    orden           smallint      NOT NULL CONSTRAINT df_cat_prob_gestion_orden DEFAULT (0),
+    activo          bit           NOT NULL CONSTRAINT df_cat_prob_gestion_activo DEFAULT (1),
+    creado_en       datetime2(0)  NOT NULL CONSTRAINT df_cat_prob_gestion_creado DEFAULT (SYSDATETIME()),
+    actualizado_en  datetime2(0)  NOT NULL CONSTRAINT df_cat_prob_gestion_actualizado DEFAULT (SYSDATETIME()),
+    CONSTRAINT pk_catalogo_problema_gestion        PRIMARY KEY (id),
+    CONSTRAINT uq_catalogo_problema_gestion_codigo UNIQUE (codigo),
+    CONSTRAINT uq_catalogo_problema_gestion_nombre UNIQUE (nombre)
+);
+GO
+
+-- Estados de un problema (Lista 7 del Checklist). ABIERTO es con el que nace
+-- y RESUELTO el único que lo cierra: los dos se renombran, pero no se quitan.
+-- Lo demás son estados intermedios. El código mide 10, como dmc.problema.estado.
+CREATE TABLE dmc.catalogo_problema_estado (
+    id         bigint        IDENTITY(1,1) NOT NULL,
+    codigo     varchar(10)   NOT NULL,
+    nombre     nvarchar(80)  NOT NULL,
+    orden      smallint      NOT NULL CONSTRAINT df_cat_prob_estado_orden DEFAULT (0),
+    activo     bit           NOT NULL CONSTRAINT df_cat_prob_estado_activo DEFAULT (1),
+    creado_en  datetime2(0)  NOT NULL CONSTRAINT df_cat_prob_estado_creado DEFAULT (SYSDATETIME()),
+    CONSTRAINT pk_catalogo_problema_estado        PRIMARY KEY (id),
+    CONSTRAINT uq_catalogo_problema_estado_codigo UNIQUE (codigo),
+    CONSTRAINT uq_catalogo_problema_estado_nombre UNIQUE (nombre)
+);
+GO
+INSERT INTO dmc.catalogo_problema_estado (codigo, nombre, orden) VALUES
+ ('ABIERTO',   N'Abierto',         1),
+ ('PENDIENTE', N'Espera repuesto', 2),
+ ('RESUELTO',  N'Resuelto',        3);
+GO
+
 /* =====================================================================
    3. VISITAS
    ===================================================================== */
@@ -584,7 +621,7 @@ CREATE TABLE dmc.problema (
     CONSTRAINT pk_problema         PRIMARY KEY (id),
     CONSTRAINT fk_problema_visita  FOREIGN KEY (visita_id)   REFERENCES dmc.visita (id) ON DELETE CASCADE,
     CONSTRAINT fk_problema_tipo    FOREIGN KEY (tipo_codigo) REFERENCES dmc.catalogo_problema (codigo),
-    CONSTRAINT ck_problema_estado  CHECK (estado IN ('ABIERTO','PENDIENTE','RESUELTO')),
+    CONSTRAINT fk_problema_estado  FOREIGN KEY (estado) REFERENCES dmc.catalogo_problema_estado (codigo),
     CONSTRAINT ck_problema_otro_desc CHECK (
         tipo_codigo <> 'OTRO' OR (descripcion IS NOT NULL AND LEN(LTRIM(RTRIM(descripcion))) > 0)),
     CONSTRAINT ck_problema_resuelto CHECK (
@@ -625,6 +662,22 @@ CREATE TABLE dmc.problema_historial (
 );
 GO
 CREATE INDEX ix_probhist_problema ON dmc.problema_historial (problema_id, ocurrido_en DESC);
+GO
+
+-- Lo que coordinación lleva marcado del checklist de gestión en cada problema.
+-- Desmarcar borra la fila; al resolver el problema lo marcado se conserva.
+CREATE TABLE dmc.problema_gestion (
+    id              bigint       IDENTITY(1,1) NOT NULL,
+    problema_id     bigint       NOT NULL,
+    gestion_codigo  varchar(40)  NOT NULL,
+    usuario_id      bigint       NULL,
+    marcado_en      datetime2(0) NOT NULL CONSTRAINT df_problema_gestion_en DEFAULT (SYSDATETIME()),
+    CONSTRAINT pk_problema_gestion PRIMARY KEY (id),
+    CONSTRAINT uq_problema_gestion UNIQUE (problema_id, gestion_codigo),
+    CONSTRAINT fk_problema_gestion_problema FOREIGN KEY (problema_id)    REFERENCES dmc.problema (id) ON DELETE CASCADE,
+    CONSTRAINT fk_problema_gestion_catalogo FOREIGN KEY (gestion_codigo) REFERENCES dmc.catalogo_problema_gestion (codigo),
+    CONSTRAINT fk_problema_gestion_usuario  FOREIGN KEY (usuario_id)     REFERENCES dmc.usuario (id)
+);
 GO
 
 CREATE TABLE dmc.problema_visita_resolucion (
@@ -932,6 +985,13 @@ CREATE OR ALTER TRIGGER dmc.tg_cat_pendiente_actualizado ON dmc.catalogo_pendien
 BEGIN
     SET NOCOUNT ON;
     UPDATE c SET actualizado_en = SYSDATETIME() FROM dmc.catalogo_pendiente c JOIN inserted i ON i.id = c.id;
+END;
+GO
+CREATE OR ALTER TRIGGER dmc.tg_cat_prob_gestion_actualizado ON dmc.catalogo_problema_gestion AFTER UPDATE AS
+BEGIN
+    SET NOCOUNT ON;
+    UPDATE c SET actualizado_en = SYSDATETIME()
+      FROM dmc.catalogo_problema_gestion c JOIN inserted i ON i.id = c.id;
 END;
 GO
 CREATE OR ALTER TRIGGER dmc.tg_ejecucion_actualizado ON dmc.visita_ejecucion AFTER UPDATE AS

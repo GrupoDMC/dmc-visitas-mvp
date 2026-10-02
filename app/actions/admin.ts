@@ -16,12 +16,16 @@ import {
   type DatosVisita,
 } from "@/lib/data/visitas";
 import { marcarGestionPendiente } from "@/lib/data/pendientes";
+import { marcarGestionProblema } from "@/lib/data/problemas";
 import {
   aplicarPlantilla,
+  FaltaMigracionEstadosProblema,
+  FaltaMigracionGestionProblemas,
   FaltaMigracionPendientes,
   getPlantilla,
   guardarChecklist,
   guardarPlantilla,
+  listarEstadosProblema,
   listarMotivos,
   PLANTILLA_PROPIA,
   type BorradorChecklist,
@@ -474,12 +478,20 @@ export async function actualizarProblemaAction(input: {
   problemaId: number;
   estado: EstadoProblema;
   tipoCodigo: string;
+  /** Por qué se cambia. Opcional; queda en la bitácora del problema. */
+  nota?: string;
 }): Promise<ResultadoAdmin> {
   const sesion = await sesionCon("problemas.editar");
   if (!sesion) return { ok: false, error: "No tienes permiso para cambiar problemas." };
 
+  // El estado tiene que ser uno de la Lista 7 del checklist.
+  if (!(await listarEstadosProblema()).some((e) => e.codigo === input.estado)) {
+    return { ok: false, error: "Ese estado ya no existe en el checklist. Recarga la página y elige otro." };
+  }
+
   try {
-    if (!(await actualizarProblema(input.problemaId, input.estado, input.tipoCodigo, sesion.usuario.id))) {
+    const nota = input.nota?.trim() || null;
+    if (!(await actualizarProblema(input.problemaId, input.estado, input.tipoCodigo, sesion.usuario.id, nota))) {
       return { ok: false, error: "No encontramos ese problema." };
     }
   } catch (err) {
@@ -511,6 +523,30 @@ export async function marcarGestionPendienteAction(input: {
   }
   revalidatePath("/admin/reagendas");
   return { ok: true, folio: input.folio };
+}
+
+/** Marca o desmarca un paso del checklist de gestión en «Problemas». */
+export async function marcarGestionProblemaAction(input: {
+  problemaId: number;
+  codigo: string;
+  marcado: boolean;
+}): Promise<ResultadoAdmin> {
+  const sesion = await sesionCon("problemas.editar");
+  if (!sesion) return { ok: false, error: "No tienes permiso para marcar la gestión de problemas." };
+
+  try {
+    const fallo = await marcarGestionProblema({
+      problemaId: Number(input.problemaId),
+      codigo: input.codigo,
+      marcado: input.marcado,
+      usuarioId: sesion.usuario.id,
+    });
+    if (fallo) return { ok: false, error: fallo.error };
+  } catch (err) {
+    return comoError(err, "marcarGestionProblema");
+  }
+  revalidatePath("/admin/problemas");
+  return { ok: true };
 }
 
 export async function enviarActaAction(input: {
@@ -566,6 +602,12 @@ function errorChecklist(err: unknown, contexto: string): ResultadoChecklist {
   if (err instanceof FaltaMigracionPendientes) {
     return { ok: false, error: "Para guardar la lista «Gestión de pendientes» falta correr la migración 014 en la base." };
   }
+  if (err instanceof FaltaMigracionEstadosProblema) {
+    return { ok: false, error: "Para cambiar la lista «Estados del problema» falta correr la migración 016 en la base." };
+  }
+  if (err instanceof FaltaMigracionGestionProblemas) {
+    return { ok: false, error: "Para guardar la lista «Gestión de problemas» falta correr la migración 015 en la base." };
+  }
   const texto = err instanceof Error ? err.message : String(err);
   if (/uq_\w*nombre/i.test(texto)) return { ok: false, error: "Hay dos entradas con el mismo nombre en la misma lista." };
   if (/uq_\w*opcion|uq_\w*subtrabajo/i.test(texto)) {
@@ -596,7 +638,9 @@ export async function guardarChecklistAction(borrador: BorradorChecklist): Promi
     repetidos(borrador.problemas.map((x) => x.nombre)) ??
     repetidos(borrador.trabajos.map((x) => x.nombre)) ??
     repetidos((borrador.internos ?? []).map((x) => x.nombre)) ??
-    repetidos((borrador.pendientes ?? []).map((x) => x.nombre));
+    repetidos((borrador.pendientes ?? []).map((x) => x.nombre)) ??
+    repetidos((borrador.gestionProblemas ?? []).map((x) => x.nombre)) ??
+    repetidos((borrador.estadosProblema ?? []).map((x) => x.nombre));
   if (choque) return { ok: false, error: `«${choque}» está dos veces en la misma lista.` };
 
   for (const pr of borrador.problemas) {
