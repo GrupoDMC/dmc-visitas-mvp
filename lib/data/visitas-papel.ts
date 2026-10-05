@@ -1,6 +1,6 @@
 import "server-only";
 import { consultaCon, enTransaccion, num, sql } from "@/lib/data/sql";
-import { sincronizarMotivosCon } from "@/lib/data/visitas";
+import { escribirTrabajos, sincronizarMotivosCon, type TrabajoActa } from "@/lib/data/visitas";
 import { DISPOSITIVO_PAPEL } from "@/lib/ui/papel";
 
 // "Visitas en papel": cargar los informes que se hicieron a mano en años
@@ -16,6 +16,8 @@ export interface InformePapel {
   tecnicoAyudanteId: number | null;
   /** El primero es el principal. */
   motivosCodigos: string[];
+  /** Lo marcado del checklist de trabajos, con sus subtrabajos. Opcional. */
+  trabajos?: TrabajoActa[];
   /** El día del informe (YYYY-MM-DD). */
   fecha: string;
   firmanteNombre: string;
@@ -123,6 +125,8 @@ export async function crearInformePapel(inf: InformePapel, usuarioId: number): P
     // Lo planificado y lo hecho son lo mismo: es lo que dice el informe.
     await sincronizarMotivosCon(ej, id, "PLAN", motivos);
     await sincronizarMotivosCon(ej, id, "REAL", motivos);
+    // Los trabajos se escriben igual que los del acta del celular.
+    await escribirTrabajos(ej, id, inf.trabajos ?? [], motivos);
 
     return { ok: true, folio: fila.folio };
   });

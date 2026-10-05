@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { sesionCon } from "@/lib/auth";
-import { listarMotivos } from "@/lib/data/catalogos";
+import { listarMotivos, listarTrabajos } from "@/lib/data/catalogos";
 import { consultaCon, num } from "@/lib/data/sql";
 import { crearInformePapel, type InformePapel } from "@/lib/data/visitas-papel";
 import { hoyISO } from "@/lib/ui/fecha";
@@ -44,8 +44,9 @@ export async function crearVisitasPapelAction(lote: { informes: InformePapel[] }
 
   // Lo que se valida contra la base se pide una sola vez para todo el lote.
   const idsSucursal = [...new Set(informes.map((i) => Number(i.sucursalId)).filter((n) => Number.isInteger(n) && n > 0))];
-  const [motivos, sucursales, tecnicos] = await Promise.all([
+  const [motivos, trabajos, sucursales, tecnicos] = await Promise.all([
     listarMotivos(),
+    listarTrabajos(),
     idsSucursal.length
       ? consultaCon<{ id: number; cliente_id: number }>(
           // Interpolado porque la lista es de largo variable; el filtro de
@@ -59,6 +60,7 @@ export async function crearVisitasPapelAction(lote: { informes: InformePapel[] }
   const clienteDe = new Map(sucursales.map((s) => [num(s.id), num(s.cliente_id)]));
   const hayTecnico = new Set(tecnicos.map((t) => num(t.id)));
   const hayMotivo = new Set(motivos.map((m) => m.codigo));
+  const hayTrabajo = new Set(trabajos.map((t) => t.codigo));
   const hoy = hoyISO();
 
   function porQueNo(inf: InformePapel): string | null {
@@ -80,6 +82,7 @@ export async function crearVisitasPapelAction(lote: { informes: InformePapel[] }
     if (Number(inf.fecha.slice(0, 4)) < PRIMER_ANIO_PAPEL) return `La fecha es anterior a ${PRIMER_ANIO_PAPEL}.`;
     if (!inf.firmanteNombre?.trim()) return "Falta quién firmó el informe.";
     if (!inf.descripcion?.trim()) return "Falta la descripción del informe.";
+    if ((inf.trabajos ?? []).some((t) => !hayTrabajo.has(t.codigo))) return "Uno de los trabajos ya no está en el checklist.";
     return null;
   }
 
@@ -98,6 +101,16 @@ export async function crearVisitasPapelAction(lote: { informes: InformePapel[] }
           tecnicoId: Number(inf.tecnicoId),
           tecnicoAyudanteId: inf.tecnicoAyudanteId ? Number(inf.tecnicoAyudanteId) : null,
           motivosCodigos: inf.motivosCodigos,
+          // Sin repetidos y con lo justo: el mismo trabajo dos veces no suma nada.
+          trabajos: [...new Map((inf.trabajos ?? []).map((t) => [t.codigo, t])).values()].map((t) => ({
+            codigo: t.codigo,
+            motivoCodigo: inf.motivosCodigos[0] ?? null,
+            detalle: null,
+            subtrabajos: (t.subtrabajos ?? []).map((x) => ({
+              etiqueta: String(x.etiqueta ?? "").slice(0, 80),
+              cantidad: Number(x.cantidad) || 1,
+            })),
+          })),
           fecha: inf.fecha,
           firmanteNombre: inf.firmanteNombre.trim().slice(0, 120),
           // Un RUT mal escrito en el papel se guarda tal cual: no hay cómo

@@ -4,19 +4,20 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import AdminHeader from "@/components/admin/AdminHeader";
+import Dialogo from "@/components/admin/Dialogo";
 import SelectBuscable from "@/components/ui/SelectBuscable";
 import { Toast, useToast } from "@/components/ui/Toast";
 import { crearVisitasPapelAction } from "@/app/actions/visitas-papel";
-import { useReferencias } from "@/lib/ui/referencias";
+import { trabajoVaConMotivo, useReferencias } from "@/lib/ui/referencias";
 import { fmtRut, mensajeRut } from "@/lib/ui/formato";
 import { hoyISO } from "@/lib/ui/fecha";
 import { PRIMER_ANIO_PAPEL } from "@/lib/ui/papel";
 import type { InformePapel } from "@/lib/data/visitas-papel";
+import type { CatalogoTrabajo } from "@/lib/types";
 
 /** Un técnico de la carga: todo lo que hay adentro lo hizo él. */
 interface Bloque {
   tecnicoId: string;
-  ayudanteId: string;
   abierto: boolean;
 }
 
@@ -47,6 +48,8 @@ interface Informe {
   /** "01".."31" */
   dia: string;
   motivo: string;
+  /** Los trabajos del checklist que se marcaron bajo el motivo, con sus subtrabajos. */
+  trabajos: TrabajoPapel[];
   firmante: string;
   rut: string;
   descripcion: string;
@@ -57,6 +60,11 @@ interface Informe {
   aunqueRepetida?: boolean;
 }
 
+interface TrabajoPapel {
+  codigo: string;
+  subs: { etiqueta: string; cantidad: number }[];
+}
+
 interface Borrador {
   anio: number;
   bloques: Bloque[];
@@ -65,7 +73,7 @@ interface Borrador {
   informes: Informe[];
 }
 
-const CLAVE_BORRADOR = "dmc.visitas-papel.borrador.v3";
+const CLAVE_BORRADOR = "dmc.visitas-papel.borrador.v4";
 /** De a cuántos informes se manda al servidor: el avance se ve y nada se corta. */
 const TANDA = 40;
 
@@ -136,6 +144,7 @@ export default function VisitasPapel() {
   const [guardando, setGuardando] = useState<{ hechos: number; total: number } | null>(null);
   const [guardados, setGuardados] = useState<{ folio: string; nombre: string }[]>([]);
   const [cargado, setCargado] = useState(false);
+  const [confirmando, setConfirmando] = useState(false);
   const foco = useRef<string | null>(null);
 
   // El borrador se lee recién en el navegador: en el servidor no existe.
@@ -184,6 +193,7 @@ export default function VisitasPapel() {
     [ref.tecnicos]
   );
   const opcMotivos = useMemo(() => ref.motivos.map((m) => ({ v: m.codigo, t: m.nombre })), [ref.motivos]);
+  const catalogoTrabajos = useMemo(() => ref.trabajos.filter((t) => t.activo), [ref.trabajos]);
   const nombreCliente = (id: string) => ref.clientes.find((c) => String(c.id) === id)?.nombreFantasia ?? "";
   const nombreTecnico = (id: string) => ref.tecnicos.find((t) => String(t.id) === id)?.nombreCompleto ?? "";
   const sucursal = (id: string) => ref.sucursales.find((s) => String(s.id) === id);
@@ -206,7 +216,7 @@ export default function VisitasPapel() {
     setBloques((prev) =>
       prev.some((b) => b.tecnicoId === tecnicoId)
         ? prev.map((b) => (b.tecnicoId === tecnicoId ? { ...b, abierto: true } : b))
-        : [...prev, { tecnicoId, ayudanteId: "", abierto: true }]
+        : [...prev, { tecnicoId, abierto: true }]
     );
   }
 
@@ -253,6 +263,7 @@ export default function VisitasPapel() {
       mes: previo?.mes ?? "",
       dia: "",
       motivo: previo?.motivo ?? "",
+      trabajos: [],
       firmante: "",
       rut: "",
       descripcion: "",
@@ -318,16 +329,21 @@ export default function VisitasPapel() {
     setBloques([]);
   }
 
-  async function guardar() {
-    const malAyudante = bloques.find((b) => b.ayudanteId && b.ayudanteId === b.tecnicoId);
-    if (malAyudante) return aviso(`${nombreTecnico(malAyudante.tecnicoId)}: el ayudante no puede ser el mismo técnico.`);
-    const listos = informes.filter((i) => !faltante(i, anio, hoy));
+  /** El botón de la barra: marca lo incompleto y, si hay algo listo, pide confirmar. */
+  function pedirConfirmacion() {
     // Los incompletos quedan marcados con lo que les falta.
     setInformes((prev) => prev.map((i) => ({ ...i, error: faltante(i, anio, hoy) ?? i.error })));
-    if (listos.length === 0) {
+    if (completos === 0) {
       aviso(informes.length ? "Ningún informe está completo todavía: revisa los marcados en rojo." : "Agrega al menos un informe.");
       return;
     }
+    setConfirmando(true);
+  }
+
+  async function guardar() {
+    setConfirmando(false);
+    const listos = informes.filter((i) => !faltante(i, anio, hoy));
+    if (listos.length === 0) return;
 
     const tiendaDe = new Map(tiendas.map((t) => [t.key, t]));
     const grupoDe = new Map(grupos.map((g) => [g.key, g]));
@@ -349,8 +365,14 @@ export default function VisitasPapel() {
           clienteId: Number(g.clienteId),
           sucursalId: Number(t.sucursalId),
           tecnicoId: Number(b.tecnicoId),
-          tecnicoAyudanteId: b.ayudanteId ? Number(b.ayudanteId) : null,
+          tecnicoAyudanteId: null,
           motivosCodigos: [inf.motivo],
+          trabajos: (inf.trabajos ?? []).map((t) => ({
+            codigo: t.codigo,
+            motivoCodigo: inf.motivo,
+            detalle: null,
+            subtrabajos: t.subs,
+          })),
           fecha: fechaDe(inf, anio),
           firmanteNombre: inf.firmante.trim(),
           firmanteRut: inf.rut.trim() || null,
@@ -522,17 +544,6 @@ export default function VisitasPapel() {
                 <div className="p-3.5">
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div className="field min-w-0">
-                      <label htmlFor={`pp-ayu-${b.tecnicoId}`}>Ayudante (opcional)</label>
-                      <SelectBuscable
-                        id={`pp-ayu-${b.tecnicoId}`}
-                        valor={b.ayudanteId}
-                        opciones={[{ v: "", t: "Sin ayudante" }, ...opcTecnicos.filter((o) => o.v !== b.tecnicoId)]}
-                        onChange={(v) => cambiarBloque(b.tecnicoId, { ayudanteId: v })}
-                        placeholder="Sin ayudante"
-                        ariaLabel={`Ayudante de ${nombreTec}`}
-                      />
-                    </div>
-                    <div className="field min-w-0">
                       <label htmlFor={`pp-cli-${b.tecnicoId}`}>Agregar cliente</label>
                       <SelectBuscable
                         id={`pp-cli-${b.tecnicoId}`}
@@ -639,6 +650,7 @@ export default function VisitasPapel() {
                                 anio={anio}
                                 hoy={hoy}
                                 opcMotivos={opcMotivos}
+                                catalogoTrabajos={catalogoTrabajos}
                                 onAlternar={() => cambiarTienda(t.key, { abierto: !t.abierto })}
                                 onQuitar={() => quitarTienda(t.key)}
                                 onAgregarInforme={() => agregarInforme(t)}
@@ -677,13 +689,49 @@ export default function VisitasPapel() {
           </button>
           <button
             type="button"
-            onClick={guardar}
+            onClick={pedirConfirmacion}
             disabled={Boolean(guardando) || completos === 0}
             className="btn btn-primary"
           >
             {guardando ? "Guardando…" : `Guardar ${completos} ${completos === 1 ? "informe" : "informes"}`}
           </button>
         </div>
+      ) : null}
+
+      {confirmando ? (
+        <Dialogo
+          kicker="Visitas en papel · confirmar"
+          titulo={`¿Guardar ${completos} ${completos === 1 ? "informe" : "informes"} de ${anio}?`}
+          cta={`Sí, guardar ${completos}`}
+          nota="Cada informe entra como visita completada, con su folio. Después se corrige desde «Editar acta»."
+          campos={[]}
+          form={{}}
+          onCampo={() => {}}
+          onCerrar={() => setConfirmando(false)}
+          onGuardar={guardar}
+        >
+          <ul className="m-0 p-0 list-none grid gap-1.5 text-[14px]">
+            {bloques.map((b) => {
+              const del = informesDe({ tecnicoId: b.tecnicoId });
+              const listos = del.filter((i) => !faltante(i, anio, hoy)).length;
+              if (!del.length) return null;
+              return (
+                <li key={b.tecnicoId} className="flex gap-3 border-b border-[var(--color-divider-soft)] pb-1.5">
+                  <span className="font-extrabold truncate">{nombreTecnico(b.tecnicoId)}</span>
+                  <span className="ml-auto tabular-nums flex-none">
+                    {listos} {listos === 1 ? "informe" : "informes"}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+          {informes.length > completos ? (
+            <p className="mt-3.5 mb-0 text-[13px] text-[var(--color-accent-800)]">
+              {informes.length - completos} {informes.length - completos === 1 ? "informe incompleto queda" : "informes incompletos quedan"}{" "}
+              en la lista sin guardarse.
+            </p>
+          ) : null}
+        </Dialogo>
       ) : null}
 
       <Toast texto={toast} variante="panel" />
@@ -732,6 +780,7 @@ function BloqueTienda({
   anio,
   hoy,
   opcMotivos,
+  catalogoTrabajos,
   onAlternar,
   onQuitar,
   onAgregarInforme,
@@ -744,6 +793,7 @@ function BloqueTienda({
   anio: number;
   hoy: string;
   opcMotivos: { v: string; t: string }[];
+  catalogoTrabajos: CatalogoTrabajo[];
   onAlternar: () => void;
   onQuitar: () => void;
   onAgregarInforme: () => void;
@@ -781,6 +831,7 @@ function BloqueTienda({
               anio={anio}
               hoy={hoy}
               opcMotivos={opcMotivos}
+              catalogoTrabajos={catalogoTrabajos}
               onCambiar={onCambiarInforme}
               onQuitar={onQuitarInforme}
             />
@@ -801,6 +852,7 @@ function FilaInforme({
   anio,
   hoy,
   opcMotivos,
+  catalogoTrabajos,
   onCambiar,
   onQuitar,
 }: {
@@ -809,6 +861,7 @@ function FilaInforme({
   anio: number;
   hoy: string;
   opcMotivos: { v: string; t: string }[];
+  catalogoTrabajos: CatalogoTrabajo[];
   onCambiar: (key: string, cambios: Partial<Informe>) => void;
   onQuitar: (key: string) => void;
 }) {
@@ -859,7 +912,16 @@ function FilaInforme({
             id={id("motivo")}
             valor={inf.motivo}
             opciones={opcMotivos}
-            onChange={(v) => onCambiar(inf.key, { motivo: v })}
+            onChange={(v) =>
+              // Los trabajos que no van con el motivo nuevo se sueltan.
+              onCambiar(inf.key, {
+                motivo: v,
+                trabajos: (inf.trabajos ?? []).filter((t) => {
+                  const c = catalogoTrabajos.find((x) => x.codigo === t.codigo);
+                  return c ? trabajoVaConMotivo(c, v) : false;
+                }),
+              })
+            }
             placeholder="Escribe para buscar el motivo…"
             ariaLabel="Motivo"
           />
@@ -868,6 +930,15 @@ function FilaInforme({
           <BotonQuitar label={`Quitar el informe ${n}`} onClick={() => onQuitar(inf.key)} />
         </div>
       </div>
+
+      {inf.motivo ? (
+        <TrabajosDelInforme
+          motivo={inf.motivo}
+          trabajos={inf.trabajos ?? []}
+          catalogo={catalogoTrabajos}
+          onCambiar={(trabajos) => onCambiar(inf.key, { trabajos })}
+        />
+      ) : null}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-[minmax(0,1fr)_170px_minmax(0,2fr)] gap-3 mt-3 sm:pl-9">
         <div className="field min-w-0">
@@ -900,13 +971,13 @@ function FilaInforme({
           ) : null}
         </div>
         <div className="field min-w-0 sm:col-span-2 lg:col-span-1">
-          <label htmlFor={id("descripcion")}>Descripción del informe</label>
+          <label htmlFor={id("descripcion")}>Descripción / detalle</label>
           <textarea
             id={id("descripcion")}
             rows={2}
             value={inf.descripcion}
             onChange={poner("descripcion")}
-            placeholder="Lo que dice el informe: qué se revisó, qué se hizo, qué se encontró."
+            placeholder="Lo que dice el informe: el detalle de lo que se hizo o se encontró."
             className="input min-h-[42px] px-3 py-2 resize-y leading-[1.45]"
           />
         </div>
@@ -928,5 +999,139 @@ function FilaInforme({
         </div>
       ) : null}
     </div>
+  );
+}
+
+/**
+ * Los trabajos del checklist que van con el motivo, como en el acta del
+ * celular: se marca el trabajo y se despliegan sus subtrabajos para marcar lo
+ * que se hizo, con cantidad donde el checklist la pide. Es opcional: la
+ * descripción sigue estando para el detalle.
+ */
+function TrabajosDelInforme({
+  motivo,
+  trabajos,
+  catalogo,
+  onCambiar,
+}: {
+  motivo: string;
+  trabajos: TrabajoPapel[];
+  catalogo: CatalogoTrabajo[];
+  onCambiar: (trabajos: TrabajoPapel[]) => void;
+}) {
+  const delMotivo = catalogo.filter((t) => trabajoVaConMotivo(t, motivo));
+  if (delMotivo.length === 0) return null;
+
+  const marcado = (codigo: string) => trabajos.find((t) => t.codigo === codigo);
+  const alternarTrabajo = (codigo: string) =>
+    onCambiar(marcado(codigo) ? trabajos.filter((t) => t.codigo !== codigo) : [...trabajos, { codigo, subs: [] }]);
+  const cambiarSubs = (codigo: string, subs: TrabajoPapel["subs"]) =>
+    onCambiar(trabajos.map((t) => (t.codigo === codigo ? { ...t, subs } : t)));
+
+  return (
+    <div className="mt-3 sm:pl-9">
+      <div className="text-[11px] tracking-[.09em] uppercase opacity-62 mb-1.5">Trabajos realizados (opcional)</div>
+      <div className="flex flex-wrap gap-1.5">
+        {delMotivo.map((t) => (
+          <Chip key={t.codigo} activo={Boolean(marcado(t.codigo))} fuerte onClick={() => alternarTrabajo(t.codigo)}>
+            {t.nombre}
+          </Chip>
+        ))}
+      </div>
+
+      {delMotivo
+        .filter((t) => marcado(t.codigo) && t.subtrabajos.some((x) => x.activo))
+        .map((t) => {
+          const subs = marcado(t.codigo)!.subs;
+          return (
+            <div key={t.codigo} className="mt-2.5 pl-3 border-l-2 border-[var(--color-accent)]">
+              <div className="text-[11px] tracking-[.06em] uppercase mb-1.5">
+                <span className="font-extrabold">{t.nombre}</span>
+                <span className="opacity-62"> · {t.grupoLabel ?? "Subtrabajos"}</span>
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {t.subtrabajos
+                  .filter((x) => x.activo)
+                  .map((x) => {
+                    const sub = subs.find((y) => y.etiqueta === x.etiqueta);
+                    return (
+                      <div key={x.id} className="flex items-stretch">
+                        <Chip
+                          activo={Boolean(sub)}
+                          onClick={() =>
+                            cambiarSubs(
+                              t.codigo,
+                              sub
+                                ? subs.filter((y) => y.etiqueta !== x.etiqueta)
+                                : [...subs, { etiqueta: x.etiqueta, cantidad: 1 }]
+                            )
+                          }
+                        >
+                          {x.etiqueta}
+                        </Chip>
+                        {sub && x.permiteCantidad ? (
+                          <input
+                            type="number"
+                            min={1}
+                            max={99}
+                            value={sub.cantidad}
+                            aria-label={`Cantidad de ${x.etiqueta}`}
+                            onChange={(e) =>
+                              cambiarSubs(
+                                t.codigo,
+                                subs.map((y) =>
+                                  y.etiqueta === x.etiqueta
+                                    ? { ...y, cantidad: Math.min(99, Math.max(1, Number(e.target.value) || 1)) }
+                                    : y
+                                )
+                              )
+                            }
+                            className="w-14 -ml-px px-2 border border-[var(--color-accent)] bg-[var(--color-surface)] text-[13px] tabular-nums text-center"
+                          />
+                        ) : null}
+                      </div>
+                    );
+                  })}
+              </div>
+            </div>
+          );
+        })}
+    </div>
+  );
+}
+
+function Chip({
+  activo,
+  fuerte = false,
+  onClick,
+  children,
+}: {
+  activo: boolean;
+  /** Los trabajos van en negro al marcarse; los subtrabajos, en el acento. */
+  fuerte?: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      role="checkbox"
+      aria-checked={activo}
+      onClick={onClick}
+      className="min-h-8 px-2.5 flex items-center gap-1.5 text-[13px] leading-[1.2] cursor-pointer text-left"
+      style={{
+        background: activo ? (fuerte ? "var(--color-text)" : "var(--color-accent-100)") : "var(--color-surface)",
+        color: activo && fuerte ? "var(--color-bg)" : "var(--color-text)",
+        border: `1px solid ${activo ? (fuerte ? "var(--color-text)" : "var(--color-accent)") : "rgba(32,30,29,.35)"}`,
+        fontWeight: activo ? 800 : 400,
+      }}
+    >
+      {activo ? (
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.4">
+          <path d="M4 12l5 5L20 6" />
+        </svg>
+      ) : null}
+      {children}
+    </button>
   );
 }
