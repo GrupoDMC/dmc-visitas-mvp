@@ -6,7 +6,6 @@ import { listarMotivos } from "@/lib/data/catalogos";
 import { consultaCon, num } from "@/lib/data/sql";
 import { crearInformePapel, type InformePapel } from "@/lib/data/visitas-papel";
 import { hoyISO } from "@/lib/ui/fecha";
-import { mensajeRut } from "@/lib/ui/formato";
 import { PRIMER_ANIO_PAPEL } from "@/lib/ui/papel";
 
 /** Cuántos informes se aceptan por guardado: más que eso conviene partirlo. */
@@ -80,8 +79,6 @@ export async function crearVisitasPapelAction(lote: { informes: InformePapel[] }
     if (inf.fecha > hoy) return "La fecha del informe no puede ser futura.";
     if (Number(inf.fecha.slice(0, 4)) < PRIMER_ANIO_PAPEL) return `La fecha es anterior a ${PRIMER_ANIO_PAPEL}.`;
     if (!inf.firmanteNombre?.trim()) return "Falta quién firmó el informe.";
-    const errorRut = mensajeRut(inf.firmanteRut ?? "");
-    if (errorRut) return errorRut;
     if (!inf.descripcion?.trim()) return "Falta la descripción del informe.";
     return null;
   }
@@ -103,7 +100,9 @@ export async function crearVisitasPapelAction(lote: { informes: InformePapel[] }
           motivosCodigos: inf.motivosCodigos,
           fecha: inf.fecha,
           firmanteNombre: inf.firmanteNombre.trim().slice(0, 120),
-          firmanteRut: inf.firmanteRut?.trim() || null,
+          // Un RUT mal escrito en el papel se guarda tal cual: no hay cómo
+          // corregirlo y es mejor que nada. El panel solo avisa.
+          firmanteRut: inf.firmanteRut?.trim().slice(0, 12) || null,
           descripcion: inf.descripcion.trim(),
           aunqueRepetida: Boolean(inf.aunqueRepetida),
         },

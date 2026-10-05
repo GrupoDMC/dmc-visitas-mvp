@@ -13,8 +13,17 @@ import { hoyISO } from "@/lib/ui/fecha";
 import { PRIMER_ANIO_PAPEL } from "@/lib/ui/papel";
 import type { InformePapel } from "@/lib/data/visitas-papel";
 
-/** Un cliente de la carga, con su filtro de mall. */
+/** Un técnico de la carga: todo lo que hay adentro lo hizo él. */
+interface Bloque {
+  tecnicoId: string;
+  ayudanteId: string;
+  abierto: boolean;
+}
+
+/** Un cliente dentro del recuadro de un técnico, con su filtro de mall. */
 interface Grupo {
+  key: string;
+  tecnicoId: string;
   clienteId: string;
   abierto: boolean;
   /** "" = todas las sucursales del cliente; si no, solo las de ese mall. */
@@ -24,12 +33,12 @@ interface Grupo {
 /** Una sucursal del cliente, con sus informes adentro. */
 interface Tienda {
   key: string;
-  clienteId: string;
+  grupoKey: string;
   sucursalId: string;
   abierto: boolean;
 }
 
-/** Un informe en papel mientras se transcribe. El año y el técnico van arriba, para todos. */
+/** Un informe en papel mientras se transcribe. El año va arriba y el técnico en su recuadro. */
 interface Informe {
   key: string;
   tiendaKey: string;
@@ -50,14 +59,13 @@ interface Informe {
 
 interface Borrador {
   anio: number;
-  tecnicoId: string;
-  ayudanteId: string;
+  bloques: Bloque[];
   grupos: Grupo[];
   tiendas: Tienda[];
   informes: Informe[];
 }
 
-const CLAVE_BORRADOR = "dmc.visitas-papel.borrador.v2";
+const CLAVE_BORRADOR = "dmc.visitas-papel.borrador.v3";
 /** De a cuántos informes se manda al servidor: el avance se ve y nada se corta. */
 const TANDA = 40;
 
@@ -83,7 +91,10 @@ function fechaDe(inf: Informe, anio: number): string {
   return inf.mes && inf.dia ? `${anio}-${inf.mes}-${inf.dia}` : "";
 }
 
-/** Lo que le falta al informe para poder guardarse, o null si está completo. */
+/**
+ * Lo que le falta al informe para poder guardarse, o null si está completo.
+ * El RUT no cuenta: uno mal escrito en el papel se guarda igual, con aviso.
+ */
 function faltante(inf: Informe, anio: number, hoy: string): string | null {
   if (!inf.mes) return "Falta el mes.";
   if (!inf.dia) return "Falta el día.";
@@ -91,8 +102,6 @@ function faltante(inf: Informe, anio: number, hoy: string): string | null {
   if (fechaDe(inf, anio) > hoy) return "La fecha no puede ser futura.";
   if (!inf.motivo) return "Falta el motivo.";
   if (!inf.firmante.trim()) return "Falta quién firmó.";
-  const errorRut = mensajeRut(inf.rut);
-  if (errorRut) return errorRut;
   if (!inf.descripcion.trim()) return "Falta la descripción.";
   return null;
 }
@@ -101,13 +110,12 @@ function faltante(inf: Informe, anio: number, hoy: string): string | null {
  * "Visitas en papel": transcribir los informes que se hicieron a mano en años
  * anteriores, lo más rápido posible.
  *
- * Arriba va lo que es igual para todo lo que se está cargando: el año y el
- * técnico. Después se agregan clientes, cada uno en su desplegable; adentro se
- * filtra por mall si hace falta y se van agregando sus tiendas. Cada tienda
- * lleva sus informes —uno o varios en el año— y cada informe pide solo lo
- * suyo: mes, día, motivo, quién firmó y la descripción. Un informe nuevo copia
- * el mes y el motivo del anterior del mismo cliente, para escribir solo lo que
- * cambia.
+ * Arriba va el año. Después se agregan técnicos, cada uno en su recuadro, y
+ * dentro de cada técnico sus clientes; en cada cliente se filtra por mall si
+ * hace falta y se van agregando sus tiendas. Cada tienda lleva sus informes
+ * —uno o varios en el año— y cada informe pide solo lo suyo: mes, día, motivo,
+ * quién firmó y la descripción. Un informe nuevo copia el mes y el motivo del
+ * anterior del mismo cliente, para escribir solo lo que cambia.
  *
  * Lo escrito se guarda en el navegador mientras tanto: cerrar la pestaña no
  * pierde nada. Al guardar, lo completo entra como visita completada y sale de
@@ -121,8 +129,7 @@ export default function VisitasPapel() {
   const anioActual = Number(hoy.slice(0, 4));
 
   const [anio, setAnio] = useState(anioActual - 1);
-  const [tecnicoId, setTecnicoId] = useState("");
-  const [ayudanteId, setAyudanteId] = useState("");
+  const [bloques, setBloques] = useState<Bloque[]>([]);
   const [grupos, setGrupos] = useState<Grupo[]>([]);
   const [tiendas, setTiendas] = useState<Tienda[]>([]);
   const [informes, setInformes] = useState<Informe[]>([]);
@@ -138,8 +145,7 @@ export default function VisitasPapel() {
       if (crudo) {
         const b = JSON.parse(crudo) as Borrador;
         if (b.anio) setAnio(b.anio);
-        setTecnicoId(b.tecnicoId ?? "");
-        setAyudanteId(b.ayudanteId ?? "");
+        if (Array.isArray(b.bloques)) setBloques(b.bloques);
         if (Array.isArray(b.grupos)) setGrupos(b.grupos);
         if (Array.isArray(b.tiendas)) setTiendas(b.tiendas);
         if (Array.isArray(b.informes)) setInformes(b.informes);
@@ -153,13 +159,13 @@ export default function VisitasPapel() {
   useEffect(() => {
     if (!cargado) return;
     try {
-      const b: Borrador = { anio, tecnicoId, ayudanteId, grupos, tiendas, informes };
-      if (grupos.length || tecnicoId) localStorage.setItem(CLAVE_BORRADOR, JSON.stringify(b));
+      const b: Borrador = { anio, bloques, grupos, tiendas, informes };
+      if (bloques.length) localStorage.setItem(CLAVE_BORRADOR, JSON.stringify(b));
       else localStorage.removeItem(CLAVE_BORRADOR);
     } catch {
       // Igual que arriba: el borrador es una comodidad, no un requisito.
     }
-  }, [cargado, anio, tecnicoId, ayudanteId, grupos, tiendas, informes]);
+  }, [cargado, anio, bloques, grupos, tiendas, informes]);
 
   // El informe recién agregado recibe el cursor: se agrega y se escribe.
   useEffect(() => {
@@ -179,42 +185,68 @@ export default function VisitasPapel() {
   );
   const opcMotivos = useMemo(() => ref.motivos.map((m) => ({ v: m.codigo, t: m.nombre })), [ref.motivos]);
   const nombreCliente = (id: string) => ref.clientes.find((c) => String(c.id) === id)?.nombreFantasia ?? "";
+  const nombreTecnico = (id: string) => ref.tecnicos.find((t) => String(t.id) === id)?.nombreCompleto ?? "";
   const sucursal = (id: string) => ref.sucursales.find((s) => String(s.id) === id);
-  const nombreTecnico = ref.tecnicos.find((t) => String(t.id) === tecnicoId)?.nombreCompleto ?? "";
 
-  const clientesLibres = ref.clientes
-    .filter((c) => !grupos.some((g) => g.clienteId === String(c.id)))
-    .map((c) => ({ v: String(c.id), t: c.activo ? c.nombreFantasia : `${c.nombreFantasia} (inactivo)` }));
-
+  const tecnicosLibres = opcTecnicos.filter((o) => !bloques.some((b) => b.tecnicoId === o.v));
   const completos = informes.filter((i) => !faltante(i, anio, hoy)).length;
 
-  function agregarCliente(clienteId: string) {
-    if (!clienteId) return;
-    setGrupos((prev) =>
-      prev.some((g) => g.clienteId === clienteId)
-        ? prev.map((g) => (g.clienteId === clienteId ? { ...g, abierto: true } : g))
-        : [...prev, { clienteId, abierto: true, mallId: "" }]
+  // Los informes de cada nivel, para los contadores de las cabeceras.
+  const grupoDeTienda = new Map(tiendas.map((t) => [t.key, t.grupoKey]));
+  const tecnicoDeGrupo = new Map(grupos.map((g) => [g.key, g.tecnicoId]));
+  const informesDe = (filtro: { tecnicoId?: string; grupoKey?: string }) =>
+    informes.filter((i) => {
+      const grupoKey = grupoDeTienda.get(i.tiendaKey);
+      if (filtro.grupoKey) return grupoKey === filtro.grupoKey;
+      return grupoKey !== undefined && tecnicoDeGrupo.get(grupoKey) === filtro.tecnicoId;
+    });
+
+  function agregarTecnico(tecnicoId: string) {
+    if (!tecnicoId) return;
+    setBloques((prev) =>
+      prev.some((b) => b.tecnicoId === tecnicoId)
+        ? prev.map((b) => (b.tecnicoId === tecnicoId ? { ...b, abierto: true } : b))
+        : [...prev, { tecnicoId, ayudanteId: "", abierto: true }]
     );
   }
 
-  function cambiarGrupo(clienteId: string, cambios: Partial<Grupo>) {
-    setGrupos((prev) => prev.map((g) => (g.clienteId === clienteId ? { ...g, ...cambios } : g)));
+  function cambiarBloque(tecnicoId: string, cambios: Partial<Bloque>) {
+    setBloques((prev) => prev.map((b) => (b.tecnicoId === tecnicoId ? { ...b, ...cambios } : b)));
   }
 
-  function quitarGrupo(clienteId: string) {
-    const keys = new Set(tiendas.filter((t) => t.clienteId === clienteId).map((t) => t.key));
-    setInformes((prev) => prev.filter((i) => !keys.has(i.tiendaKey)));
-    setTiendas((prev) => prev.filter((t) => t.clienteId !== clienteId));
-    setGrupos((prev) => prev.filter((g) => g.clienteId !== clienteId));
+  /** Quita un conjunto de grupos con sus tiendas e informes. */
+  function quitarGrupos(keys: Set<string>) {
+    const tiendasFuera = new Set(tiendas.filter((t) => keys.has(t.grupoKey)).map((t) => t.key));
+    setInformes((prev) => prev.filter((i) => !tiendasFuera.has(i.tiendaKey)));
+    setTiendas((prev) => prev.filter((t) => !keys.has(t.grupoKey)));
+    setGrupos((prev) => prev.filter((g) => !keys.has(g.key)));
   }
 
-  /** Un informe nuevo: copia el mes y el motivo del último del mismo cliente. */
+  function quitarBloque(tecnicoId: string) {
+    quitarGrupos(new Set(grupos.filter((g) => g.tecnicoId === tecnicoId).map((g) => g.key)));
+    setBloques((prev) => prev.filter((b) => b.tecnicoId !== tecnicoId));
+  }
+
+  function agregarCliente(tecnicoId: string, clienteId: string) {
+    if (!clienteId) return;
+    setGrupos((prev) =>
+      prev.some((g) => g.tecnicoId === tecnicoId && g.clienteId === clienteId)
+        ? prev.map((g) => (g.tecnicoId === tecnicoId && g.clienteId === clienteId ? { ...g, abierto: true } : g))
+        : [...prev, { key: nuevaKey(), tecnicoId, clienteId, abierto: true, mallId: "" }]
+    );
+  }
+
+  function cambiarGrupo(key: string, cambios: Partial<Grupo>) {
+    setGrupos((prev) => prev.map((g) => (g.key === key ? { ...g, ...cambios } : g)));
+  }
+
+  /** Un informe nuevo: copia el mes y el motivo del último de la tienda o, si no hay, del cliente. */
   function informeNuevo(tienda: Tienda, previos: Informe[]): Informe {
-    const delCliente = new Set(tiendas.filter((t) => t.clienteId === tienda.clienteId).map((t) => t.key));
-    delCliente.add(tienda.key);
+    const delGrupo = new Set(tiendas.filter((t) => t.grupoKey === tienda.grupoKey).map((t) => t.key));
+    delGrupo.add(tienda.key);
     const previo =
       previos.filter((i) => i.tiendaKey === tienda.key).at(-1) ??
-      previos.filter((i) => delCliente.has(i.tiendaKey)).at(-1);
+      previos.filter((i) => delGrupo.has(i.tiendaKey)).at(-1);
     return {
       key: nuevaKey(),
       tiendaKey: tienda.key,
@@ -228,10 +260,10 @@ export default function VisitasPapel() {
   }
 
   /** Agrega tiendas al cliente; cada una nace con un informe listo para llenar. */
-  function agregarTiendas(clienteId: string, sucursalIds: string[]) {
+  function agregarTiendas(grupoKey: string, sucursalIds: string[]) {
     const nuevas: Tienda[] = sucursalIds
-      .filter((id) => id && !tiendas.some((t) => t.clienteId === clienteId && t.sucursalId === id))
-      .map((sucursalId) => ({ key: nuevaKey(), clienteId, sucursalId, abierto: true }));
+      .filter((id) => id && !tiendas.some((t) => t.grupoKey === grupoKey && t.sucursalId === id))
+      .map((sucursalId) => ({ key: nuevaKey(), grupoKey, sucursalId, abierto: true }));
     if (!nuevas.length) return;
     const nuevos: Informe[] = [];
     for (const t of nuevas) nuevos.push(informeNuevo(t, [...informes, ...nuevos]));
@@ -283,11 +315,12 @@ export default function VisitasPapel() {
     setInformes([]);
     setTiendas([]);
     setGrupos([]);
+    setBloques([]);
   }
 
   async function guardar() {
-    if (!tecnicoId) return aviso("Elige arriba el técnico que hizo los trabajos.");
-    if (ayudanteId && ayudanteId === tecnicoId) return aviso("El ayudante no puede ser el mismo técnico.");
+    const malAyudante = bloques.find((b) => b.ayudanteId && b.ayudanteId === b.tecnicoId);
+    if (malAyudante) return aviso(`${nombreTecnico(malAyudante.tecnicoId)}: el ayudante no puede ser el mismo técnico.`);
     const listos = informes.filter((i) => !faltante(i, anio, hoy));
     // Los incompletos quedan marcados con lo que les falta.
     setInformes((prev) => prev.map((i) => ({ ...i, error: faltante(i, anio, hoy) ?? i.error })));
@@ -297,18 +330,26 @@ export default function VisitasPapel() {
     }
 
     const tiendaDe = new Map(tiendas.map((t) => [t.key, t]));
+    const grupoDe = new Map(grupos.map((g) => [g.key, g]));
+    const bloqueDe = new Map(bloques.map((b) => [b.tecnicoId, b]));
+    const contexto = (inf: Informe) => {
+      const t = tiendaDe.get(inf.tiendaKey)!;
+      const g = grupoDe.get(t.grupoKey)!;
+      return { t, g, b: bloqueDe.get(g.tecnicoId)! };
+    };
+
     setGuardando({ hechos: 0, total: listos.length });
     const hechos: { key: string; folio: string; nombre: string }[] = [];
     const errores = new Map<string, { error: string; repetida: boolean }>();
     for (let i = 0; i < listos.length; i += TANDA) {
       const tanda = listos.slice(i, i + TANDA);
       const lote: InformePapel[] = tanda.map((inf) => {
-        const t = tiendaDe.get(inf.tiendaKey)!;
+        const { t, g, b } = contexto(inf);
         return {
-          clienteId: Number(t.clienteId),
+          clienteId: Number(g.clienteId),
           sucursalId: Number(t.sucursalId),
-          tecnicoId: Number(tecnicoId),
-          tecnicoAyudanteId: ayudanteId ? Number(ayudanteId) : null,
+          tecnicoId: Number(b.tecnicoId),
+          tecnicoAyudanteId: b.ayudanteId ? Number(b.ayudanteId) : null,
           motivosCodigos: [inf.motivo],
           fecha: fechaDe(inf, anio),
           firmanteNombre: inf.firmante.trim(),
@@ -322,11 +363,11 @@ export default function VisitasPapel() {
         res.resultados.forEach((r, j) => {
           const inf = tanda[j];
           if (r.ok && r.folio) {
-            const t = tiendaDe.get(inf.tiendaKey)!;
+            const { t, g } = contexto(inf);
             hechos.push({
               key: inf.key,
               folio: r.folio,
-              nombre: `${nombreCliente(t.clienteId)} · ${sucursal(t.sucursalId)?.nombre ?? ""} · ${fechaDe(inf, anio)}`,
+              nombre: `${nombreTecnico(g.tecnicoId)} · ${nombreCliente(g.clienteId)} · ${sucursal(t.sucursalId)?.nombre ?? ""} · ${fechaDe(inf, anio)}`,
             });
           } else {
             errores.set(inf.key, { error: r.error ?? "No se pudo guardar.", repetida: Boolean(r.repetida) });
@@ -348,7 +389,7 @@ export default function VisitasPapel() {
         return e ? { ...i, error: e.error, repetida: e.repetida, aunqueRepetida: false } : i;
       });
     setInformes(restantes);
-    // Las tiendas que quedaron sin informes salen; el cliente se queda, por si sigue.
+    // Las tiendas que quedaron sin informes salen; el técnico y el cliente se quedan, por si sigue.
     const conInformes = new Set(restantes.map((i) => i.tiendaKey));
     setTiendas((prev) => prev.filter((t) => conInformes.has(t.key)));
     if (hechos.length) router.refresh();
@@ -381,9 +422,8 @@ export default function VisitasPapel() {
           escribes se guarda en este navegador hasta que lo guardes en el sistema.
         </p>
 
-        {/* Lo que vale para todo lo que se carga */}
         <div className="mt-5 border border-black/[.3]">
-          <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 p-3.5">
+          <div className="grid grid-cols-1 sm:grid-cols-[200px_minmax(0,360px)] gap-4 p-3.5">
             <div className="field min-w-0">
               <label htmlFor="pp-anio">Año</label>
               <select
@@ -400,39 +440,14 @@ export default function VisitasPapel() {
               </select>
             </div>
             <div className="field min-w-0">
-              <label htmlFor="pp-tecnico">Técnico</label>
+              <label htmlFor="pp-tecnico">Agregar técnico</label>
               <SelectBuscable
                 id="pp-tecnico"
-                valor={tecnicoId}
-                opciones={opcTecnicos}
-                onChange={(v) => {
-                  setTecnicoId(v);
-                  if (v === ayudanteId) setAyudanteId("");
-                }}
-                placeholder="Elige el técnico…"
-                ariaLabel="Técnico"
-              />
-            </div>
-            <div className="field min-w-0">
-              <label htmlFor="pp-ayudante">Ayudante (opcional)</label>
-              <SelectBuscable
-                id="pp-ayudante"
-                valor={ayudanteId}
-                opciones={[{ v: "", t: "Sin ayudante" }, ...opcTecnicos.filter((o) => o.v !== tecnicoId)]}
-                onChange={setAyudanteId}
-                placeholder="Sin ayudante"
-                ariaLabel="Ayudante"
-              />
-            </div>
-            <div className="field min-w-0">
-              <label htmlFor="pp-cliente">Agregar cliente</label>
-              <SelectBuscable
-                id="pp-cliente"
                 valor=""
-                opciones={clientesLibres}
-                onChange={agregarCliente}
-                placeholder={clientesLibres.length ? "Elige el cliente…" : "Ya están todos"}
-                ariaLabel="Agregar cliente"
+                opciones={tecnicosLibres}
+                onChange={agregarTecnico}
+                placeholder={tecnicosLibres.length ? "Elige el técnico…" : "Ya están todos"}
+                ariaLabel="Agregar técnico"
               />
             </div>
           </div>
@@ -457,110 +472,188 @@ export default function VisitasPapel() {
           </details>
         ) : null}
 
-        {grupos.length === 0 ? (
+        {bloques.length === 0 ? (
           <div className="mt-5 px-3.5 py-6 border border-dashed border-[var(--color-divider)] text-[13px] opacity-70">
-            Elige el año y el técnico, y agrega un cliente para empezar con sus tiendas.
+            Elige el año y agrega un técnico: dentro de su recuadro van sus clientes, sus tiendas y los informes.
           </div>
         ) : null}
 
-        {grupos.map((g) => {
-          const tiendasDelGrupo = tiendas.filter((t) => t.clienteId === g.clienteId);
-          const libres = ref.sucursales
-            .filter(
-              (s) =>
-                String(s.clienteId) === g.clienteId &&
-                (!g.mallId || String(s.mallId ?? "") === g.mallId) &&
-                !tiendasDelGrupo.some((t) => t.sucursalId === String(s.id))
-            )
-            .map((s) => ({ v: String(s.id), t: s.activo ? s.nombre : `${s.nombre} (inactiva)` }));
-          // Solo los malls donde el cliente tiene tiendas.
-          const mallsDelCliente = ref.malls
-            .filter((m) => ref.sucursales.some((s) => String(s.clienteId) === g.clienteId && s.mallId === m.id))
-            .map((m) => ({ v: String(m.id), t: m.nombre }));
-          const nInformes = informes.filter((i) => tiendasDelGrupo.some((t) => t.key === i.tiendaKey));
-          const incompletos = nInformes.filter((i) => faltante(i, anio, hoy)).length;
-          const nombre = nombreCliente(g.clienteId);
+        {bloques.map((b) => {
+          const gruposDelTecnico = grupos.filter((g) => g.tecnicoId === b.tecnicoId);
+          const clientesLibres = ref.clientes
+            .filter((c) => !gruposDelTecnico.some((g) => g.clienteId === String(c.id)))
+            .map((c) => ({ v: String(c.id), t: c.activo ? c.nombreFantasia : `${c.nombreFantasia} (inactivo)` }));
+          const delTecnico = informesDe({ tecnicoId: b.tecnicoId });
+          const incompletosTecnico = delTecnico.filter((i) => faltante(i, anio, hoy)).length;
+          const nombreTec = nombreTecnico(b.tecnicoId);
 
           return (
-            <div key={g.clienteId} className="mt-5 border-2 border-[var(--color-text)]">
-              <div className="flex items-center gap-2 px-3.5 py-2 bg-[var(--color-surface)]">
+            <section key={b.tecnicoId} className="mt-6 border-2 border-[var(--color-text)]">
+              <div className="flex items-center gap-2 px-3.5 py-2.5 bg-[var(--color-text)] text-[var(--color-bg)]">
                 <button
                   type="button"
-                  aria-expanded={g.abierto}
-                  onClick={() => cambiarGrupo(g.clienteId, { abierto: !g.abierto })}
-                  className="flex-1 min-w-0 flex items-center gap-2.5 min-h-10 bg-transparent border-0 cursor-pointer text-[var(--color-text)] text-left"
+                  aria-expanded={b.abierto}
+                  onClick={() => cambiarBloque(b.tecnicoId, { abierto: !b.abierto })}
+                  className="flex-1 min-w-0 flex items-center gap-2.5 min-h-10 bg-transparent border-0 cursor-pointer text-inherit text-left"
                 >
-                  <Flecha abierto={g.abierto} />
-                  <span className="font-extrabold text-[16px] truncate">{nombre}</span>
-                  <span className="text-[11px] tracking-[.06em] uppercase opacity-66 tabular-nums flex-none">
-                    {tiendasDelGrupo.length} {tiendasDelGrupo.length === 1 ? "tienda" : "tiendas"} · {nInformes.length}{" "}
-                    {nInformes.length === 1 ? "informe" : "informes"}
+                  <Flecha abierto={b.abierto} />
+                  <span className="text-[10px] tracking-[.14em] uppercase opacity-70 flex-none">Técnico</span>
+                  <span className="font-extrabold text-[17px] truncate">{nombreTec}</span>
+                  <span className="text-[11px] tracking-[.06em] uppercase opacity-70 tabular-nums flex-none">
+                    {gruposDelTecnico.length} {gruposDelTecnico.length === 1 ? "cliente" : "clientes"} · {delTecnico.length}{" "}
+                    {delTecnico.length === 1 ? "informe" : "informes"}
                   </span>
-                  {incompletos ? <span className="tag tag-accent flex-none">{incompletos} sin completar</span> : null}
+                  {incompletosTecnico ? <span className="tag tag-accent flex-none">{incompletosTecnico} sin completar</span> : null}
                 </button>
-                <BotonQuitar
-                  label={`Quitar ${nombre}${nInformes.length ? " y sus informes" : ""}`}
-                  onClick={() => quitarGrupo(g.clienteId)}
-                />
+                <button
+                  type="button"
+                  onClick={() => quitarBloque(b.tecnicoId)}
+                  className="btn btn-icon w-8 h-8 flex-none border border-current text-inherit"
+                  aria-label={`Quitar a ${nombreTec} y sus informes`}
+                  title={`Quitar a ${nombreTec} y sus informes`}
+                >
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4">
+                    <path d="M6 6l12 12M18 6L6 18" />
+                  </svg>
+                </button>
               </div>
 
-              {g.abierto ? (
-                <>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 px-3.5 py-3 border-t border-[var(--color-divider-soft)]">
+              {b.abierto ? (
+                <div className="p-3.5">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div className="field min-w-0">
-                      <label htmlFor={`pp-mall-${g.clienteId}`}>Mall (opcional)</label>
+                      <label htmlFor={`pp-ayu-${b.tecnicoId}`}>Ayudante (opcional)</label>
                       <SelectBuscable
-                        id={`pp-mall-${g.clienteId}`}
-                        valor={g.mallId}
-                        opciones={[{ v: "", t: "Todas las tiendas del cliente" }, ...mallsDelCliente]}
-                        onChange={(v) => cambiarGrupo(g.clienteId, { mallId: v })}
-                        placeholder="Todas las tiendas del cliente"
-                        ariaLabel="Filtrar por mall"
+                        id={`pp-ayu-${b.tecnicoId}`}
+                        valor={b.ayudanteId}
+                        opciones={[{ v: "", t: "Sin ayudante" }, ...opcTecnicos.filter((o) => o.v !== b.tecnicoId)]}
+                        onChange={(v) => cambiarBloque(b.tecnicoId, { ayudanteId: v })}
+                        placeholder="Sin ayudante"
+                        ariaLabel={`Ayudante de ${nombreTec}`}
                       />
                     </div>
                     <div className="field min-w-0">
-                      <label htmlFor={`pp-tienda-${g.clienteId}`}>Agregar tienda</label>
+                      <label htmlFor={`pp-cli-${b.tecnicoId}`}>Agregar cliente</label>
                       <SelectBuscable
-                        id={`pp-tienda-${g.clienteId}`}
+                        id={`pp-cli-${b.tecnicoId}`}
                         valor=""
-                        opciones={libres}
-                        onChange={(v) => agregarTiendas(g.clienteId, [v])}
-                        placeholder={libres.length ? "Escribe el nombre y se agrega…" : "No quedan tiendas por agregar"}
-                        ariaLabel="Agregar tienda"
+                        opciones={clientesLibres}
+                        onChange={(v) => agregarCliente(b.tecnicoId, v)}
+                        placeholder={clientesLibres.length ? "Elige el cliente…" : "Ya están todos"}
+                        ariaLabel={`Agregar cliente a ${nombreTec}`}
                       />
                     </div>
-                    {g.mallId && libres.length > 1 ? (
-                      <div className="sm:col-span-2 -mt-1">
-                        <button
-                          type="button"
-                          onClick={() => agregarTiendas(g.clienteId, libres.map((s) => s.v))}
-                          className="btn btn-secondary min-h-9 px-3 text-[13px]"
-                        >
-                          Agregar las {libres.length} tiendas del mall
-                        </button>
-                      </div>
-                    ) : null}
                   </div>
 
-                  {tiendasDelGrupo.map((t) => (
-                    <BloqueTienda
-                      key={t.key}
-                      tienda={t}
-                      nombre={sucursal(t.sucursalId)?.nombre ?? ""}
-                      informes={informes.filter((i) => i.tiendaKey === t.key)}
-                      anio={anio}
-                      hoy={hoy}
-                      opcMotivos={opcMotivos}
-                      onAlternar={() => cambiarTienda(t.key, { abierto: !t.abierto })}
-                      onQuitar={() => quitarTienda(t.key)}
-                      onAgregarInforme={() => agregarInforme(t)}
-                      onCambiarInforme={cambiarInforme}
-                      onQuitarInforme={quitarInforme}
-                    />
-                  ))}
-                </>
+                  {gruposDelTecnico.length === 0 ? (
+                    <div className="mt-3.5 px-3.5 py-4 border border-dashed border-[var(--color-divider)] text-[13px] opacity-70">
+                      Agrega un cliente de {nombreTec} para empezar con sus tiendas.
+                    </div>
+                  ) : null}
+
+                  {gruposDelTecnico.map((g) => {
+                    const tiendasDelGrupo = tiendas.filter((t) => t.grupoKey === g.key);
+                    const libres = ref.sucursales
+                      .filter(
+                        (s) =>
+                          String(s.clienteId) === g.clienteId &&
+                          (!g.mallId || String(s.mallId ?? "") === g.mallId) &&
+                          !tiendasDelGrupo.some((t) => t.sucursalId === String(s.id))
+                      )
+                      .map((s) => ({ v: String(s.id), t: s.activo ? s.nombre : `${s.nombre} (inactiva)` }));
+                    // Solo los malls donde el cliente tiene tiendas.
+                    const mallsDelCliente = ref.malls
+                      .filter((m) => ref.sucursales.some((s) => String(s.clienteId) === g.clienteId && s.mallId === m.id))
+                      .map((m) => ({ v: String(m.id), t: m.nombre }));
+                    const delGrupo = informesDe({ grupoKey: g.key });
+                    const incompletos = delGrupo.filter((i) => faltante(i, anio, hoy)).length;
+                    const nombre = nombreCliente(g.clienteId);
+
+                    return (
+                      <div key={g.key} className="mt-3.5 border-2 border-black/[.45]">
+                        <div className="flex items-center gap-2 px-3.5 py-2 bg-[var(--color-surface)]">
+                          <button
+                            type="button"
+                            aria-expanded={g.abierto}
+                            onClick={() => cambiarGrupo(g.key, { abierto: !g.abierto })}
+                            className="flex-1 min-w-0 flex items-center gap-2.5 min-h-10 bg-transparent border-0 cursor-pointer text-[var(--color-text)] text-left"
+                          >
+                            <Flecha abierto={g.abierto} />
+                            <span className="font-extrabold text-[16px] truncate">{nombre}</span>
+                            <span className="text-[11px] tracking-[.06em] uppercase opacity-66 tabular-nums flex-none">
+                              {tiendasDelGrupo.length} {tiendasDelGrupo.length === 1 ? "tienda" : "tiendas"} · {delGrupo.length}{" "}
+                              {delGrupo.length === 1 ? "informe" : "informes"}
+                            </span>
+                            {incompletos ? <span className="tag tag-accent flex-none">{incompletos} sin completar</span> : null}
+                          </button>
+                          <BotonQuitar
+                            label={`Quitar ${nombre}${delGrupo.length ? " y sus informes" : ""}`}
+                            onClick={() => quitarGrupos(new Set([g.key]))}
+                          />
+                        </div>
+
+                        {g.abierto ? (
+                          <>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 px-3.5 py-3 border-t border-[var(--color-divider-soft)]">
+                              <div className="field min-w-0">
+                                <label htmlFor={`pp-mall-${g.key}`}>Mall (opcional)</label>
+                                <SelectBuscable
+                                  id={`pp-mall-${g.key}`}
+                                  valor={g.mallId}
+                                  opciones={[{ v: "", t: "Todas las tiendas del cliente" }, ...mallsDelCliente]}
+                                  onChange={(v) => cambiarGrupo(g.key, { mallId: v })}
+                                  placeholder="Todas las tiendas del cliente"
+                                  ariaLabel="Filtrar por mall"
+                                />
+                              </div>
+                              <div className="field min-w-0">
+                                <label htmlFor={`pp-tienda-${g.key}`}>Agregar tienda</label>
+                                <SelectBuscable
+                                  id={`pp-tienda-${g.key}`}
+                                  valor=""
+                                  opciones={libres}
+                                  onChange={(v) => agregarTiendas(g.key, [v])}
+                                  placeholder={libres.length ? "Escribe el nombre y se agrega…" : "No quedan tiendas por agregar"}
+                                  ariaLabel="Agregar tienda"
+                                />
+                              </div>
+                              {g.mallId && libres.length > 1 ? (
+                                <div className="sm:col-span-2 -mt-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => agregarTiendas(g.key, libres.map((s) => s.v))}
+                                    className="btn btn-secondary min-h-9 px-3 text-[13px]"
+                                  >
+                                    Agregar las {libres.length} tiendas del mall
+                                  </button>
+                                </div>
+                              ) : null}
+                            </div>
+
+                            {tiendasDelGrupo.map((t) => (
+                              <BloqueTienda
+                                key={t.key}
+                                tienda={t}
+                                nombre={sucursal(t.sucursalId)?.nombre ?? ""}
+                                informes={informes.filter((i) => i.tiendaKey === t.key)}
+                                anio={anio}
+                                hoy={hoy}
+                                opcMotivos={opcMotivos}
+                                onAlternar={() => cambiarTienda(t.key, { abierto: !t.abierto })}
+                                onQuitar={() => quitarTienda(t.key)}
+                                onAgregarInforme={() => agregarInforme(t)}
+                                onCambiarInforme={cambiarInforme}
+                                onQuitarInforme={quitarInforme}
+                              />
+                            ))}
+                          </>
+                        ) : null}
+                      </div>
+                    );
+                  })}
+                </div>
               ) : null}
-            </div>
+            </section>
           );
         })}
       </div>
@@ -572,7 +665,7 @@ export default function VisitasPapel() {
             <strong>{completos}</strong> de {informes.length} {informes.length === 1 ? "informe completo" : "informes completos"}
             {" · "}
             {anio}
-            {nombreTecnico ? ` · ${nombreTecnico}` : " · falta el técnico"}
+            {bloques.length > 1 ? ` · ${bloques.length} técnicos` : ""}
             {guardando ? (
               <span className="ml-2 opacity-70">
                 · guardando {guardando.hechos}/{guardando.total}…
@@ -762,14 +855,14 @@ function FilaInforme({
         </div>
         <div className="field flex-1 min-w-[200px]">
           <label htmlFor={id("motivo")}>Motivo</label>
-          <select id={id("motivo")} value={inf.motivo} onChange={poner("motivo")} className="input appearance-none">
-            <option value="">Elige el motivo…</option>
-            {opcMotivos.map((o) => (
-              <option key={o.v} value={o.v}>
-                {o.t}
-              </option>
-            ))}
-          </select>
+          <SelectBuscable
+            id={id("motivo")}
+            valor={inf.motivo}
+            opciones={opcMotivos}
+            onChange={(v) => onCambiar(inf.key, { motivo: v })}
+            placeholder="Escribe para buscar el motivo…"
+            ariaLabel="Motivo"
+          />
         </div>
         <div className="mb-1 ml-auto">
           <BotonQuitar label={`Quitar el informe ${n}`} onClick={() => onQuitar(inf.key)} />
@@ -801,7 +894,9 @@ function FilaInforme({
             className="input tabular-nums"
           />
           {errorRut ? (
-            <div className="text-[11px] leading-[1.4] mt-1.5 text-[var(--color-accent-800)]">{errorRut}</div>
+            <div className="text-[11px] leading-[1.4] mt-1.5 text-[var(--color-accent-800)]">
+              {errorRut} Se guarda igual, tal como está en el papel.
+            </div>
           ) : null}
         </div>
         <div className="field min-w-0 sm:col-span-2 lg:col-span-1">
