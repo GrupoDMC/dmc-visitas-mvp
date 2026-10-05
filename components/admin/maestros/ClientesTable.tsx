@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
 import Link from "next/link";
 import MaestroTable from "@/components/admin/MaestroTable";
 import Tag from "@/components/Tag";
@@ -16,9 +16,26 @@ interface Locales {
   inactivos: number;
   /** En cuántos malls distintos tiene tiendas activas. */
   malls: number;
+  /** Tiendas activas en garantía. */
+  enGarantia: number;
+  /** Tiendas activas en plan de calibración por su cuenta (cuenta si el cliente no está en plan). */
+  conCalibracion: number;
 }
 
-const SIN_LOCALES: Locales = { activos: 0, inactivos: 0, malls: 0 };
+const SIN_LOCALES: Locales = { activos: 0, inactivos: 0, malls: 0, enGarantia: 0, conCalibracion: 0 };
+
+const OPCIONES_FILTRO_PLAN = [
+  { v: "", t: "Todos" },
+  { v: "si", t: "En plan" },
+  { v: "no", t: "Sin plan" },
+  { v: "nd", t: "Sin indicar" },
+];
+const OPCIONES_FILTRO_GARANTIA = [
+  { v: "", t: "Todos" },
+  { v: "si", t: "Con locales en garantía" },
+  { v: "no", t: "Sin locales en garantía" },
+];
+const textoDe = (opciones: { v: string; t: string }[], v: string) => opciones.find((o) => o.v === v)?.t ?? "";
 
 export default function ClientesTable({ clientes, sucursales }: { clientes: Cliente[]; sucursales: Sucursal[] }) {
   const ref = useReferencias();
@@ -27,10 +44,12 @@ export default function ClientesTable({ clientes, sucursales }: { clientes: Clie
   const locales = useMemo(() => {
     const porCliente = new Map<number, Locales & { idsMall: Set<number> }>();
     for (const s of sucursales) {
-      const l = porCliente.get(s.clienteId) ?? { activos: 0, inactivos: 0, malls: 0, idsMall: new Set<number>() };
+      const l = porCliente.get(s.clienteId) ?? { ...SIN_LOCALES, idsMall: new Set<number>() };
       if (s.activo) {
         l.activos++;
         if (s.mallId) l.idsMall.add(s.mallId);
+        if (s.enGarantia === true) l.enGarantia++;
+        if (s.planCalibracion === true) l.conCalibracion++;
       } else {
         l.inactivos++;
       }
@@ -59,6 +78,17 @@ export default function ClientesTable({ clientes, sucursales }: { clientes: Clie
   const sinLocales = activos.filter((c) => de(c).activos === 0).length;
   const enPlan = activos.filter((c) => c.planCalibracion === true).length;
 
+  const [fPlan, setFPlan] = useState("");
+  const [fGarantia, setFGarantia] = useState("");
+  const pasa = useCallback(
+    (c: Cliente) => {
+      const plan = c.planCalibracion === true ? "si" : c.planCalibracion === false ? "no" : "nd";
+      const garantia = (locales.get(c.id)?.enGarantia ?? 0) > 0 ? "si" : "no";
+      return (!fPlan || plan === fPlan) && (!fGarantia || garantia === fGarantia);
+    },
+    [fPlan, fGarantia, locales]
+  );
+
   return (
     <MaestroTable<Cliente>
       kicker="Maestros"
@@ -71,6 +101,21 @@ export default function ClientesTable({ clientes, sucursales }: { clientes: Clie
       phBusqueda="Buscar cliente o RUT…"
       rows={ordenados}
       searchKeys={(c) => `${c.nombreFantasia} ${c.razonSocial} ${c.rut}`}
+      filtros={{
+        campos: [
+          { id: "f-plan", label: "Plan de calibración", valor: fPlan, opciones: OPCIONES_FILTRO_PLAN, onChange: setFPlan },
+          { id: "f-garantia", label: "Garantía", valor: fGarantia, opciones: OPCIONES_FILTRO_GARANTIA, onChange: setFGarantia },
+        ],
+        chips: [
+          ...(fPlan ? [{ label: textoDe(OPCIONES_FILTRO_PLAN, fPlan), onQuitar: () => setFPlan("") }] : []),
+          ...(fGarantia ? [{ label: textoDe(OPCIONES_FILTRO_GARANTIA, fGarantia), onQuitar: () => setFGarantia("") }] : []),
+        ],
+        pasa,
+        limpiar: () => {
+          setFPlan("");
+          setFGarantia("");
+        },
+      }}
       resumen={
         <div className="grid grid-cols-2 lg:grid-cols-4 border-b-2 border-[var(--color-divider)]">
           <Cifra label="Clientes activos" n={activos.length} sub={`${clientes.length - activos.length} inactivos`} />
@@ -104,6 +149,7 @@ export default function ClientesTable({ clientes, sucursales }: { clientes: Clie
             const l = de(c);
             const detalle = [
               l.malls ? `en ${l.malls} ${l.malls === 1 ? "mall" : "malls"}` : null,
+              l.enGarantia ? `${l.enGarantia} en garantía` : null,
               l.inactivos ? `${l.inactivos} ${l.inactivos === 1 ? "inactivo" : "inactivos"}` : null,
             ].filter(Boolean);
             return (
@@ -137,10 +183,16 @@ export default function ClientesTable({ clientes, sucursales }: { clientes: Clie
           render: (c) =>
             c.planCalibracion === true ? (
               <Tag variant="accent">En plan</Tag>
-            ) : c.planCalibracion === false ? (
-              <Tag variant="outline">Sin plan</Tag>
             ) : (
-              <span className="opacity-50">—</span>
+              <>
+                {c.planCalibracion === false ? <Tag variant="outline">Sin plan</Tag> : <span className="opacity-50">—</span>}
+                {/* Sin el cliente en plan, alguna tienda puede estarlo por su cuenta. */}
+                {de(c).conCalibracion ? (
+                  <div className="text-[11px] opacity-66 mt-1">
+                    {de(c).conCalibracion} {de(c).conCalibracion === 1 ? "local en plan" : "locales en plan"}
+                  </div>
+                ) : null}
+              </>
             ),
         },
         {
@@ -181,6 +233,7 @@ export default function ClientesTable({ clientes, sucursales }: { clientes: Clie
           label: "¿En plan de calibración? (opcional)",
           tipo: "select",
           opciones: OPCIONES_SI_NO,
+          ayuda: "Si está en plan, todas sus sucursales lo están. Si no, cada sucursal puede estarlo por su cuenta.",
         },
         { k: "activo", label: "Estado", tipo: "toggle" },
         {

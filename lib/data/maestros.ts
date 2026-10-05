@@ -65,9 +65,9 @@ async function consultaConNotas<T>(armar: (extra: string) => string, extra: stri
 }
 
 /**
- * ¿El error es que la base todavía no tiene la migración 017?
+ * ¿El error es que la base todavía no tiene la migración 017 o la 018?
  *
- * Sin ella clientes y sucursales se leen y se guardan igual, solo que sin el
+ * Sin ellas clientes y sucursales se leen y se guardan igual, solo que sin el
  * plan de calibración ni el detalle de la sucursal.
  */
 export function faltaMigracionDetalle(err: unknown): boolean {
@@ -90,24 +90,6 @@ async function primeraQueResponda<T>(intentos: (() => Promise<T>)[], faltaMigrac
     } catch (err) {
       if (i === intentos.length - 1 || !faltaMigracion(err)) throw err;
     }
-  }
-}
-
-/**
- * Guarda con el detalle de la 017 y, si la base no lo tiene, sin él. Pero solo
- * si no se escribió nada en esos campos: lo que el usuario llenó no se pierde
- * callado, se avisa que falta la migración.
- */
-async function guardarConDetalle<T>(
-  conDetalle: () => Promise<T>,
-  sinDetalle: () => Promise<T>,
-  detalleVacio: boolean
-): Promise<T> {
-  try {
-    return await conDetalle();
-  } catch (err) {
-    if (!detalleVacio || !faltaMigracionDetalle(err)) throw err;
-    return sinDetalle();
   }
 }
 
@@ -189,7 +171,12 @@ export async function guardarCliente(id: number | null, d: DatosCliente): Promis
     );
     return id;
   };
-  return guardarConDetalle(guardar(true), guardar(false), d.planCalibracion === null);
+  // Sin la 017 se guarda igual, pero solo si no se marcó nada: lo que el
+  // usuario llenó no se pierde callado, se avisa que falta la migración.
+  return primeraQueResponda(
+    d.planCalibracion === null ? [guardar(true), guardar(false)] : [guardar(true)],
+    faltaMigracionDetalle
+  );
 }
 
 // ── Malls ───────────────────────────────────────────────────────────────────
@@ -337,13 +324,14 @@ interface FilaSucursal {
   fecha_instalacion?: string | null;
   remota?: boolean | null;
   en_garantia?: boolean | null;
+  plan_calibracion?: boolean | null;
 }
 
 const DETALLE_SUCURSAL = `, ${F_FECHA("fecha_instalacion")} AS fecha_instalacion, remota, en_garantia`;
 
 export async function listarSucursales(): Promise<Sucursal[]> {
-  // El mall es de la migración 011 y el detalle de la 017: sin ellas la lista
-  // sale igual, sin malls o sin detalle.
+  // El mall es de la migración 011, el detalle de la 017 y la calibración de
+  // la 018: sin ellas la lista sale igual, sin eso.
   const leer = (columnas: string) =>
     consultaConNotas<FilaSucursal>(
       (extra) =>
@@ -352,7 +340,12 @@ export async function listarSucursales(): Promise<Sucursal[]> {
       ", motivo_inactivo, notas"
     );
   const filas = await primeraQueResponda(
-    [() => leer(`, mall_id${DETALLE_SUCURSAL}`), () => leer(", mall_id"), () => leer("")],
+    [
+      () => leer(`, mall_id${DETALLE_SUCURSAL}, plan_calibracion`),
+      () => leer(`, mall_id${DETALLE_SUCURSAL}`),
+      () => leer(", mall_id"),
+      () => leer(""),
+    ],
     (err) => faltaMigracionDetalle(err) || faltaMigracionMalls(err)
   );
   return filas.map((f) => ({
@@ -371,6 +364,7 @@ export async function listarSucursales(): Promise<Sucursal[]> {
     fechaInstalacion: f.fecha_instalacion ?? null,
     remota: bitONull(f.remota),
     enGarantia: bitONull(f.en_garantia),
+    planCalibracion: bitONull(f.plan_calibracion),
   }));
 }
 
@@ -393,6 +387,11 @@ export interface DatosSucursal {
   fechaInstalacion: string | null;
   remota: boolean | null;
   enGarantia: boolean | null;
+  /**
+   * La de la tienda por su cuenta (migración 018). Si el cliente está en plan,
+   * la tienda lo está igual: esto solo cuenta cuando el cliente no lo está.
+   */
+  planCalibracion: boolean | null;
 }
 
 export async function guardarSucursal(id: number | null, d: DatosSucursal): Promise<number> {
@@ -412,15 +411,21 @@ export async function guardarSucursal(id: number | null, d: DatosSucursal): Prom
     ["instalacion", sql.Date, d.fechaInstalacion || null],
     ["remota", sql.Bit, d.remota],
     ["garantia", sql.Bit, d.enGarantia],
+    ["plan", sql.Bit, d.planCalibracion],
   ];
-  const guardar = (conDetalle: boolean) => async () => {
-    const det = conDetalle
-      ? {
-          col: ", fecha_instalacion, remota, en_garantia",
-          val: ", @instalacion, @remota, @garantia",
-          set: ", fecha_instalacion = @instalacion, remota = @remota, en_garantia = @garantia",
-        }
-      : { col: "", val: "", set: "" };
+  // Columna y parámetro de cada dato que depende de una migración.
+  const de017: [string, string][] = [
+    ["fecha_instalacion", "instalacion"],
+    ["remota", "remota"],
+    ["en_garantia", "garantia"],
+  ];
+  const de018: [string, string][] = [["plan_calibracion", "plan"]];
+  const guardar = (extra: [string, string][]) => async () => {
+    const det = {
+      col: extra.map(([c]) => `, ${c}`).join(""),
+      val: extra.map(([, p]) => `, @${p}`).join(""),
+      set: extra.map(([c, p]) => `, ${c} = @${p}`).join(""),
+    };
     if (id === null) {
       const [fila] = await consultaCon<{ id: number }>(
         `INSERT INTO dmc.sucursal (cliente_id, mall_id, nombre, codigo, direccion, comuna, region, telefono, activo,
@@ -441,8 +446,14 @@ export async function guardarSucursal(id: number | null, d: DatosSucursal): Prom
     );
     return id;
   };
-  const detalleVacio = !d.fechaInstalacion && d.remota === null && d.enGarantia === null;
-  return guardarConDetalle(guardar(true), guardar(false), detalleVacio);
+  // Si la base no tiene la 018 (o la 017) se guarda sin esas columnas, pero
+  // solo si no se llenó nada en ellas: lo escrito no se pierde callado.
+  const intentos = [guardar([...de017, ...de018])];
+  if (d.planCalibracion === null) {
+    intentos.push(guardar(de017));
+    if (!d.fechaInstalacion && d.remota === null && d.enGarantia === null) intentos.push(guardar([]));
+  }
+  return primeraQueResponda(intentos, faltaMigracionDetalle);
 }
 
 // ── Técnicos ────────────────────────────────────────────────────────────────

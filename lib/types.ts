@@ -85,6 +85,11 @@ export interface Sucursal {
   fechaInstalacion?: string | null;
   remota?: boolean | null;
   enGarantia?: boolean | null;
+  /**
+   * La de la tienda por su cuenta (migración 018). Si su cliente está en plan
+   * de calibración, la tienda lo está igual: ver `calibracionDeSucursal`.
+   */
+  planCalibracion?: boolean | null;
 }
 
 export interface Tecnico {

@@ -63,7 +63,7 @@ function mensajeDeError(err: unknown, contexto: string): string {
     return "Falta aplicar la migración 012 en la base de datos. Avísale al administrador.";
   }
   if (faltaMigracionDetalle(err)) {
-    return "Falta aplicar la migración 017 en la base de datos para guardar ese detalle. Déjalo en «Sin indicar» o avísale al administrador.";
+    return "Falta aplicar la migración 017 o la 018 en la base de datos para guardar ese detalle. Déjalo en «Sin indicar» o avísale al administrador.";
   }
   const texto = err instanceof Error ? err.message : String(err);
   if (/uq_mall_nombre/i.test(texto)) return "Ya existe un mall con ese nombre.";

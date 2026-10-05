@@ -99,6 +99,7 @@ CREATE TABLE dmc.sucursal (
     fecha_instalacion date        NULL,         -- cuándo se instaló (migración 017)
     remota          bit           NULL,         -- se atiende en remoto; NULL = no se sabe (migración 017)
     en_garantia     bit           NULL,         -- está en garantía; NULL = no se sabe (migración 017)
+    plan_calibracion bit          NULL,         -- en plan por su cuenta; si el cliente lo está, la tienda también (migración 018)
     creado_en       datetime2(0)  NOT NULL CONSTRAINT df_sucursal_creado DEFAULT (SYSDATETIME()),
     actualizado_en  datetime2(0)  NOT NULL CONSTRAINT df_sucursal_actualizado DEFAULT (SYSDATETIME()),
     CONSTRAINT pk_sucursal                PRIMARY KEY (id),
