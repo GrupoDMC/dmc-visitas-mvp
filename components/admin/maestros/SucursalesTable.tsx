@@ -1,22 +1,47 @@
 "use client";
 
+import { useCallback, useState } from "react";
 import MaestroTable from "@/components/admin/MaestroTable";
 import Tag from "@/components/Tag";
 import { guardarSucursalAction } from "@/app/actions/maestros";
 import { REGIONES } from "@/lib/ui/regiones";
+import { OPCIONES_SI_NO, formASiNo, siNoAForm } from "@/lib/ui/sino";
 import type { Cliente, Mall, Sucursal } from "@/lib/types";
+
+/** El filtro de una marca opcional: "" = todas, y si no, sí / no / sin indicar. */
+const OPCIONES_FILTRO_SI_NO = [
+  { v: "", t: "Todas" },
+  { v: "si", t: "Sí" },
+  { v: "no", t: "No" },
+  { v: "nd", t: "Sin indicar" },
+];
+const pasaSiNo = (filtro: string, v: boolean | null | undefined) =>
+  !filtro || (filtro === "nd" ? v === null || v === undefined : siNoAForm(v) === filtro);
+const textoSiNo = (filtro: string) => OPCIONES_FILTRO_SI_NO.find((o) => o.v === filtro)?.t ?? "";
 
 export default function SucursalesTable({
   sucursales,
   clientes,
   malls,
+  clienteInicial = "",
 }: {
   sucursales: Sucursal[];
   clientes: Cliente[];
   malls: Mall[];
+  /** Llega con «Ver locales» desde Clientes: la lista abre filtrada a ese cliente. */
+  clienteInicial?: string;
 }) {
   const nombreCliente = (id: number) => clientes.find((c) => c.id === id)?.nombreFantasia ?? "—";
   const nombreMall = (id?: number | null) => malls.find((m) => m.id === id)?.nombre ?? "";
+
+  const [fCliente, setFCliente] = useState(clientes.some((c) => String(c.id) === clienteInicial) ? clienteInicial : "");
+  const [fGarantia, setFGarantia] = useState("");
+  const [fRemota, setFRemota] = useState("");
+  const pasa = useCallback(
+    (s: Sucursal) =>
+      (!fCliente || String(s.clienteId) === fCliente) && pasaSiNo(fGarantia, s.enGarantia) && pasaSiNo(fRemota, s.remota),
+    [fCliente, fGarantia, fRemota]
+  );
 
   return (
     <MaestroTable<Sucursal>
@@ -29,6 +54,30 @@ export default function SucursalesTable({
       nota="La sucursal siempre pertenece a un cliente y no se puede dejar sin él. El mall es opcional: elegirlo le pone a la sucursal la ubicación del mall y, si es nueva, también su nombre."
       phBusqueda="Buscar sucursal, comuna, mall, código…"
       rows={sucursales}
+      filtros={{
+        campos: [
+          {
+            id: "f-cliente",
+            label: "Cliente",
+            valor: fCliente,
+            opciones: [{ v: "", t: "Todos" }, ...clientes.map((c) => ({ v: String(c.id), t: c.nombreFantasia }))],
+            onChange: setFCliente,
+          },
+          { id: "f-garantia", label: "En garantía", valor: fGarantia, opciones: OPCIONES_FILTRO_SI_NO, onChange: setFGarantia },
+          { id: "f-remota", label: "Remota", valor: fRemota, opciones: OPCIONES_FILTRO_SI_NO, onChange: setFRemota },
+        ],
+        chips: [
+          ...(fCliente ? [{ label: `Cliente: ${nombreCliente(Number(fCliente))}`, onQuitar: () => setFCliente("") }] : []),
+          ...(fGarantia ? [{ label: `Garantía: ${textoSiNo(fGarantia)}`, onQuitar: () => setFGarantia("") }] : []),
+          ...(fRemota ? [{ label: `Remota: ${textoSiNo(fRemota)}`, onQuitar: () => setFRemota("") }] : []),
+        ],
+        pasa,
+        limpiar: () => {
+          setFCliente("");
+          setFGarantia("");
+          setFRemota("");
+        },
+      }}
       searchKeys={(s) => `${s.nombre} ${s.codigo ?? ""} ${s.comuna} ${s.direccion} ${nombreCliente(s.clienteId)} ${nombreMall(s.mallId)}`}
       columns={[
         { key: "nombre", label: "Sucursal" },
@@ -37,6 +86,24 @@ export default function SucursalesTable({
         { key: "codigo", label: "Código", render: (s) => s.codigo ?? "—" },
         { key: "direccion", label: "Dirección" },
         { key: "comuna", label: "Comuna" },
+        {
+          key: "detalle",
+          label: "Detalle",
+          render: (s) =>
+            s.fechaInstalacion || (s.remota ?? null) !== null || (s.enGarantia ?? null) !== null ? (
+              <div className="flex flex-wrap gap-1 max-w-[220px]">
+                {s.enGarantia === true ? <Tag variant="accent">En garantía</Tag> : null}
+                {s.enGarantia === false ? <Tag variant="outline">Sin garantía</Tag> : null}
+                {s.remota === true ? <Tag variant="dark">Remota</Tag> : null}
+                {s.remota === false ? <Tag variant="outline">Presencial</Tag> : null}
+                {s.fechaInstalacion ? (
+                  <div className="basis-full text-[11px] opacity-66 tabular-nums">Instalada el {s.fechaInstalacion}</div>
+                ) : null}
+              </div>
+            ) : (
+              <span className="opacity-50">—</span>
+            ),
+        },
         {
           key: "activo",
           label: "Estado",
@@ -75,6 +142,9 @@ export default function SucursalesTable({
         { k: "direccion", label: "Dirección", span: 2 },
         { k: "comuna", label: "Comuna" },
         { k: "region", label: "Región", tipo: "select", opciones: REGIONES.map((r) => ({ v: r, t: r })) },
+        { k: "fechaInstalacion", label: "Fecha de instalación (opcional)", tipo: "date" },
+        { k: "remota", label: "¿Es remota? (opcional)", tipo: "select", opciones: OPCIONES_SI_NO },
+        { k: "enGarantia", label: "¿Está en garantía? (opcional)", tipo: "select", opciones: OPCIONES_SI_NO },
         { k: "activo", label: "Estado", tipo: "toggle" },
         {
           k: "motivoInactivo",
@@ -120,6 +190,9 @@ export default function SucursalesTable({
         activo: s.activo,
         motivoInactivo: s.motivoInactivo ?? "",
         notas: s.notas ?? "",
+        fechaInstalacion: s.fechaInstalacion ?? "",
+        remota: siNoAForm(s.remota),
+        enGarantia: siNoAForm(s.enGarantia),
       })}
       guardarAction={(id, f) =>
         guardarSucursalAction(id, {
@@ -134,6 +207,9 @@ export default function SucursalesTable({
           activo: f.activo !== false,
           motivoInactivo: String(f.motivoInactivo ?? "").trim() || null,
           notas: String(f.notas ?? "").trim() || null,
+          fechaInstalacion: String(f.fechaInstalacion ?? "") || null,
+          remota: formASiNo(f.remota),
+          enGarantia: formASiNo(f.enGarantia),
         })
       }
       emptyRow={{
@@ -148,6 +224,9 @@ export default function SucursalesTable({
         activo: true,
         motivoInactivo: "",
         notas: "",
+        fechaInstalacion: "",
+        remota: "",
+        enGarantia: "",
       }}
     />
   );

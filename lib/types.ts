@@ -49,6 +49,8 @@ export interface Cliente {
   motivoInactivo?: string | null;
   /** Texto libre del panel. */
   notas?: string | null;
+  /** En plan de calibración. null = no se sabe (o falta la migración 017). */
+  planCalibracion?: boolean | null;
 }
 
 /** Un centro comercial. Sus tiendas son las sucursales con ese `mallId`. */
@@ -79,6 +81,10 @@ export interface Sucursal {
   motivoInactivo?: string | null;
   /** Texto libre del panel. */
   notas?: string | null;
+  /** Detalle opcional (migración 017). La fecha va como YYYY-MM-DD; null = no se sabe. */
+  fechaInstalacion?: string | null;
+  remota?: boolean | null;
+  enGarantia?: boolean | null;
 }
 
 export interface Tecnico {

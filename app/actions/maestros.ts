@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { sesionCon } from "@/lib/auth";
 import {
+  faltaMigracionDetalle,
   faltaMigracionNotas,
   faltaMigracionMalls,
   faltaMigracionUbicacionMall,
@@ -60,6 +61,9 @@ function mensajeDeError(err: unknown, contexto: string): string {
   }
   if (faltaMigracionUbicacionMall(err)) {
     return "Falta aplicar la migración 012 en la base de datos. Avísale al administrador.";
+  }
+  if (faltaMigracionDetalle(err)) {
+    return "Falta aplicar la migración 017 en la base de datos para guardar ese detalle. Déjalo en «Sin indicar» o avísale al administrador.";
   }
   const texto = err instanceof Error ? err.message : String(err);
   if (/uq_mall_nombre/i.test(texto)) return "Ya existe un mall con ese nombre.";
@@ -136,6 +140,9 @@ export async function guardarSucursalAction(id: number | null, datos: DatosSucur
   // Una sucursal no queda inactiva sin que conste por qué.
   if (!datos.activo && !datos.motivoInactivo?.trim()) {
     return { ok: false, error: "Explica por qué se desactiva la sucursal." };
+  }
+  if (datos.fechaInstalacion && !/^\d{4}-\d{2}-\d{2}$/.test(datos.fechaInstalacion)) {
+    return { ok: false, error: "La fecha de instalación no es válida." };
   }
   try {
     await guardarSucursal(id, datos);

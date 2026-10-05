@@ -1,5 +1,5 @@
 import "server-only";
-import { consulta, consultaCon, ejecutar, num, numONull, sql, F_TS } from "@/lib/data/sql";
+import { consulta, consultaCon, ejecutar, num, numONull, sql, F_FECHA, F_TS } from "@/lib/data/sql";
 import { hashearPassword } from "@/lib/password";
 import { faltaMigracionRoles, rolesDeUsuarios } from "@/lib/data/roles";
 import { fmtRut, rutLimpio } from "@/lib/ui/formato";
@@ -64,6 +64,53 @@ async function consultaConNotas<T>(armar: (extra: string) => string, extra: stri
   }
 }
 
+/**
+ * ¿El error es que la base todavía no tiene la migración 017?
+ *
+ * Sin ella clientes y sucursales se leen y se guardan igual, solo que sin el
+ * plan de calibración ni el detalle de la sucursal.
+ */
+export function faltaMigracionDetalle(err: unknown): boolean {
+  const texto = err instanceof Error ? err.message : String(err);
+  return /invalid column name '(plan_calibracion|fecha_instalacion|remota|en_garantia)'/i.test(texto);
+}
+
+/** Un bit que admite «no se sabe»: null sigue siendo null. */
+const bitONull = (v: boolean | number | null | undefined) => (v === null || v === undefined ? null : Boolean(v));
+
+/**
+ * Prueba las consultas en orden y se queda con la primera que la base acepta.
+ * Cada una pide menos columnas que la anterior: solo se pasa a la siguiente si
+ * lo que falló es una migración que todavía no se aplica.
+ */
+async function primeraQueResponda<T>(intentos: (() => Promise<T>)[], faltaMigracion: (err: unknown) => boolean) {
+  for (let i = 0; ; i++) {
+    try {
+      return await intentos[i]();
+    } catch (err) {
+      if (i === intentos.length - 1 || !faltaMigracion(err)) throw err;
+    }
+  }
+}
+
+/**
+ * Guarda con el detalle de la 017 y, si la base no lo tiene, sin él. Pero solo
+ * si no se escribió nada en esos campos: lo que el usuario llenó no se pierde
+ * callado, se avisa que falta la migración.
+ */
+async function guardarConDetalle<T>(
+  conDetalle: () => Promise<T>,
+  sinDetalle: () => Promise<T>,
+  detalleVacio: boolean
+): Promise<T> {
+  try {
+    return await conDetalle();
+  } catch (err) {
+    if (!detalleVacio || !faltaMigracionDetalle(err)) throw err;
+    return sinDetalle();
+  }
+}
+
 interface FilaCliente {
   id: number;
   rut: string;
@@ -72,15 +119,18 @@ interface FilaCliente {
   activo: boolean;
   motivo_inactivo?: string | null;
   notas?: string | null;
+  plan_calibracion?: boolean | null;
 }
 
 export async function listarClientes(): Promise<Cliente[]> {
-  const filas = await consultaConNotas<FilaCliente>(
-    (extra) =>
-      `SELECT id, rut, razon_social, nombre_fantasia, activo${extra}
-         FROM dmc.cliente ORDER BY nombre_fantasia`,
-    ", motivo_inactivo, notas"
-  );
+  const leer = (detalle: string) =>
+    consultaConNotas<FilaCliente>(
+      (extra) =>
+        `SELECT id, rut, razon_social, nombre_fantasia, activo${detalle}${extra}
+           FROM dmc.cliente ORDER BY nombre_fantasia`,
+      ", motivo_inactivo, notas"
+    );
+  const filas = await primeraQueResponda([() => leer(", plan_calibracion"), () => leer("")], faltaMigracionDetalle);
   return filas.map((f) => ({
     id: num(f.id),
     rut: f.rut,
@@ -89,6 +139,7 @@ export async function listarClientes(): Promise<Cliente[]> {
     activo: Boolean(f.activo),
     motivoInactivo: f.motivo_inactivo ?? null,
     notas: f.notas ?? null,
+    planCalibracion: bitONull(f.plan_calibracion),
   }));
 }
 
@@ -100,6 +151,8 @@ export interface DatosCliente {
   /** Obligatorio cuando `activo` es false. */
   motivoInactivo: string | null;
   notas: string | null;
+  /** null = no se sabe. */
+  planCalibracion: boolean | null;
 }
 
 export async function guardarCliente(id: number | null, d: DatosCliente): Promise<number> {
@@ -114,24 +167,29 @@ export async function guardarCliente(id: number | null, d: DatosCliente): Promis
     // El motivo es del estado inactivo: al reactivar se borra.
     ["motivo", sql.NVarChar(400), d.activo ? null : d.motivoInactivo?.trim() || null],
     ["notas", sql.NVarChar(sql.MAX), d.notas?.trim() || null],
+    ["plan", sql.Bit, d.planCalibracion],
   ];
-  if (id === null) {
-    const [fila] = await consultaCon<{ id: number }>(
-      `INSERT INTO dmc.cliente (rut, razon_social, nombre_fantasia, activo, motivo_inactivo, notas)
-       OUTPUT INSERTED.id AS id
-       VALUES (@rut, @razon, @fantasia, @activo, @motivo, @notas)`,
-      params
+  const guardar = (conDetalle: boolean) => async () => {
+    const plan = conDetalle ? { col: ", plan_calibracion", val: ", @plan", set: ", plan_calibracion = @plan" } : { col: "", val: "", set: "" };
+    if (id === null) {
+      const [fila] = await consultaCon<{ id: number }>(
+        `INSERT INTO dmc.cliente (rut, razon_social, nombre_fantasia, activo, motivo_inactivo, notas${plan.col})
+         OUTPUT INSERTED.id AS id
+         VALUES (@rut, @razon, @fantasia, @activo, @motivo, @notas${plan.val})`,
+        params
+      );
+      return num(fila.id);
+    }
+    await ejecutar(
+      `UPDATE dmc.cliente
+          SET rut = @rut, razon_social = @razon, nombre_fantasia = @fantasia, activo = @activo,
+              motivo_inactivo = @motivo, notas = @notas${plan.set}
+        WHERE id = @id`,
+      [...params, ["id", sql.BigInt, id]]
     );
-    return num(fila.id);
-  }
-  await ejecutar(
-    `UPDATE dmc.cliente
-        SET rut = @rut, razon_social = @razon, nombre_fantasia = @fantasia, activo = @activo,
-            motivo_inactivo = @motivo, notas = @notas
-      WHERE id = @id`,
-    [...params, ["id", sql.BigInt, id]]
-  );
-  return id;
+    return id;
+  };
+  return guardarConDetalle(guardar(true), guardar(false), d.planCalibracion === null);
 }
 
 // ── Malls ───────────────────────────────────────────────────────────────────
@@ -276,24 +334,27 @@ interface FilaSucursal {
   activo: boolean;
   motivo_inactivo?: string | null;
   notas?: string | null;
+  fecha_instalacion?: string | null;
+  remota?: boolean | null;
+  en_garantia?: boolean | null;
 }
 
+const DETALLE_SUCURSAL = `, ${F_FECHA("fecha_instalacion")} AS fecha_instalacion, remota, en_garantia`;
+
 export async function listarSucursales(): Promise<Sucursal[]> {
-  // El mall es de la migración 011: sin ella la lista sale igual, sin malls.
-  const leer = (mall: string) =>
+  // El mall es de la migración 011 y el detalle de la 017: sin ellas la lista
+  // sale igual, sin malls o sin detalle.
+  const leer = (columnas: string) =>
     consultaConNotas<FilaSucursal>(
       (extra) =>
-        `SELECT id, cliente_id, nombre, codigo, direccion, comuna, region, telefono, activo${mall}${extra}
+        `SELECT id, cliente_id, nombre, codigo, direccion, comuna, region, telefono, activo${columnas}${extra}
            FROM dmc.sucursal ORDER BY nombre`,
       ", motivo_inactivo, notas"
     );
-  let filas: FilaSucursal[];
-  try {
-    filas = await leer(", mall_id");
-  } catch (err) {
-    if (!faltaMigracionMalls(err)) throw err;
-    filas = await leer("");
-  }
+  const filas = await primeraQueResponda(
+    [() => leer(`, mall_id${DETALLE_SUCURSAL}`), () => leer(", mall_id"), () => leer("")],
+    (err) => faltaMigracionDetalle(err) || faltaMigracionMalls(err)
+  );
   return filas.map((f) => ({
     id: num(f.id),
     clienteId: num(f.cliente_id),
@@ -307,6 +368,9 @@ export async function listarSucursales(): Promise<Sucursal[]> {
     activo: Boolean(f.activo),
     motivoInactivo: f.motivo_inactivo ?? null,
     notas: f.notas ?? null,
+    fechaInstalacion: f.fecha_instalacion ?? null,
+    remota: bitONull(f.remota),
+    enGarantia: bitONull(f.en_garantia),
   }));
 }
 
@@ -325,6 +389,10 @@ export interface DatosSucursal {
   /** Obligatorio cuando `activo` es false. */
   motivoInactivo: string | null;
   notas: string | null;
+  /** YYYY-MM-DD. Este y los dos siguientes: null = no se sabe. */
+  fechaInstalacion: string | null;
+  remota: boolean | null;
+  enGarantia: boolean | null;
 }
 
 export async function guardarSucursal(id: number | null, d: DatosSucursal): Promise<number> {
@@ -341,26 +409,40 @@ export async function guardarSucursal(id: number | null, d: DatosSucursal): Prom
     // El motivo es del estado inactivo: al reactivar se borra.
     ["motivo", sql.NVarChar(400), d.activo ? null : d.motivoInactivo?.trim() || null],
     ["notas", sql.NVarChar(sql.MAX), d.notas?.trim() || null],
+    ["instalacion", sql.Date, d.fechaInstalacion || null],
+    ["remota", sql.Bit, d.remota],
+    ["garantia", sql.Bit, d.enGarantia],
   ];
-  if (id === null) {
-    const [fila] = await consultaCon<{ id: number }>(
-      `INSERT INTO dmc.sucursal (cliente_id, mall_id, nombre, codigo, direccion, comuna, region, telefono, activo,
-                                 motivo_inactivo, notas)
-       OUTPUT INSERTED.id AS id
-       VALUES (@cliente, @mall, @nombre, @codigo, @direccion, @comuna, @region, @telefono, @activo, @motivo, @notas)`,
-      params
+  const guardar = (conDetalle: boolean) => async () => {
+    const det = conDetalle
+      ? {
+          col: ", fecha_instalacion, remota, en_garantia",
+          val: ", @instalacion, @remota, @garantia",
+          set: ", fecha_instalacion = @instalacion, remota = @remota, en_garantia = @garantia",
+        }
+      : { col: "", val: "", set: "" };
+    if (id === null) {
+      const [fila] = await consultaCon<{ id: number }>(
+        `INSERT INTO dmc.sucursal (cliente_id, mall_id, nombre, codigo, direccion, comuna, region, telefono, activo,
+                                   motivo_inactivo, notas${det.col})
+         OUTPUT INSERTED.id AS id
+         VALUES (@cliente, @mall, @nombre, @codigo, @direccion, @comuna, @region, @telefono, @activo, @motivo, @notas${det.val})`,
+        params
+      );
+      return num(fila.id);
+    }
+    await ejecutar(
+      `UPDATE dmc.sucursal
+          SET cliente_id = @cliente, mall_id = @mall, nombre = @nombre, codigo = @codigo, direccion = @direccion,
+              comuna = @comuna, region = @region, telefono = @telefono, activo = @activo,
+              motivo_inactivo = @motivo, notas = @notas${det.set}
+        WHERE id = @id`,
+      [...params, ["id", sql.BigInt, id]]
     );
-    return num(fila.id);
-  }
-  await ejecutar(
-    `UPDATE dmc.sucursal
-        SET cliente_id = @cliente, mall_id = @mall, nombre = @nombre, codigo = @codigo, direccion = @direccion,
-            comuna = @comuna, region = @region, telefono = @telefono, activo = @activo,
-            motivo_inactivo = @motivo, notas = @notas
-      WHERE id = @id`,
-    [...params, ["id", sql.BigInt, id]]
-  );
-  return id;
+    return id;
+  };
+  const detalleVacio = !d.fechaInstalacion && d.remota === null && d.enGarantia === null;
+  return guardarConDetalle(guardar(true), guardar(false), detalleVacio);
 }
 
 // ── Técnicos ────────────────────────────────────────────────────────────────

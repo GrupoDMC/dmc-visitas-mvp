@@ -5,8 +5,13 @@ import { sesionCon } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
-export default async function SucursalesPage() {
+export default async function SucursalesPage({ searchParams }: { searchParams: Promise<{ cliente?: string }> }) {
   if (!(await sesionCon("sucursales.ver"))) return <SinAcceso />;
-  const [sucursales, clientes, malls] = await Promise.all([listarSucursales(), listarClientes(), listarMalls()]);
-  return <SucursalesTable sucursales={sucursales} clientes={clientes} malls={malls} />;
+  const [{ cliente }, sucursales, clientes, malls] = await Promise.all([
+    searchParams,
+    listarSucursales(),
+    listarClientes(),
+    listarMalls(),
+  ]);
+  return <SucursalesTable sucursales={sucursales} clientes={clientes} malls={malls} clienteInicial={cliente ?? ""} />;
 }

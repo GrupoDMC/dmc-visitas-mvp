@@ -243,6 +243,7 @@ Sobre una base ya creada, los cambios van en archivos aparte y numerados:
 | [`sql/migracion-014-gestion-de-pendientes.sql`](sql/migracion-014-gestion-de-pendientes.sql) | `dmc.catalogo_pendiente` (la Lista 5 del Checklist: los pasos de gestión de una visita que no se pudo hacer) y `dmc.visita_pendiente_gestion` (lo marcado en cada visita, con quién y cuándo). Agrega el permiso `reagendas.gestionar` a cada rol que ya veía reagendas y pendientes. Sin ella la app arranca igual y «Reagendas y pendientes» muestra todo lo demás, pero no hay checklist de gestión que marcar ni guardar |
 | [`sql/migracion-015-gestion-de-problemas.sql`](sql/migracion-015-gestion-de-problemas.sql) | `dmc.catalogo_problema_gestion` (la Lista 6 del Checklist: los pasos con que se lleva un problema hasta cerrarlo) y `dmc.problema_gestion` (lo marcado en cada problema, con quién y cuándo). No agrega permisos: marcar usa `problemas.editar`. Sin ella la app arranca igual y «Problemas» muestra los gráficos, la bitácora y el historial de cada local, pero no hay checklist de gestión que marcar ni guardar |
 | [`sql/migracion-016-estados-de-problema.sql`](sql/migracion-016-estados-de-problema.sql) | `dmc.catalogo_problema_estado` (la Lista 7 del Checklist: los estados de un problema), cargado con los tres de siempre —Abierto, Espera repuesto, Resuelto—, y `dmc.problema.estado` pasa de un CHECK fijo a una clave foránea contra ese catálogo. «Abierto» y «Resuelto» son del sistema: se renombran, no se quitan. Sin ella la app arranca igual con los tres estados fijos, pero la lista no se puede cambiar |
+| [`sql/migracion-017-detalle-sucursal-y-plan-calibracion.sql`](sql/migracion-017-detalle-sucursal-y-plan-calibracion.sql) | Detalle opcional de la sucursal —`fecha_instalacion`, `remota` y `en_garantia`— y `dmc.cliente.plan_calibracion`. Las tres marcas admiten «no se sabe» (NULL). Sin ella la app arranca igual y clientes y sucursales se guardan, pero sin ese detalle |
 
 ```bash
 sqlcmd -S <host>,<puerto> -d DMC_Contingencia -i sql/migracion-002-mejoras.sql
@@ -260,6 +261,7 @@ sqlcmd -S <host>,<puerto> -d DMC_Contingencia -i sql/migracion-013-edicion-de-ac
 sqlcmd -S <host>,<puerto> -d DMC_Contingencia -i sql/migracion-014-gestion-de-pendientes.sql
 sqlcmd -S <host>,<puerto> -d DMC_Contingencia -i sql/migracion-015-gestion-de-problemas.sql
 sqlcmd -S <host>,<puerto> -d DMC_Contingencia -i sql/migracion-016-estados-de-problema.sql
+sqlcmd -S <host>,<puerto> -d DMC_Contingencia -i sql/migracion-017-detalle-sucursal-y-plan-calibracion.sql
 ```
 
 Son idempotentes: se pueden correr varias veces, y en orden.

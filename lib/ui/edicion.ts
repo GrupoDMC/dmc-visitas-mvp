@@ -33,7 +33,10 @@ export function formularioDesdeActa(visita: Visita): ActaEnFormulario {
     respNombre: ejec?.responsableNombre ?? visita.responsableNombre ?? "",
     respRut: fmtRut(ejec?.responsableRut ?? ""),
     respTel: fmtTel(ejec?.responsableTelefono ?? ""),
-    motivosCodigos: [...new Set([...agendados, ...(ejec?.motivosRealesCodigos ?? [])])],
+    // Los que confirmó el técnico mandan: puede haber quitado alguno agendado.
+    motivosCodigos: ejec?.motivosRealesCodigos?.filter(Boolean).length
+      ? [...new Set(ejec.motivosRealesCodigos.filter(Boolean))]
+      : agendados,
     obs: ejec?.observaciones ?? "",
     interno: ejec?.comentarioInterno ?? "",
     internos: (visita.internos ?? []).map((x) => x.codigo),

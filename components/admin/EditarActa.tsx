@@ -69,8 +69,8 @@ export default function EditarActa({
   const [subida, setSubida] = useState<{ interno: boolean; paso: string; pct: number } | null>(null);
 
   const hrefActa = `/admin/visitas/${encodeURIComponent(visita.folio)}`;
-  // Los motivos que agendó coordinación no se quitan acá: se corrigen en
-  // «Corregir visita», que es donde se agenda.
+  // Los motivos que agendó coordinación se marcan como tales, pero se pueden
+  // quitar igual que en el celular si en terreno no correspondían.
   const agendados = (visita.motivosCodigos?.length ? visita.motivosCodigos : [visita.motivoCodigo]).filter(Boolean);
   const nombreMotivo = (codigo: string) =>
     motivos.find((m) => m.codigo === codigo)?.nombre ??
@@ -445,15 +445,14 @@ export default function EditarActa({
                         <div className="font-extrabold text-[16px] leading-[1.25] mt-0.5">{nombreMotivo(codigo)}</div>
                       </div>
                       {agendados.includes(codigo) ? (
-                        <span className="tag tag-neutral flex-none" title="Lo agendó coordinación: se cambia en «Corregir visita»">
+                        <span className="tag tag-neutral flex-none" title="Lo agendó coordinación">
                           Agendado
                         </span>
-                      ) : (
-                        <BotonQuitar
-                          etiqueta={`Quitar el motivo ${nombreMotivo(codigo)}${suyos.length ? " y sus trabajos" : ""}`}
-                          onClick={() => quitarMotivo(codigo)}
-                        />
-                      )}
+                      ) : null}
+                      <BotonQuitar
+                        etiqueta={`Quitar el motivo ${nombreMotivo(codigo)}${suyos.length ? " y sus trabajos" : ""}`}
+                        onClick={() => quitarMotivo(codigo)}
+                      />
                     </div>
 
                     <div className="px-4 py-4 flex flex-col gap-3">

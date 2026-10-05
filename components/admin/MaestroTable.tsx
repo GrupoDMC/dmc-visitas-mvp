@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { sinTildes } from "@/lib/ui/formato";
 import { useRouter } from "next/navigation";
 import AdminHeader from "@/components/admin/AdminHeader";
-import FiltrosBar from "@/components/admin/FiltrosBar";
+import FiltrosBar, { type CampoFiltro, type ChipFiltro } from "@/components/admin/FiltrosBar";
 import Dialogo, { type CampoDef, type FormValores } from "@/components/admin/Dialogo";
 import { Toast, useToast } from "@/components/ui/Toast";
 import { puede, useReferencias } from "@/lib/ui/referencias";
@@ -14,6 +14,15 @@ export interface Column<T> {
   label: string;
   align?: "left" | "right";
   render?: (row: T) => React.ReactNode;
+}
+
+/** Filtros propios del maestro, además de la búsqueda (sucursales de un cliente). */
+export interface FiltrosMaestro<T> {
+  campos: CampoFiltro[];
+  chips: ChipFiltro[];
+  /** ¿La fila pasa los filtros? */
+  pasa: (row: T) => boolean;
+  limpiar: () => void;
 }
 
 export interface FieldConfig extends CampoDef {
@@ -50,6 +59,8 @@ export default function MaestroTable<T extends { id: number }>({
   validar,
   alCambiar,
   accionFila,
+  filtros,
+  resumen,
 }: {
   kicker: string;
   title: string;
@@ -83,6 +94,9 @@ export default function MaestroTable<T extends { id: number }>({
   alCambiar?: (k: string, valor: string | boolean, form: FormValores, id: number | null) => FormValores | null;
   /** Un botón propio del maestro en cada fila, antes del lápiz. */
   accionFila?: (row: T) => React.ReactNode;
+  filtros?: FiltrosMaestro<T>;
+  /** Cifras del maestro, entre la cabecera y la barra de búsqueda. */
+  resumen?: React.ReactNode;
 }) {
   const router = useRouter();
   const { toast, aviso } = useToast();
@@ -95,9 +109,9 @@ export default function MaestroTable<T extends { id: number }>({
 
   const filtradas = useMemo(() => {
     const q = sinTildes(busqueda.trim());
-    if (!q) return rows;
-    return rows.filter((r) => sinTildes(searchKeys(r)).includes(q));
-  }, [rows, busqueda, searchKeys]);
+    const pasa = filtros?.pasa;
+    return rows.filter((r) => (!pasa || pasa(r)) && (!q || sinTildes(searchKeys(r)).includes(q)));
+  }, [rows, busqueda, searchKeys, filtros?.pasa]);
 
   async function guardar() {
     if (!dialogo) return;
@@ -131,13 +145,17 @@ export default function MaestroTable<T extends { id: number }>({
       </AdminHeader>
 
       <div className="pb-10 animate-fade-in">
+        {resumen}
         <FiltrosBar
           busqueda={busqueda}
           phBusqueda={phBusqueda}
           onBusqueda={setBusqueda}
-          campos={[]}
-          chips={[]}
-          onLimpiar={() => setBusqueda("")}
+          campos={filtros?.campos ?? []}
+          chips={filtros?.chips ?? []}
+          onLimpiar={() => {
+            setBusqueda("");
+            filtros?.limpiar();
+          }}
           conteo={`${filtradas.length} ${filtradas.length === 1 ? "registro" : "registros"}`}
         />
 

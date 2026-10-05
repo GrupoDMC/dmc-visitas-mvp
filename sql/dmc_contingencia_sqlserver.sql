@@ -60,6 +60,7 @@ CREATE TABLE dmc.cliente (
     activo           bit           NOT NULL CONSTRAINT df_cliente_activo DEFAULT (1),
     motivo_inactivo  nvarchar(400) NULL,         -- por qué se desactivó; el panel lo exige (migración 009)
     notas            nvarchar(max) NULL,         -- texto libre del panel
+    plan_calibracion bit           NULL,         -- en plan de calibración; NULL = no se sabe (migración 017)
     creado_en        datetime2(0)  NOT NULL CONSTRAINT df_cliente_creado DEFAULT (SYSDATETIME()),
     actualizado_en   datetime2(0)  NOT NULL CONSTRAINT df_cliente_actualizado DEFAULT (SYSDATETIME()),
     CONSTRAINT pk_cliente     PRIMARY KEY (id),
@@ -95,6 +96,9 @@ CREATE TABLE dmc.sucursal (
     activo          bit           NOT NULL CONSTRAINT df_sucursal_activo DEFAULT (1),
     motivo_inactivo nvarchar(400) NULL,         -- por qué se desactivó; el panel lo exige (migración 009)
     notas           nvarchar(max) NULL,         -- texto libre del panel
+    fecha_instalacion date        NULL,         -- cuándo se instaló (migración 017)
+    remota          bit           NULL,         -- se atiende en remoto; NULL = no se sabe (migración 017)
+    en_garantia     bit           NULL,         -- está en garantía; NULL = no se sabe (migración 017)
     creado_en       datetime2(0)  NOT NULL CONSTRAINT df_sucursal_creado DEFAULT (SYSDATETIME()),
     actualizado_en  datetime2(0)  NOT NULL CONSTRAINT df_sucursal_actualizado DEFAULT (SYSDATETIME()),
     CONSTRAINT pk_sucursal                PRIMARY KEY (id),
