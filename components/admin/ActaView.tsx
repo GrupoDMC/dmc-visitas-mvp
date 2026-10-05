@@ -21,6 +21,7 @@ import { textoFechaVisita } from "@/lib/ui/fecha";
 import { nombreProblema, nombreTrabajo, puede, useReferencias } from "@/lib/ui/referencias";
 import { reloj } from "@/lib/ui/video";
 import { resumenEdicion } from "@/lib/ui/edicion";
+import { esInformePapel } from "@/lib/ui/papel";
 import type { Visita } from "@/lib/types";
 
 const AVISO_ESTADO: Record<string, string> = {
@@ -80,7 +81,9 @@ export default function ActaView({
   // En curso la tiene tomada un técnico: liberarla la devuelve a programada.
   const liberable = permite("visitas.liberar") && visita.estado === "EN_CURSO";
   const tomadaPor = nombreDeQuienLaTomo(visita);
-  const duracion = ejec ? minutosEntre(ejec.horaInicio, ejec.horaTermino) : null;
+  // Un informe en papel no trae horas: llegada y salida quedaron a las 00:00.
+  const papel = esInformePapel(ejec);
+  const duracion = ejec && !papel ? minutosEntre(ejec.horaInicio, ejec.horaTermino) : null;
   const firma = visita.firmas?.[0];
   const ediciones = visita.ediciones ?? [];
   // Editar el acta ya cerrada: solo con el permiso, y sin plazo.
@@ -100,7 +103,7 @@ export default function ActaView({
     codigo ? ref.motivos.find((m) => m.codigo === codigo)?.nombre ?? codigo : null;
 
   const sello = ejecutada && ejec
-    ? `${visita.fechaProgramada} · ${hhmm(ejec.horaInicio)}–${hhmm(ejec.horaTermino)}`
+    ? `${visita.fechaProgramada} · ${papel ? "informe en papel" : `${hhmm(ejec.horaInicio)}–${hhmm(ejec.horaTermino)}`}`
     : `${visita.fechaProgramada} · sin ejecutar`;
 
   const resumen: { k: string; v: string; span?: 2 }[] = [
@@ -118,7 +121,9 @@ export default function ActaView({
         : "Sin definir",
     },
     { k: "Teléfono", v: visita.responsableTelefono ?? "Sin teléfono" },
-    ejecutada && ejec
+    papel
+      ? { k: "Registro", v: "Informe en papel · cargado desde el panel" }
+      : ejecutada && ejec
       ? { k: "Hora de inicio en terreno", v: `${hhmm(ejec.horaInicio)}${duracion ? ` · ${duracion} min en la tienda` : ""}` }
       : { k: "Ejecución", v: "Pendiente · sin registro en terreno" },
     { k: "Estado", v: ESTADO_VISITA_LABEL[visita.estado], span: 2 },
@@ -630,7 +635,7 @@ export default function ActaView({
                     />
                   ) : (
                     <div className="h-[78px] border border-dashed border-[var(--color-divider)] bg-[var(--color-surface)] grid place-items-center text-[11px] leading-[1.3] tracking-[.06em] uppercase opacity-60">
-                      {cerrada ? "Firma capturada en terreno" : "Sin firma todavía"}
+                      {cerrada ? (papel ? "Firmado en papel" : "Firma capturada en terreno") : "Sin firma todavía"}
                     </div>
                   )}
                   <div className="h-px bg-[var(--color-text)] mt-1.5" />
@@ -749,14 +754,16 @@ export default function ActaView({
           <div className="px-3.5 py-3 bg-[var(--color-surface)] border-l-4 border-[var(--color-accent)]">
             <div className="text-[10px] tracking-[.11em] uppercase opacity-66">Último movimiento</div>
             <div className="font-extrabold text-[15px] leading-[1.3] mt-1.5">
-              {cerrada
+              {papel
+                ? "Informe en papel cargado"
+                : cerrada
                 ? "Acta cerrada por el técnico"
                 : ejecutada
                   ? "Formulario en edición en el móvil"
                   : "Programada, sin registro en terreno"}
             </div>
             <div className="text-xs leading-[1.4] opacity-60 mt-1 tabular-nums">
-              {visita.fechaProgramada} · {ejec ? hhmm(cerrada ? ejec.horaTermino : ejec.horaInicio) : "creada"} ·{" "}
+              {visita.fechaProgramada} · {ejec ? (papel ? "en papel" : hhmm(cerrada ? ejec.horaTermino : ejec.horaInicio)) : "creada"} ·{" "}
               {visita.tecnico?.nombreCompleto}
             </div>
           </div>
@@ -768,7 +775,7 @@ export default function ActaView({
               ? [
                   {
                     estado: "En curso",
-                    hora: `${visita.fechaProgramada} ${hhmm(ejec.horaInicio)}`,
+                    hora: `${visita.fechaProgramada} ${papel ? "· en papel" : hhmm(ejec.horaInicio)}`,
                     quien: visita.tecnico?.nombreCompleto ?? "—",
                     color: "var(--color-accent)",
                   },
@@ -778,7 +785,7 @@ export default function ActaView({
               ? [
                   {
                     estado: ESTADO_VISITA_LABEL[visita.estado],
-                    hora: `${visita.fechaProgramada} ${hhmm(ejec.horaTermino)}`,
+                    hora: `${visita.fechaProgramada} ${papel ? "· en papel" : hhmm(ejec.horaTermino)}`,
                     quien: visita.tecnico?.nombreCompleto ?? "—",
                     color: cerrada ? "var(--color-text)" : "var(--color-accent)",
                   },
@@ -926,6 +933,7 @@ function CorreoDialogo({
 }) {
   const router = useRouter();
   const ejec = visita.ejecucion;
+  const papel = esInformePapel(ejec);
   const duracion = ejec ? minutosEntre(ejec.horaInicio, ejec.horaTermino) : null;
 
   const [form, setForm] = useState<Record<string, string | boolean>>({
@@ -938,7 +946,7 @@ function CorreoDialogo({
       `Motivo: ${textoMotivosReales(visita)}\n` +
       `Técnico: ${visita.tecnico?.nombreCompleto}\n` +
       (visita.tecnicoAyudante ? `Técnico ayudante: ${visita.tecnicoAyudante.nombreCompleto}\n` : "") +
-      (ejec
+      (ejec && !papel
         ? `Horario en tienda: ${hhmm(ejec.horaInicio)} a ${hhmm(ejec.horaTermino)}${duracion ? ` (${duracion} min)` : ""}\n\n`
         : "\n") +
       `Trabajo realizado:\n${ejec?.observaciones ?? ""}\n\n` +

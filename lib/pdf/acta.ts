@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { PDFDocument, StandardFonts, rgb, type Color, type PDFFont, type PDFImage, type PDFPage } from "pdf-lib";
 import type { CatalogoMotivo, CatalogoProblema, CatalogoTrabajo, Visita } from "@/lib/types";
+import { esInformePapel } from "@/lib/ui/papel";
 
 /**
  * El acta de la visita en PDF, lista para mandarle al cliente.
@@ -358,6 +359,8 @@ async function logo(doc: PDFDocument): Promise<PDFImage | null> {
 export async function generarPdfActa(d: DatosPdfActa): Promise<Uint8Array> {
   const { visita } = d;
   const ejec = visita.ejecucion;
+  // Un informe en papel no trae horas ni firma dibujada: no se inventan.
+  const papel = esInformePapel(ejec);
   const doc = await PDFDocument.create();
   doc.setTitle(`Acta ${visita.folio}`);
   doc.setAuthor("Grupo dMC");
@@ -408,10 +411,10 @@ export async function generarPdfActa(d: DatosPdfActa): Promise<Uint8Array> {
       { etiqueta: "FECHA DE LA VISITA", valor: fechaLarga(dia), sub: diaSemana(dia) },
       {
         etiqueta: "HORARIO EN TIENDA",
-        valor: ejec ? `${hhmm(ejec.horaInicio)} – ${hhmm(ejec.horaTermino)}` : "—",
-        sub: "Llegada y salida",
+        valor: ejec && !papel ? `${hhmm(ejec.horaInicio)} – ${hhmm(ejec.horaTermino)}` : "—",
+        sub: papel ? "Informe en papel" : "Llegada y salida",
       },
-      { etiqueta: "DURACIÓN", valor: duracion(ejec?.horaInicio, ejec?.horaTermino) ?? "—", sub: "En tienda" },
+      { etiqueta: "DURACIÓN", valor: (papel ? null : duracion(ejec?.horaInicio, ejec?.horaTermino)) ?? "—", sub: "En tienda" },
       {
         etiqueta: "PROBLEMAS",
         valor: problemas.length ? String(problemas.length) : "Ninguno",
@@ -695,7 +698,7 @@ export async function generarPdfActa(d: DatosPdfActa): Promise<Uint8Array> {
         height: imgFirma.height * escala,
       });
     } else {
-      const t = "Sin firma";
+      const t = papel ? "Firmado en papel" : "Sin firma";
       h.pagina.drawText(t, {
         x: MARGEN + (anchoFirma - anchoDe(normal, t, 10)) / 2,
         y: base + 30,
@@ -725,7 +728,7 @@ export async function generarPdfActa(d: DatosPdfActa): Promise<Uint8Array> {
     };
     dato("Nombre", firma?.nombre || "—", negrita);
     dato("RUT", firma?.rut || "—");
-    if (firma?.firmadoEn) dato("Firmado el", fechaHora(firma.firmadoEn));
+    if (firma?.firmadoEn) dato("Firmado el", papel ? fechaLarga(firma.firmadoEn.slice(0, 10)) : fechaHora(firma.firmadoEn));
     h.escribir(
       h.lineas("Con su firma, la tienda deja constancia de la visita y de los trabajos descritos en esta acta.", normal, 7.5, ancho),
       x,
