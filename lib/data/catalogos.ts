@@ -1,6 +1,7 @@
 import "server-only";
 import { agrupar, consulta, consultaCon, ejecutar, num, sql } from "@/lib/data/sql";
 import { ESTADO_PROBLEMA_CIERRE, ESTADO_PROBLEMA_INICIAL, ESTADOS_PROBLEMA_BASE } from "@/lib/ui/estado";
+import { trabajosDelMotivo } from "@/lib/ui/motivos";
 import type {
   CatalogoEstadoProblema,
   CatalogoInterno,
@@ -126,8 +127,25 @@ interface FilaSubtrabajo {
   activo: boolean;
 }
 
+let conOrdenPorMotivo = false;
+
+/**
+ * ¿Está la migración 019 (dmc.catalogo_motivo_trabajo.orden)? Con ella cada
+ * motivo ordena sus trabajos y un trabajo sin motivos no se ofrece en ninguno.
+ * Sin ella sigue la regla de antes: sin motivos = en todos.
+ */
+export async function hayTrabajosPorMotivo(): Promise<boolean> {
+  if (conOrdenPorMotivo) return true;
+  const [fila] = await consulta<{ largo: number | null }>(
+    `SELECT COL_LENGTH('dmc.catalogo_motivo_trabajo', 'orden') AS largo`
+  );
+  conOrdenPorMotivo = fila?.largo != null;
+  return conOrdenPorMotivo;
+}
+
 export async function listarTrabajos(): Promise<CatalogoTrabajo[]> {
-  const [filas, subs, enlaces] = await Promise.all([
+  const conOrden = await hayTrabajosPorMotivo();
+  const [filas, subs, enlaces, motivos] = await Promise.all([
     consulta<FilaTrabajo>(
       `SELECT id, codigo, nombre, grupo_label, singular, orden, activo
          FROM dmc.catalogo_trabajo WHERE activo = 1 ORDER BY orden, id`
@@ -136,38 +154,46 @@ export async function listarTrabajos(): Promise<CatalogoTrabajo[]> {
       `SELECT id, trabajo_id, etiqueta, orden, permite_cantidad, activo
          FROM dmc.catalogo_trabajo_subtrabajo WHERE activo = 1 ORDER BY orden, id`
     ),
-    // Solo los motivos activos: uno dado de baja no puede dejar a un trabajo
-    // escondido de todos los demás.
-    consulta<{ trabajo_id: number; codigo: string }>(
-      `SELECT mt.trabajo_id, m.codigo
+    // Solo los motivos activos: los enlaces de uno dado de baja no cuentan.
+    consulta<{ trabajo_id: number; codigo: string; orden: number }>(
+      `SELECT mt.trabajo_id, m.codigo, ${conOrden ? "mt.orden" : "CAST(0 AS smallint)"} AS orden
          FROM dmc.catalogo_motivo_trabajo mt
          JOIN dmc.catalogo_motivo m ON m.id = mt.motivo_id AND m.activo = 1
         ORDER BY m.orden, m.id`
     ),
+    conOrden ? Promise.resolve([]) : listarMotivos(),
   ]);
 
   const porTrabajo = agrupar(subs, (s) => num(s.trabajo_id));
   const motivosPorTrabajo = agrupar(enlaces, (e) => num(e.trabajo_id));
-  return filas.map((f) => ({
-    id: num(f.id),
-    codigo: f.codigo,
-    nombre: f.nombre,
-    grupoLabel: f.grupo_label,
-    singular: f.singular,
-    orden: f.orden,
-    activo: Boolean(f.activo),
-    subtrabajos: (porTrabajo.get(num(f.id)) ?? []).map(
-      (s): CatalogoTrabajoSubtrabajo => ({
-        id: num(s.id),
-        trabajoId: num(s.trabajo_id),
-        etiqueta: s.etiqueta,
-        orden: s.orden,
-        permiteCantidad: Boolean(s.permite_cantidad),
-        activo: Boolean(s.activo),
-      })
-    ),
-    motivosCodigos: (motivosPorTrabajo.get(num(f.id)) ?? []).map((e) => e.codigo),
-  }));
+  return filas.map((f) => {
+    // Sin la migración 019, un trabajo sin motivos se sigue ofreciendo en
+    // todos: se resuelve acá para que el resto de la app use una sola regla.
+    const suyos = motivosPorTrabajo.get(num(f.id)) ?? [];
+    const enlazados = suyos.length || conOrden ? suyos : motivos.map((m) => ({ codigo: m.codigo, orden: f.orden }));
+    return {
+      id: num(f.id),
+      codigo: f.codigo,
+      nombre: f.nombre,
+      grupoLabel: f.grupo_label,
+      singular: f.singular,
+      orden: f.orden,
+      activo: Boolean(f.activo),
+      subtrabajos: (porTrabajo.get(num(f.id)) ?? []).map(
+        (s): CatalogoTrabajoSubtrabajo => ({
+          id: num(s.id),
+          trabajoId: num(s.trabajo_id),
+          etiqueta: s.etiqueta,
+          orden: s.orden,
+          permiteCantidad: Boolean(s.permite_cantidad),
+          activo: Boolean(s.activo),
+        })
+      ),
+      motivosCodigos: enlazados.map((e) => e.codigo),
+      // Sin la migración 019 la columna no existe y manda el orden global.
+      ordenEnMotivo: Object.fromEntries(enlazados.map((e) => [e.codigo, conOrden ? e.orden : f.orden])),
+    };
+  });
 }
 
 export async function listarInternos(): Promise<CatalogoInterno[]> {
@@ -392,20 +418,30 @@ export interface ProblemaBorrador {
   opciones: ItemBorrador[];
 }
 
+/** Un motivo con los trabajos que se ofrecen bajo él. */
+export interface MotivoConTrabajos extends MotivoBorrador {
+  /**
+   * Sus trabajos en orden, POR NOMBRE y no por id: un trabajo recién agregado
+   * en el mismo borrador todavía no tiene id. Vacío = ninguno.
+   */
+  trabajos?: string[];
+}
+
 export interface TrabajoBorrador {
   id: number | null;
   nombre: string;
   grupoLabel: string | null;
   subtrabajos: ItemBorrador[];
   /**
-   * Los motivos bajo los que se ofrece, POR NOMBRE y no por id: un motivo
-   * recién agregado en el mismo borrador todavía no tiene id. Vacío = todos.
+   * Solo plantillas guardadas antes de la migración 019: los motivos del
+   * trabajo, por nombre, con vacío = todos. Ahora la relación viaja en
+   * `motivos[].trabajos`.
    */
   motivos?: string[];
 }
 
 export interface BorradorChecklist {
-  motivos: MotivoBorrador[];
+  motivos: MotivoConTrabajos[];
   problemas: ProblemaBorrador[];
   trabajos: TrabajoBorrador[];
   /** Checklist del comentario interno. Misma forma que los motivos. */
@@ -492,6 +528,7 @@ export async function guardarChecklist(borrador: BorradorChecklist): Promise<Res
   // ── Trabajos realizados ──
   const padresTrabajo = await padresExistentes("dmc.catalogo_trabajo");
   const vivosTrabajo: number[] = [];
+  const trabajoPorNombre = new Map<string, number>();
   for (const [i, t] of borrador.trabajos.entries()) {
     const nombre = t.nombre.trim();
     if (!nombre) continue;
@@ -523,29 +560,18 @@ export async function guardarChecklist(borrador: BorradorChecklist): Promise<Res
       );
     }
     vivosTrabajo.push(id);
+    trabajoPorNombre.set(nombre.toLowerCase(), id);
     desactivados += await guardarHijos(
       "dmc.catalogo_trabajo_subtrabajo",
       "trabajo_id",
       id,
       t.subtrabajos
     );
-
-    // Motivos del trabajo: se reescriben enteros. Un nombre que no esté entre
-    // los motivos recién guardados se ignora.
-    await ejecutar(`DELETE FROM dmc.catalogo_motivo_trabajo WHERE trabajo_id = @id`, [["id", sql.BigInt, id]]);
-    const motivosDelTrabajo = new Set(
-      (t.motivos ?? [])
-        .map((n) => motivos.idPorNombre.get(n.trim().toLowerCase()))
-        .filter((m): m is number => m !== undefined)
-    );
-    for (const motivoId of motivosDelTrabajo) {
-      await ejecutar(`INSERT INTO dmc.catalogo_motivo_trabajo (motivo_id, trabajo_id) VALUES (@motivo, @trabajo)`, [
-        ["motivo", sql.BigInt, motivoId],
-        ["trabajo", sql.BigInt, id],
-      ]);
-    }
   }
   desactivados += await desactivarSobrantes("dmc.catalogo_trabajo", vivosTrabajo);
+
+  // ── Qué trabajos van en cada motivo ──
+  await guardarTrabajosPorMotivo(borrador.motivos, motivos.idPorNombre, trabajoPorNombre);
 
   // ── Checklist del comentario interno ──
   // Sin la lista en el borrador (un panel viejo todavía abierto) no se toca:
@@ -618,6 +644,56 @@ export async function guardarChecklist(borrador: BorradorChecklist): Promise<Res
     estadosProblema: vivosEstado,
     desactivados,
   };
+}
+
+/**
+ * Reescribe los enlaces motivo → trabajo de cada motivo del borrador, con la
+ * posición de cada trabajo dentro del motivo como orden. Los motivos que se
+ * desactivaron conservan sus enlaces: si vuelven, vuelven con sus trabajos.
+ *
+ * Va en dos sentencias y no en una por enlace: con 20 motivos de 5 trabajos
+ * serían 100 idas y vueltas al servidor. Los ids se interpolan, así que se
+ * filtran a enteros de verdad.
+ */
+async function guardarTrabajosPorMotivo(
+  motivos: MotivoConTrabajos[],
+  motivoPorNombre: Map<string, number>,
+  trabajoPorNombre: Map<string, number>
+): Promise<void> {
+  const entero = (n: number | undefined): n is number => n !== undefined && Number.isSafeInteger(n) && n > 0;
+  const tocados: number[] = [];
+  const filas: string[] = [];
+  for (const m of motivos) {
+    const motivoId = motivoPorNombre.get(m.nombre.trim().toLowerCase());
+    if (!entero(motivoId)) continue;
+    tocados.push(motivoId);
+    const vistos = new Set<number>();
+    for (const nombre of m.trabajos ?? []) {
+      const trabajoId = trabajoPorNombre.get(nombre.trim().toLowerCase());
+      if (!entero(trabajoId) || vistos.has(trabajoId)) continue;
+      vistos.add(trabajoId);
+      filas.push(`(${motivoId}, ${trabajoId}, ${vistos.size})`);
+    }
+  }
+  if (!tocados.length) return;
+
+  const conOrden = await hayTrabajosPorMotivo();
+  const valores = conOrden ? filas : filas.map((f) => f.replace(/, \d+\)$/, ")"));
+  // Un INSERT … VALUES admite hasta 1000 filas.
+  const inserts: string[] = [];
+  for (let i = 0; i < valores.length; i += 900) {
+    inserts.push(
+      `INSERT INTO dmc.catalogo_motivo_trabajo (motivo_id, trabajo_id${conOrden ? ", orden" : ""})
+       VALUES ${valores.slice(i, i + 900).join(",")};`
+    );
+  }
+  await ejecutar(
+    `SET XACT_ABORT ON;
+     BEGIN TRANSACTION;
+     DELETE FROM dmc.catalogo_motivo_trabajo WHERE motivo_id IN (${tocados.join(",")});
+     ${inserts.join("\n")}
+     COMMIT TRANSACTION;`
+  );
 }
 
 /**
@@ -765,10 +841,12 @@ export async function guardarPlantilla(nombre: string, usuarioId: number | null)
     listarPendientes(),
     listarGestionProblemas(),
   ]);
-  const nombreMotivo = (codigo: string) => motivos.find((m) => m.codigo === codigo)?.nombre;
-
   const payload: BorradorChecklist = {
-    motivos: motivos.map((m) => ({ id: null, nombre: m.nombre })),
+    motivos: motivos.map((m) => ({
+      id: null,
+      nombre: m.nombre,
+      trabajos: trabajosDelMotivo(trabajos, m.codigo).map((t) => t.nombre),
+    })),
     problemas: problemas.map((p) => ({
       id: null,
       nombre: p.nombre,
@@ -788,7 +866,6 @@ export async function guardarPlantilla(nombre: string, usuarioId: number | null)
         etiqueta: s.etiqueta,
         permiteCantidad: s.permiteCantidad,
       })),
-      motivos: t.motivosCodigos.map(nombreMotivo).filter((n): n is string => Boolean(n)),
     })),
     internos: internos.map((x) => ({ id: null, nombre: x.nombre })),
     pendientes: pendientes.map((x) => ({ id: null, nombre: x.nombre })),
@@ -889,8 +966,23 @@ export async function aplicarPlantilla(nombre: string): Promise<ResumenChecklist
   const idPorNombre = <T extends { id: number; nombre: string }>(lista: T[], buscado: string) =>
     lista.find((x) => x.nombre.trim().toLowerCase() === buscado.trim().toLowerCase())?.id ?? null;
 
+  // Una plantilla fijada antes de la migración 019 trae la relación al revés:
+  // cada trabajo con sus motivos, y sin motivos quería decir «en todos».
+  const deTrabajos = !leida.datos.motivos.some((m) => m.trabajos);
+  const trabajosDe = (motivo: string) =>
+    leida.datos.trabajos
+      .filter((t) => {
+        const suyos = (t.motivos ?? []).map((n) => n.trim().toLowerCase());
+        return !suyos.length || suyos.includes(motivo.trim().toLowerCase());
+      })
+      .map((t) => t.nombre);
+
   const borrador: BorradorChecklist = {
-    motivos: leida.datos.motivos.map((m) => ({ id: idPorNombre(motivos, m.nombre), nombre: m.nombre })),
+    motivos: leida.datos.motivos.map((m) => ({
+      id: idPorNombre(motivos, m.nombre),
+      nombre: m.nombre,
+      trabajos: deTrabajos ? trabajosDe(m.nombre) : (m.trabajos ?? []),
+    })),
     problemas: leida.datos.problemas.map((p) => ({
       id: idPorNombre(problemas, p.nombre),
       nombre: p.nombre,
@@ -903,7 +995,6 @@ export async function aplicarPlantilla(nombre: string): Promise<ResumenChecklist
       nombre: t.nombre,
       grupoLabel: t.grupoLabel,
       subtrabajos: t.subtrabajos.map((s) => ({ id: null, etiqueta: s.etiqueta, permiteCantidad: s.permiteCantidad })),
-      motivos: t.motivos ?? [],
     })),
     internos: leida.datos.internos?.map((x) => ({ id: idPorNombre(internos, x.nombre), nombre: x.nombre })),
     pendientes: leida.datos.pendientes?.map((x) => ({ id: idPorNombre(pendientes, x.nombre), nombre: x.nombre })),

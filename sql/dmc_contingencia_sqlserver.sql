@@ -267,17 +267,21 @@ CREATE TABLE dmc.catalogo_trabajo_subtrabajo (
 );
 GO
 
--- Qué trabajos van con cada motivo: en el acta, bajo cada motivo marcado solo
--- se ofrecen los suyos. Un trabajo sin filas acá se ofrece en todos.
+-- Qué trabajos van con cada motivo, y en qué orden: en el acta, bajo cada
+-- motivo marcado solo se ofrecen los suyos. Un trabajo sin filas acá no se
+-- ofrece en ninguno. Un mismo trabajo puede ir en varios motivos.
 CREATE TABLE dmc.catalogo_motivo_trabajo (
-    motivo_id   bigint  NOT NULL,
-    trabajo_id  bigint  NOT NULL,
+    motivo_id   bigint    NOT NULL,
+    trabajo_id  bigint    NOT NULL,
+    orden       smallint  NOT NULL CONSTRAINT df_cat_mot_trab_orden DEFAULT (0),
     CONSTRAINT pk_catalogo_motivo_trabajo PRIMARY KEY (motivo_id, trabajo_id),
     CONSTRAINT fk_cat_mot_trab_motivo  FOREIGN KEY (motivo_id)  REFERENCES dmc.catalogo_motivo (id)  ON DELETE CASCADE,
     CONSTRAINT fk_cat_mot_trab_trabajo FOREIGN KEY (trabajo_id) REFERENCES dmc.catalogo_trabajo (id) ON DELETE CASCADE
 );
 GO
 CREATE INDEX ix_cat_mot_trab_trabajo ON dmc.catalogo_motivo_trabajo (trabajo_id);
+GO
+CREATE INDEX ix_cat_mot_trab_motivo ON dmc.catalogo_motivo_trabajo (motivo_id, orden);
 GO
 
 -- Checklist del comentario interno: lo marca el técnico, no lo ve el cliente.

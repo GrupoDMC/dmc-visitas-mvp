@@ -177,10 +177,12 @@ export interface CatalogoTrabajo {
   activo: boolean;
   subtrabajos: CatalogoTrabajoSubtrabajo[];
   /**
-   * Motivos bajo los que se ofrece este trabajo en el acta. Vacío = se ofrece
-   * en todos (dmc.catalogo_motivo_trabajo sin filas para él).
+   * Motivos bajo los que se ofrece este trabajo en el acta, en el orden de los
+   * motivos. Vacío = no se ofrece en ninguno.
    */
   motivosCodigos: string[];
+  /** Su posición dentro de cada motivo (código del motivo → orden). */
+  ordenEnMotivo: Record<string, number>;
 }
 
 /** Ítem del checklist del comentario interno. No lo ve el cliente. */

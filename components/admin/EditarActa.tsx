@@ -12,7 +12,7 @@ import EstadoProblemaTag from "@/components/EstadoProblemaTag";
 import { fechaHoraCorta, formularioDesdeActa } from "@/lib/ui/edicion";
 import { fmtRut, fmtTel, mensajeRut } from "@/lib/ui/formato";
 import { comprimirFoto } from "@/lib/ui/imagen";
-import { trabajoVaConMotivo } from "@/lib/ui/referencias";
+import { trabajosDelMotivo } from "@/lib/ui/motivos";
 import { ajustarVideo, reloj, trozoBase64, VIDEO_TROZO_BYTES } from "@/lib/ui/video";
 import { abrirVideoAction, cerrarVideoAction, subirTrozoVideoAction } from "@/app/actions/videos";
 import type { FotoForm, ProblemaForm, SubSeleccion, TrabajoForm } from "@/lib/ui/borrador";
@@ -434,8 +434,8 @@ export default function EditarActa({
             <div className="flex flex-col gap-5">
               {motivosMarcados.map((codigo) => {
                 const suyos = trabajos.filter((t) => motivoDe(t) === codigo);
-                const porAgregar = catalogoTrabajo.filter(
-                  (t) => trabajoVaConMotivo(t, codigo) && !suyos.some((x) => x.codigo === t.codigo)
+                const porAgregar = trabajosDelMotivo(catalogoTrabajo, codigo).filter(
+                  (t) => !suyos.some((x) => x.codigo === t.codigo)
                 );
                 return (
                   <div key={codigo} className="border border-[var(--color-divider-soft)] border-l-4 border-l-[var(--color-accent)] bg-white">

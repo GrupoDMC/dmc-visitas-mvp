@@ -9,6 +9,7 @@ import SelectBuscable from "@/components/ui/SelectBuscable";
 import { Toast, useToast } from "@/components/ui/Toast";
 import { crearVisitasPapelAction } from "@/app/actions/visitas-papel";
 import { trabajoVaConMotivo, useReferencias } from "@/lib/ui/referencias";
+import { trabajosDelMotivo } from "@/lib/ui/motivos";
 import { fmtRut, mensajeRut } from "@/lib/ui/formato";
 import { hoyISO } from "@/lib/ui/fecha";
 import { PRIMER_ANIO_PAPEL } from "@/lib/ui/papel";
@@ -1019,7 +1020,7 @@ function TrabajosDelInforme({
   catalogo: CatalogoTrabajo[];
   onCambiar: (trabajos: TrabajoPapel[]) => void;
 }) {
-  const delMotivo = catalogo.filter((t) => trabajoVaConMotivo(t, motivo));
+  const delMotivo = trabajosDelMotivo(catalogo, motivo);
   if (delMotivo.length === 0) return null;
 
   const marcado = (codigo: string) => trabajos.find((t) => t.codigo === codigo);

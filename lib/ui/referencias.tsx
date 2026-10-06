@@ -77,11 +77,11 @@ export function nombreProblema(problemas: CatalogoProblema[], codigo: string): s
 }
 
 /**
- * ¿El trabajo se ofrece bajo este motivo? Un trabajo sin motivos asignados en
- * el checklist se ofrece en todos.
+ * ¿El trabajo se ofrece bajo este motivo? Solo si el checklist lo puso en él.
+ * Para la lista ya ordenada de un motivo: trabajosDelMotivo (lib/ui/motivos).
  */
 export function trabajoVaConMotivo(trabajo: CatalogoTrabajo, motivoCodigo: string): boolean {
-  return trabajo.motivosCodigos.length === 0 || trabajo.motivosCodigos.includes(motivoCodigo);
+  return trabajo.motivosCodigos.includes(motivoCodigo);
 }
 
 /** Nombre legible de un trabajo; si ya no está en el catálogo, su código. */

@@ -21,7 +21,7 @@ import {
   subirTrozoVideoAction,
 } from "@/app/actions/videos";
 import { descartarBorradorAction, guardarBorradorAction } from "@/app/actions/borradores";
-import { trabajoVaConMotivo } from "@/lib/ui/referencias";
+import { trabajosDelMotivo } from "@/lib/ui/motivos";
 import {
   actasEnCola,
   borradorConDatos,
@@ -1056,7 +1056,7 @@ export default function FormularioVisita({
   // ────────────────────────────── pantalla FORM ──────────────────────────────
   const trbSel = catalogoTrabajo.find((t) => t.codigo === nt.codigo) ?? null;
   // En la hoja de trabajo solo van los que el checklist asignó a este motivo.
-  const trabajosDelMotivo = catalogoTrabajo.filter((t) => trabajoVaConMotivo(t, nt.motivo));
+  const ofrecidos = trabajosDelMotivo(catalogoTrabajo, nt.motivo);
   const yaAgregado = (codigo: string) => trabajos.some((t) => t.codigo === codigo && motivoDe(t) === nt.motivo);
   const probSel = catalogoProblema.find((p) => p.codigo === np.codigo) ?? null;
   const probTieneOpciones = !!probSel && probSel.opciones.length > 0;
@@ -1759,9 +1759,9 @@ export default function FormularioVisita({
               </div>
             ) : null}
             <div>
-              <PasoTitulo n="1" texto={trabajosDelMotivo.some((t) => yaAgregado(t.codigo)) ? "¿Qué más hiciste?" : "¿Qué trabajo hiciste?"} />
+              <PasoTitulo n="1" texto={ofrecidos.some((t) => yaAgregado(t.codigo)) ? "¿Qué más hiciste?" : "¿Qué trabajo hiciste?"} />
               <div className="flex flex-col gap-1.5">
-                {trabajosDelMotivo.map((t) => {
+                {ofrecidos.map((t) => {
                   const activo = nt.codigo === t.codigo;
                   const agregado = yaAgregado(t.codigo);
                   return (
@@ -1786,7 +1786,7 @@ export default function FormularioVisita({
                     </button>
                   );
                 })}
-                {trabajosDelMotivo.length === 0 ? (
+                {ofrecidos.length === 0 ? (
                   <div className="px-3.5 py-3 border border-dashed border-black/[.4] text-[13px] opacity-70">
                     El checklist no tiene trabajos para este motivo. Avisa a coordinación.
                   </div>

@@ -4,6 +4,7 @@ import {
   hayEstadosProblema,
   hayGestionPendientes,
   hayGestionProblemas,
+  hayTrabajosPorMotivo,
   listarEstadosProblema,
   listarGestionProblemas,
   listarInternos,
@@ -31,6 +32,7 @@ export default async function ChecklistPage() {
     gestionProblemasDisponible,
     estadosProblema,
     estadosProblemaDisponible,
+    trabajosPorMotivoDisponible,
     plantilla,
   ] = await Promise.all([
     listarMotivos(),
@@ -43,6 +45,7 @@ export default async function ChecklistPage() {
     hayGestionProblemas(),
     listarEstadosProblema(),
     hayEstadosProblema(),
+    hayTrabajosPorMotivo(),
     getPlantilla(PLANTILLA_PROPIA),
   ]);
 
@@ -58,6 +61,7 @@ export default async function ChecklistPage() {
       gestionProblemasDisponible={gestionProblemasDisponible}
       estadosProblemaIniciales={estadosProblema.filter((e) => e.activo)}
       estadosProblemaDisponible={estadosProblemaDisponible}
+      trabajosPorMotivoDisponible={trabajosPorMotivoDisponible}
       plantillaInicial={plantilla}
     />
   );
