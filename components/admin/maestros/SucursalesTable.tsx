@@ -1,7 +1,10 @@
 "use client";
 
 import { useCallback, useState } from "react";
+import { useRouter } from "next/navigation";
 import MaestroTable from "@/components/admin/MaestroTable";
+import SucursalesLoteDialogo from "@/components/admin/maestros/SucursalesLoteDialogo";
+import { Toast, useToast } from "@/components/ui/Toast";
 import Tag from "@/components/Tag";
 import { guardarSucursalAction } from "@/app/actions/maestros";
 import { REGIONES } from "@/lib/ui/regiones";
@@ -31,6 +34,9 @@ export default function SucursalesTable({
   /** Llega con «Ver locales» desde Clientes: la lista abre filtrada a ese cliente. */
   clienteInicial?: string;
 }) {
+  const router = useRouter();
+  const { toast, aviso } = useToast();
+  const [lote, setLote] = useState(false);
   const nombreCliente = (id: number) => clientes.find((c) => c.id === id)?.nombreFantasia ?? "—";
   const calibracion = (s: Sucursal) => calibracionDeSucursal(s, clientes.find((c) => c.id === s.clienteId));
   /** ¿El cliente elegido en el formulario está en plan? Entonces la tienda también, sin preguntar. */
@@ -51,8 +57,16 @@ export default function SucursalesTable({
     [fCliente, fGarantia, fRemota, fCalibracion, clientes]
   );
 
-  return (
+  const tabla = (
     <MaestroTable<Sucursal>
+      accionesCabecera={
+        <button onClick={() => setLote(true)} className="btn btn-secondary">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+            <path d="M4 6h16M4 12h16M4 18h10M18 16v6M15 19h6" />
+          </svg>
+          <span>Alta masiva</span>
+        </button>
+      }
       kicker="Maestros"
       title="Sucursales"
       modulo="sucursales"
@@ -280,5 +294,25 @@ export default function SucursalesTable({
         calibracionPorCliente: "",
       }}
     />
+  );
+
+  return (
+    <>
+      {tabla}
+      {lote ? (
+        <SucursalesLoteDialogo
+          sucursales={sucursales}
+          clientes={clientes}
+          malls={malls}
+          clienteInicial={fCliente}
+          onCerrar={() => setLote(false)}
+          onHecho={(mensaje, guardado) => {
+            aviso(mensaje);
+            if (guardado) router.refresh();
+          }}
+        />
+      ) : null}
+      <Toast texto={toast} variante="panel" />
+    </>
   );
 }

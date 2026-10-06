@@ -10,6 +10,7 @@ import {
   guardarCliente,
   guardarMall,
   guardarSucursal,
+  crearSucursalesLote,
   guardarTecnico,
   guardarUsuario,
   ponerTiendasDeMall,
@@ -18,6 +19,7 @@ import {
   type DatosCliente,
   type DatosMall,
   type DatosSucursal,
+  type DatosSucursalLote,
   type DatosTecnico,
   type DatosUsuario,
   listarUsuarios,
@@ -151,6 +153,25 @@ export async function guardarSucursalAction(id: number | null, datos: DatosSucur
   }
   revalidar();
   return { ok: true };
+}
+
+/** Alta masiva: todas las sucursales nuevas de un cliente, en un solo INSERT. */
+export async function crearSucursalesLoteAction(
+  clienteId: number,
+  filas: DatosSucursalLote[]
+): Promise<ResultadoMaestro & { creadas?: number }> {
+  if (!(await sesionCon("sucursales.crear"))) return { ok: false, error: "No tienes permiso para crear sucursales." };
+  if (!clienteId || filas.length === 0) return { ok: false, error: "No hay sucursales por crear." };
+  if (filas.some((f) => !f.nombre.trim() || !f.direccion.trim() || !f.comuna.trim() || !f.region.trim())) {
+    return { ok: false, error: "Cada sucursal necesita nombre, dirección, comuna y región." };
+  }
+  try {
+    const creadas = await crearSucursalesLote(clienteId, filas);
+    revalidar();
+    return { ok: true, creadas };
+  } catch (err) {
+    return { ok: false, error: mensajeDeError(err, "crearSucursalesLote") };
+  }
 }
 
 export async function guardarTecnicoAction(id: number | null, datos: DatosTecnico): Promise<ResultadoMaestro> {

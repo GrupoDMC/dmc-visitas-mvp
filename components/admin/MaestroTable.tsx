@@ -61,6 +61,7 @@ export default function MaestroTable<T extends { id: number }>({
   accionFila,
   filtros,
   resumen,
+  accionesCabecera,
 }: {
   kicker: string;
   title: string;
@@ -97,6 +98,8 @@ export default function MaestroTable<T extends { id: number }>({
   filtros?: FiltrosMaestro<T>;
   /** Cifras del maestro, entre la cabecera y la barra de búsqueda. */
   resumen?: React.ReactNode;
+  /** Botones propios del maestro en la cabecera, antes del de agregar. */
+  accionesCabecera?: React.ReactNode;
 }) {
   const router = useRouter();
   const { toast, aviso } = useToast();
@@ -134,6 +137,7 @@ export default function MaestroTable<T extends { id: number }>({
   return (
     <>
       <AdminHeader kicker={kicker} title={title} pestanas={pestanas}>
+        {puedeCrear ? accionesCabecera : null}
         {puedeCrear ? (
           <button onClick={() => setDialogo({ id: null, form: emptyRow })} className="btn btn-primary">
             <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4">

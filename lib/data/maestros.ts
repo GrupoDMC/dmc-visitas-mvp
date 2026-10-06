@@ -456,6 +456,44 @@ export async function guardarSucursal(id: number | null, d: DatosSucursal): Prom
   return primeraQueResponda(intentos, faltaMigracionDetalle);
 }
 
+/** Una sucursal nueva dentro de un alta masiva. */
+export interface DatosSucursalLote {
+  mallId: number | null;
+  nombre: string;
+  codigo: string | null;
+  direccion: string;
+  comuna: string;
+  region: string;
+}
+
+/**
+ * Crea todas las sucursales de un cliente en un solo INSERT: o entran todas o
+ * ninguna. Las filas viajan como JSON, igual que en `ponerTiendasDeMall`.
+ */
+export async function crearSucursalesLote(clienteId: number, filas: DatosSucursalLote[]): Promise<number> {
+  const json = JSON.stringify(
+    filas.map((f) => ({
+      mall: f.mallId,
+      nombre: f.nombre,
+      codigo: f.codigo?.trim() || null,
+      direccion: f.direccion,
+      comuna: f.comuna,
+      region: f.region,
+    }))
+  );
+  return ejecutar(
+    `INSERT INTO dmc.sucursal (cliente_id, mall_id, nombre, codigo, direccion, comuna, region, activo)
+     SELECT @cliente, j.mall, j.nombre, j.codigo, j.direccion, j.comuna, j.region, 1
+       FROM OPENJSON(@filas)
+            WITH (mall bigint '$.mall', nombre nvarchar(120) '$.nombre', codigo varchar(20) '$.codigo',
+                  direccion nvarchar(180) '$.direccion', comuna nvarchar(80) '$.comuna', region nvarchar(80) '$.region') j`,
+    [
+      ["cliente", sql.BigInt, clienteId],
+      ["filas", sql.NVarChar(sql.MAX), json],
+    ]
+  );
+}
+
 // ── Técnicos ────────────────────────────────────────────────────────────────
 
 interface FilaTecnico {
