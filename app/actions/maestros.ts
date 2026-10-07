@@ -24,7 +24,7 @@ import {
   type DatosUsuario,
   listarUsuarios,
 } from "@/lib/data/maestros";
-import { eliminarRol, guardarRol, listarRoles, type DatosRol } from "@/lib/data/roles";
+import { eliminarRol, guardarPermisosCelular, guardarRol, listarRoles, type DatosRol } from "@/lib/data/roles";
 import { normalizarPermisos, tiene } from "@/lib/permisos";
 import { mensajeRut, rutCompleto } from "@/lib/ui/formato";
 import type { RolUsuario } from "@/lib/types";
@@ -274,6 +274,18 @@ export async function eliminarRolAction(id: number): Promise<ResultadoMaestro> {
     if (fallo) return { ok: false, error: fallo };
   } catch (err) {
     return { ok: false, error: mensajeDeError(err, "eliminarRol") };
+  }
+  revalidar();
+  return { ok: true };
+}
+
+/** Los permisos de celular de todos los técnicos (apartado «Permisos del celular»). */
+export async function guardarPermisosCelularAction(permisos: string[]): Promise<ResultadoMaestro> {
+  if (!(await sesionCon("usuarios.roles"))) return { ok: false, error: "No tienes permiso para administrar roles." };
+  try {
+    await guardarPermisosCelular(permisos);
+  } catch (err) {
+    return { ok: false, error: mensajeDeError(err, "guardarPermisosCelular") };
   }
   revalidar();
   return { ok: true };

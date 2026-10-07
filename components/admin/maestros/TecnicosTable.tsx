@@ -6,11 +6,18 @@ import { guardarTecnicoAction } from "@/app/actions/maestros";
 import { mensajeRut, rutLimpio } from "@/lib/ui/formato";
 import type { Tecnico } from "@/lib/types";
 
-export default function TecnicosTable({ tecnicos }: { tecnicos: Tecnico[] }) {
+export default function TecnicosTable({
+  tecnicos,
+  pestanas,
+}: {
+  tecnicos: Tecnico[];
+  pestanas?: React.ReactNode;
+}) {
   return (
     <MaestroTable<Tecnico>
-      kicker="Maestros"
-      title="Técnicos"
+      kicker="Maestros · quién sale a terreno"
+      title="Usuarios"
+      pestanas={pestanas}
       modulo="tecnicos"
       addLabel="Nuevo técnico"
       editLabel="Editar técnico"

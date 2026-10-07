@@ -32,8 +32,11 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     .join(" ");
 
   // El menú solo ofrece los módulos que el rol puede abrir.
+  // Usuarios aloja también la pestaña Técnicos: se ofrece con cualquiera de los dos permisos.
   const visible = (item: { href: string }) =>
-    tiene(sesion.permisos, `${item.href === "/admin" ? "panel" : item.href.split("/")[2]}.ver`);
+    item.href === "/admin/usuarios"
+      ? tiene(sesion.permisos, "usuarios.ver") || tiene(sesion.permisos, "tecnicos.ver")
+      : tiene(sesion.permisos, `${item.href === "/admin" ? "panel" : item.href.split("/")[2]}.ver`);
 
   return (
     <ReferenciasProvider valor={referencias}>
@@ -51,9 +54,8 @@ export default async function AdminLayout({ children }: { children: React.ReactN
             { href: "/admin/problemas", label: "Problemas", n: problemasAbiertos },
           ].filter(visible)}
           maestros={[
-            { href: "/admin/tecnicos", label: "Técnicos", n: referencias.tecnicos.length },
-            // "Contraseñas pedidas" vive dentro de Usuarios: el número en rojo
-            // es lo que queda sin atender en esa pestaña.
+            // "Técnicos" y "Contraseñas pedidas" viven dentro de Usuarios: el
+            // número en rojo es lo que queda sin atender en esa pestaña.
             {
               href: "/admin/usuarios",
               label: "Usuarios",

@@ -5,6 +5,7 @@ import { listarInternos, listarMotivos, listarProblemas, listarTrabajos } from "
 import MobileShell from "@/components/mobile/MobileShell";
 import FormularioVisita from "@/components/mobile/FormularioVisita";
 import { participaEnVisita } from "@/lib/ui/estado";
+import { tiene } from "@/lib/permisos";
 
 export const dynamic = "force-dynamic";
 
@@ -19,7 +20,11 @@ export default async function EditarActaPage({ params }: { params: Promise<{ fol
   if (!visita || !participaEnVisita(visita, sesion.tecnico.id)) notFound();
   // Fuera de plazo o sin acta cerrada no hay nada que editar: vuelve al acta,
   // que es donde se explica por qué.
-  if (visita.estado !== "COMPLETADA" || !visita.ejecucion?.editablePorTecnico) {
+  if (
+    visita.estado !== "COMPLETADA" ||
+    !visita.ejecucion?.editablePorTecnico ||
+    !tiene(sesion.permisos, "celular.editarActa")
+  ) {
     redirect(`/tecnico/visitas/${visita.folio}/revisar`);
   }
 

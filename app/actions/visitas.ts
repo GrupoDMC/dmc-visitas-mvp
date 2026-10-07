@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { getSesion } from "@/lib/auth";
+import { tiene } from "@/lib/permisos";
 import {
   cambiarEstadoVisita,
   crearVisita,
@@ -120,6 +121,9 @@ export async function cambiarEstadoVisitaAction(input: {
 }): Promise<ResultadoAccion> {
   const contexto = await visitaDelTecnico(input.folio);
   if (!contexto) return { ok: false, error: "No encontramos esa visita entre las tuyas." };
+  if (!tiene(contexto.sesion.permisos, "celular.estado")) {
+    return { ok: false, error: "Tu rol no puede reagendar, dejar pendiente ni cancelar visitas." };
+  }
   if (tomadaPorOtro(contexto.visita, contexto.tecnico.id)) {
     return { ok: false, error: "El otro técnico ya inició esta visita: solo él puede cambiarla." };
   }
@@ -169,6 +173,9 @@ export async function crearVisitaTecnicoAction(input: {
 }): Promise<ResultadoAccion> {
   const sesion = await getSesion();
   if (!sesion?.tecnico) return { ok: false, error: "Tu cuenta no tiene un técnico asociado." };
+  if (!tiene(sesion.permisos, "celular.crearVisita")) {
+    return { ok: false, error: "Tu rol no puede agregar visitas desde el celular." };
+  }
 
   const sucursal = (await listarSucursales()).find((s) => s.id === input.sucursalId);
   if (!sucursal) return { ok: false, error: "Elige la sucursal donde estás." };

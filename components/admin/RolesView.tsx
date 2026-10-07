@@ -7,8 +7,15 @@ import Confirmar, { type ConfirmarCfg } from "@/components/admin/Confirmar";
 import Dialogo, { type CampoDef, type FormValores } from "@/components/admin/Dialogo";
 import Tag from "@/components/Tag";
 import { Toast, useToast } from "@/components/ui/Toast";
-import { eliminarRolAction, guardarRolAction } from "@/app/actions/maestros";
-import { MODULOS, TODOS_LOS_PERMISOS, VER, type ModuloPermiso } from "@/lib/permisos";
+import { eliminarRolAction, guardarPermisosCelularAction, guardarRolAction } from "@/app/actions/maestros";
+import {
+  MODULOS,
+  MODULOS_CELULAR,
+  TODOS_LOS_PERMISOS,
+  TODOS_LOS_PERMISOS_CELULAR,
+  VER,
+  type ModuloPermiso,
+} from "@/lib/permisos";
 import type { Rol } from "@/lib/types";
 
 /**
@@ -19,13 +26,34 @@ import type { Rol } from "@/lib/types";
  * rol en la pestaña Cuentas y hereda lo que ese rol tenga marcado acá. El
  * cambio corre en la siguiente pantalla que abra, sin volver a iniciar sesión.
  *
- * Administrador y Técnico son fijos: el primero puede todo —para que nadie se
- * quede afuera quitándole permisos— y el segundo entra por el celular.
+ * Administrador es fijo: puede todo, para que nadie se quede afuera quitándole
+ * permisos. El Técnico entra por el celular y no usa el panel, pero sus
+ * funciones de celular también se editan acá, en su propio apartado.
  */
-export default function RolesView({ roles, pestanas }: { roles: Rol[] | null; pestanas?: React.ReactNode }) {
+export default function RolesView({
+  roles,
+  permisosCelular,
+  tecnicos,
+  pestanas,
+}: {
+  roles: Rol[] | null;
+  /** Lo que pueden hacer los técnicos desde el celular. */
+  permisosCelular: string[];
+  /** Cuántos técnicos hay: son quienes heredan los permisos del celular. */
+  tecnicos: number;
+  pestanas?: React.ReactNode;
+}) {
   const router = useRouter();
   const { toast, aviso } = useToast();
-  const [dialogo, setDialogo] = useState<{ id: number | null; form: FormValores; permisos: string[] } | null>(null);
+  const [dialogo, setDialogo] = useState<{
+    id: number | null;
+    form: FormValores;
+    permisos: string[];
+    /** true = se editan los permisos del celular del Técnico, no un rol del panel. */
+    celular?: boolean;
+  } | null>(null);
+  const modulos = dialogo?.celular ? MODULOS_CELULAR : MODULOS;
+  const total = dialogo?.celular ? TODOS_LOS_PERMISOS_CELULAR.length : TODOS_LOS_PERMISOS.length;
   const [confirmar, setConfirmar] = useState<ConfirmarCfg | null>(null);
   const [guardando, setGuardando] = useState(false);
 
@@ -46,7 +74,9 @@ export default function RolesView({ roles, pestanas }: { roles: Rol[] | null; pe
           ? dialogo.permisos.filter((p) => !p.startsWith(`${modulo.clave}.`))
           : dialogo.permisos.filter((p) => p !== clave);
     } else {
-      permisos = [...new Set([...dialogo.permisos, clave, `${modulo.clave}.${VER}`])];
+      // Los módulos del panel abren con «ver»; los del celular no tienen esa acción.
+      const conVer = modulo.acciones.some((a) => a.clave === VER);
+      permisos = [...new Set([...dialogo.permisos, clave, ...(conVer ? [`${modulo.clave}.${VER}`] : [])])];
     }
     setDialogo({ ...dialogo, permisos });
   }
@@ -61,6 +91,16 @@ export default function RolesView({ roles, pestanas }: { roles: Rol[] | null; pe
 
   async function guardar() {
     if (!dialogo) return;
+    if (dialogo.celular) {
+      setGuardando(true);
+      const res = await guardarPermisosCelularAction(dialogo.permisos);
+      setGuardando(false);
+      if (!res.ok) return aviso(res.error ?? "No se pudo guardar.");
+      aviso("Permisos del celular guardados · corren de inmediato");
+      setDialogo(null);
+      router.refresh();
+      return;
+    }
     if (!String(dialogo.form.nombre).trim()) return aviso("El rol necesita un nombre");
     if (dialogo.permisos.length === 0) return aviso("Marca al menos un permiso");
 
@@ -183,14 +223,54 @@ export default function RolesView({ roles, pestanas }: { roles: Rol[] | null; pe
                     </td>
                   </tr>
                 ))}
+              </tbody>
+            </table>
+            </div>
+
+            <h2 className="mt-9 mb-1 text-[11px] font-extrabold tracking-[.11em] uppercase">Permisos del celular</h2>
+            <p className="m-0 mb-4 text-[13px] opacity-66 max-w-[80ch]">
+              Qué puede hacer un técnico desde la app del celular. Lo heredan todas las cuentas de técnico; ven solo sus
+              propias visitas, sin importar estos permisos.
+            </p>
+            <div className="overflow-x-auto">
+            <table className="table min-w-[640px]">
+              <thead>
+                <tr>
+                  <th>Rol</th>
+                  <th>Descripción</th>
+                  <th>Usuarios</th>
+                  <th>Permisos</th>
+                  <th style={{ width: 84 }} />
+                </tr>
+              </thead>
+              <tbody>
                 <tr>
                   <td className="font-semibold">Técnico</td>
                   <td className="opacity-70">Entra por el celular y ve solo sus visitas. No usa el panel.</td>
-                  <td className="opacity-45">—</td>
-                  <td>
-                    <Tag variant="neutral">Celular</Tag>
+                  <td className="tabular-nums">{tecnicos}</td>
+                  <td className="tabular-nums">
+                    {permisosCelular.length} de {TODOS_LOS_PERMISOS_CELULAR.length}
                   </td>
-                  <td />
+                  <td className="text-right whitespace-nowrap">
+                    <button
+                      onClick={() =>
+                        setDialogo({
+                          id: null,
+                          form: { nombre: "Técnico", descripcion: "" },
+                          permisos: permisosCelular,
+                          celular: true,
+                        })
+                      }
+                      className="btn btn-icon w-8 h-8 border border-black/[.3]"
+                      aria-label="Editar los permisos del celular del técnico"
+                      title="Editar permisos del celular"
+                    >
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M4 20h4l10-10-4-4L4 16v4z" />
+                        <path d="M14 6l4 4" />
+                      </svg>
+                    </button>
+                  </td>
                 </tr>
               </tbody>
             </table>
@@ -201,11 +281,21 @@ export default function RolesView({ roles, pestanas }: { roles: Rol[] | null; pe
 
       {dialogo ? (
         <Dialogo
-          kicker="Maestro · rol"
-          titulo={dialogo.id === null ? "Nuevo rol" : `Permisos de ${dialogo.form.nombre}`}
-          cta={dialogo.id === null ? "Crear rol" : "Guardar permisos"}
-          nota="Marcar cualquier acción de un módulo marca también «Ver»; quitar «Ver» quita todo el módulo. El cambio corre de inmediato para quienes tengan este rol."
-          campos={campos}
+          kicker={dialogo.celular ? "Permisos del celular" : "Maestro · rol"}
+          titulo={
+            dialogo.celular
+              ? "Permisos del técnico en el celular"
+              : dialogo.id === null
+                ? "Nuevo rol"
+                : `Permisos de ${dialogo.form.nombre}`
+          }
+          cta={dialogo.id === null && !dialogo.celular ? "Crear rol" : "Guardar permisos"}
+          nota={
+            dialogo.celular
+              ? "Lo que se desmarca desaparece de la app del técnico y el servidor lo rechaza. El cambio corre de inmediato para todos los técnicos."
+              : "Marcar cualquier acción de un módulo marca también «Ver»; quitar «Ver» quita todo el módulo. El cambio corre de inmediato para quienes tengan este rol."
+          }
+          campos={dialogo.celular ? [] : campos}
           form={dialogo.form}
           onCampo={(k, v) => setDialogo({ ...dialogo, form: { ...dialogo.form, [k]: v } })}
           onCerrar={() => setDialogo(null)}
@@ -216,10 +306,10 @@ export default function RolesView({ roles, pestanas }: { roles: Rol[] | null; pe
             <div className="flex items-center gap-2.5 px-3.5 py-2.5 bg-[var(--color-surface)] border-b border-[var(--color-divider-soft)]">
               <div className="font-extrabold text-[11px] tracking-[.11em] uppercase">Qué puede hacer</div>
               <div className="ml-auto text-[11px] tracking-[.06em] uppercase opacity-66 tabular-nums">
-                {dialogo.permisos.length} de {TODOS_LOS_PERMISOS.length} permisos
+                {dialogo.permisos.length} de {total} permisos
               </div>
             </div>
-            {MODULOS.map((m) => {
+            {modulos.map((m) => {
               const marcadas = m.acciones.filter((a) => dialogo.permisos.includes(`${m.clave}.${a.clave}`)).length;
               return (
                 <div key={m.clave} className="px-3.5 py-3 border-b border-black/[.18] last:border-b-0">

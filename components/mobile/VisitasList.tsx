@@ -9,7 +9,7 @@ import { ESTADO_VISITA_BARRA, ESTADO_VISITA_LABEL, ESTADO_VISITA_TAG, textoMotiv
 import { actasEnCola, haceCuanto, sacarDeCola, type ActaEnCola } from "@/lib/ui/borrador";
 import { estaCancelada } from "@/lib/ui/estado";
 import { diaDeVisita } from "@/lib/ui/fecha";
-import { useReferencias } from "@/lib/ui/referencias";
+import { puede, useReferencias } from "@/lib/ui/referencias";
 import type { EstadoVisita, Mall, Visita } from "@/lib/types";
 
 const ESTADOS: EstadoVisita[] = [
@@ -213,6 +213,7 @@ export default function VisitasList({
             </svg>
           </button>
         ) : null}
+        {puede(ref, "celular.crearVisita") ? (
         <button
           onClick={() => setNueva(true)}
           aria-label="Agregar visita"
@@ -222,6 +223,7 @@ export default function VisitasList({
             <path d="M12 5v14M5 12h14" />
           </svg>
         </button>
+        ) : null}
       </div>
 
       {filtroAbierto ? (

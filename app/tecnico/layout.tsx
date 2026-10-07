@@ -12,7 +12,7 @@ export default async function TecnicoLayout({ children }: { children: React.Reac
   if (sesion.usuario.rol !== "TECNICO") redirect("/admin");
 
   // Clientes, sucursales y catálogos: los usa "Agregar visita" desde el celular.
-  const referencias = await cargarReferenciasTecnico();
+  const referencias = await cargarReferenciasTecnico(sesion.permisos);
 
   return (
     <ReferenciasProvider valor={referencias}>

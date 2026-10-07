@@ -4,7 +4,7 @@ import Link from "next/link";
 import VisorFotos, { useVisorFotos } from "@/components/ui/VisorFotos";
 import EstadoProblemaTag from "@/components/EstadoProblemaTag";
 import { textoMotivosReales } from "@/lib/ui/estado";
-import { nombreProblema, nombreTrabajo, useReferencias } from "@/lib/ui/referencias";
+import { nombreProblema, nombreTrabajo, puede, useReferencias } from "@/lib/ui/referencias";
 import { fechaHoraCorta, resumenEdicion } from "@/lib/ui/edicion";
 import type { CatalogoProblema, CatalogoTrabajo, Visita } from "@/lib/types";
 
@@ -32,7 +32,9 @@ export default function ActaGuardada({
   catalogoProblemas: CatalogoProblema[];
 }) {
   const visor = useVisorFotos();
-  const { motivos } = useReferencias();
+  const referencias = useReferencias();
+  const { motivos } = referencias;
+  const puedeEditar = puede(referencias, "celular.editarActa");
   const ejec = visita.ejecucion;
   // Primero las fotos del trabajo y después las del comentario interno: el
   // visor las recorre en ese orden.
@@ -46,7 +48,7 @@ export default function ActaGuardada({
   const ediciones = visita.ediciones ?? [];
   const cerrada = visita.estado === "COMPLETADA";
   // El técnico puede corregir su acta hasta un día después de cerrarla.
-  const editable = cerrada && Boolean(ejec?.editablePorTecnico);
+  const editable = cerrada && puedeEditar && Boolean(ejec?.editablePorTecnico);
 
   const filas: { k: string; v: string }[] = [
     { k: "Motivo", v: textoMotivosReales(visita) },
@@ -101,6 +103,10 @@ export default function ActaGuardada({
               Puedes corregirla hasta el {fechaHoraCorta(ejec?.editableHasta)}. La firma de la tienda se conserva.
             </div>
           </>
+        ) : cerrada && !puedeEditar ? (
+          <div className="mt-2.5 text-xs opacity-66">
+            Tu rol no puede editar actas cerradas. Si hay que corregir algo, pídeselo a coordinación.
+          </div>
         ) : cerrada ? (
           <div className="mt-2.5 text-xs opacity-66">
             Ya pasó el plazo de un día para editar esta acta. Si hay que corregir algo, pídeselo a coordinación.

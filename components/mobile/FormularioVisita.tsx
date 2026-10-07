@@ -10,6 +10,7 @@ import FirmaSheet, { type FirmaGuardada } from "./FirmaSheet";
 import { Toast, useToast } from "./toast";
 import { fmtRut, fmtTel, mensajeRut, rutCompleto, rutDvCorrecto, telCompleto } from "@/lib/ui/formato";
 import { comprimirFoto } from "@/lib/ui/imagen";
+import { puede, useReferencias } from "@/lib/ui/referencias";
 import { mb, reloj, repararDuracionPreview, trozoBase64, VIDEO_TROZO_BYTES } from "@/lib/ui/video";
 import { guardarActaAction } from "@/app/actions/visitas";
 import { editarActaTecnicoAction } from "@/app/actions/ediciones";
@@ -95,6 +96,8 @@ export default function FormularioVisita({
 }) {
   const router = useRouter();
   const { toast, aviso } = useToast();
+  // Sin el permiso de celular «video» el formulario no ofrece grabar.
+  const puedeVideo = puede(useReferencias(), "celular.video");
 
   // Al editar, todo arranca de lo que quedó en el acta.
   const [inicial] = useState(() => {
@@ -1558,6 +1561,7 @@ export default function FormularioVisita({
               onQuitar={pedirQuitarVideo}
               onReintentar={reintentarVideo}
             />
+            {puedeVideo ? (
             <button
               onClick={() => abrirVideo("interno")}
               className="w-full min-h-[48px] flex items-center gap-2.5 px-4 mt-2 bg-[var(--color-text)] text-[var(--color-bg)] border-0 font-extrabold text-sm cursor-pointer text-left hover:bg-[var(--color-neutral-900)]"
@@ -1568,6 +1572,7 @@ export default function FormularioVisita({
               </svg>
               <span>{videosInternos.length ? "Grabar otro video interno" : "Grabar video interno"}</span>
             </button>
+            ) : null}
 
             <div className="mt-3.5">
               <BotonGuardar texto="Guardar y seguir" habilitado onClick={() => guardarSeccion("interno")} />
@@ -1604,6 +1609,7 @@ export default function FormularioVisita({
               onArchivos={(e) => onArchivos(e, false)}
             />
             {/* ── Video: 720p y hasta 1 minuto ── */}
+            {puedeVideo ? (
             <div className="mt-5 pt-4 border-t border-[var(--color-divider)]">
               <div className="flex items-center gap-2">
                 <div className="text-[10px] tracking-[.12em] uppercase opacity-66">Video del trabajo</div>
@@ -1632,6 +1638,7 @@ export default function FormularioVisita({
                 <span>{videosTrabajo.length ? "Grabar otro video" : "Grabar video"}</span>
               </button>
             </div>
+            ) : null}
 
             <div className="mt-3.5">
               <BotonGuardar

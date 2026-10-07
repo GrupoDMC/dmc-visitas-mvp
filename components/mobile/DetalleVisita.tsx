@@ -7,6 +7,7 @@ import Tag from "@/components/Tag";
 import { Toast, useToast } from "./toast";
 import { cambiarEstadoVisitaAction, iniciarVisitaAction } from "@/app/actions/visitas";
 import { ESTADO_VISITA_LABEL, ESTADO_VISITA_TAG, nombreDeQuienLaTomo, textoMotivos } from "@/lib/ui/estado";
+import { puede, useReferencias } from "@/lib/ui/referencias";
 import { hayDireccion, urlMapa, urlTel } from "@/lib/ui/formato";
 import type { HistorialVista } from "@/lib/data/historial";
 import type { EstadoVisita, Visita } from "@/lib/types";
@@ -66,6 +67,7 @@ export default function DetalleVisita({
   const [openDatos, setOpenDatos] = useState(false);
   const [openHistorial, setOpenHistorial] = useState(false);
   const [openAcciones, setOpenAcciones] = useState(false);
+  const puedeCambiarEstado = puede(useReferencias(), "celular.estado");
   const [sheet, setSheet] = useState<AccionEstado | null>(null);
   const [motivo, setMotivo] = useState("");
   const [fecha, setFecha] = useState("");
@@ -345,7 +347,9 @@ export default function DetalleVisita({
                 : ""}
             </p>
 
-            {/* ── Otras acciones de la visita ── */}
+            {/* ── Otras acciones de la visita: solo si el rol del técnico las tiene ── */}
+            {puedeCambiarEstado ? (
+            <>
             <button
               onClick={() => setOpenAcciones((v) => !v)}
               aria-expanded={openAcciones}
@@ -396,6 +400,8 @@ export default function DetalleVisita({
                   Cancelar la visita
                 </button>
               </div>
+            ) : null}
+            </>
             ) : null}
           </>
         ) : cerradaConActa ? (

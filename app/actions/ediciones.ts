@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { getSesion, sesionCon } from "@/lib/auth";
+import { tiene } from "@/lib/permisos";
 import { editarActa, type EdicionActaEntrada, type ResultadoEdicion } from "@/lib/data/ediciones";
 
 // Edición del acta ya cerrada. Dos puertas, una regla distinta en cada una:
@@ -31,6 +32,9 @@ function comoError(err: unknown, contexto: string): ResultadoEdicion {
 export async function editarActaTecnicoAction(entrada: EdicionActaEntrada): Promise<ResultadoEdicion> {
   const sesion = await getSesion();
   if (!sesion?.tecnico) return { ok: false, error: "Tu cuenta no tiene un técnico asociado." };
+  if (!tiene(sesion.permisos, "celular.editarActa")) {
+    return { ok: false, error: "Tu rol no puede editar actas ya cerradas. Pídeselo a coordinación." };
+  }
 
   try {
     const res = await editarActa(entrada, {

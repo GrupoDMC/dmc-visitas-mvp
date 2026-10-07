@@ -64,6 +64,7 @@ async function visitaAbierta(folio: string) {
     return { ...visita, enEdicion: true };
   }
 
+  if (!tiene(sesion.permisos, "celular.video")) return null;
   if (!sesion.tecnico || !participaEnVisita(visita, sesion.tecnico.id)) return null;
   if (visita.editablePorTecnico) return { ...visita, enEdicion: true };
   if (visita.estado !== "PROGRAMADA" && visita.estado !== "EN_CURSO") return null;

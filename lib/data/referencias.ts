@@ -27,7 +27,7 @@ export async function cargarReferencias(rol: RolUsuario, permisos: string[]): Pr
  * sus compañeros baja solo el nombre, para elegir al ayudante en "Agregar
  * visita". RUT, correo y teléfono se quedan en el servidor.
  */
-export async function cargarReferenciasTecnico(): Promise<Referencias> {
+export async function cargarReferenciasTecnico(permisos: string[]): Promise<Referencias> {
   const [clientes, malls, sucursales, tecnicos, motivos, problemas, trabajos, estadosProblema] = await Promise.all([
     listarClientes(),
     listarMalls(),
@@ -53,7 +53,7 @@ export async function cargarReferenciasTecnico(): Promise<Referencias> {
     }));
   return {
     rol: "TECNICO",
-    permisos: [],
+    permisos,
     clientes,
     malls,
     sucursales,

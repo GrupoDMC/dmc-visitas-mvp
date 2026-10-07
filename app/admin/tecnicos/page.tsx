@@ -1,11 +1,9 @@
-import TecnicosTable from "@/components/admin/maestros/TecnicosTable";
-import { listarTecnicos } from "@/lib/data/maestros";
-import SinAcceso from "@/components/admin/SinAcceso";
-import { sesionCon } from "@/lib/auth";
+import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 
-export default async function TecnicosPage() {
-  if (!(await sesionCon("tecnicos.ver"))) return <SinAcceso />;
-  return <TecnicosTable tecnicos={await listarTecnicos()} />;
+// Los técnicos ahora son una pestaña de Usuarios; esta ruta queda para los
+// enlaces y marcadores que ya existían.
+export default function TecnicosPage() {
+  redirect("/admin/usuarios?vista=tecnicos");
 }

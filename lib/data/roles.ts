@@ -1,6 +1,12 @@
 import "server-only";
 import { consulta, consultaCon, enTransaccion, num, numONull, sql } from "@/lib/data/sql";
-import { normalizarPermisos, PERMISOS_COORDINADOR, TODOS_LOS_PERMISOS } from "@/lib/permisos";
+import {
+  normalizarPermisos,
+  normalizarPermisosCelular,
+  PERMISOS_COORDINADOR,
+  TODOS_LOS_PERMISOS,
+  TODOS_LOS_PERMISOS_CELULAR,
+} from "@/lib/permisos";
 import type { Rol, Usuario } from "@/lib/types";
 
 // Roles del panel y sus permisos: dmc.rol, dmc.rol_permiso y dmc.usuario.rol_id
@@ -29,7 +35,7 @@ export interface Acceso {
  */
 export async function accesoDeUsuario(usuario: Usuario): Promise<Acceso> {
   if (usuario.rol === "ADMIN") return { permisos: TODOS_LOS_PERMISOS, rolNombre: "Administrador" };
-  if (usuario.rol === "TECNICO") return { permisos: [], rolNombre: "Técnico" };
+  if (usuario.rol === "TECNICO") return { permisos: await permisosCelular(), rolNombre: "Técnico" };
 
   const sinRol: Acceso = { permisos: PERMISOS_COORDINADOR, rolNombre: "Coordinador" };
   try {
@@ -54,15 +60,71 @@ export async function accesoDeUsuario(usuario: Usuario): Promise<Acceso> {
   }
 }
 
+/**
+ * El rol «Técnico»: sus permisos de celular viven en dmc.rol_permiso como los de
+ * cualquier rol, pero la fila se crea al guardarlos por primera vez (la app no
+ * tiene DDL). Mientras no exista, el técnico conserva todo lo que ya podía hacer.
+ */
+export const ROL_TECNICO = "Técnico";
+
+/** Los permisos de celular de los técnicos. */
+export async function permisosCelular(): Promise<string[]> {
+  try {
+    const filas = await consultaCon<{ permiso: string | null }>(
+      `SELECT rp.permiso
+         FROM dmc.rol r
+         LEFT JOIN dmc.rol_permiso rp ON rp.rol_id = r.id
+        WHERE r.nombre = @nombre`,
+      [["nombre", sql.NVarChar(60), ROL_TECNICO]]
+    );
+    if (filas.length === 0) return TODOS_LOS_PERMISOS_CELULAR;
+    return normalizarPermisosCelular(filas.map((f) => f.permiso ?? ""));
+  } catch (err) {
+    if (faltaMigracionRoles(err)) return TODOS_LOS_PERMISOS_CELULAR;
+    throw err;
+  }
+}
+
+/** Deja los permisos de celular exactamente como vienen (pueden ser ninguno). */
+export async function guardarPermisosCelular(permisos: string[]): Promise<void> {
+  const limpios = normalizarPermisosCelular(permisos);
+  await enTransaccion(async (ej) => {
+    let [fila] = await ej.consulta<{ id: number }>(
+      `SELECT id FROM dmc.rol WITH (UPDLOCK) WHERE nombre = @nombre`,
+      [["nombre", sql.NVarChar(60), ROL_TECNICO]]
+    );
+    if (!fila) {
+      [fila] = await ej.consulta<{ id: number }>(
+        `INSERT INTO dmc.rol (nombre, descripcion, es_sistema) VALUES (@nombre, @descripcion, 1);
+         SELECT CAST(SCOPE_IDENTITY() AS bigint) AS id;`,
+        [
+          ["nombre", sql.NVarChar(60), ROL_TECNICO],
+          ["descripcion", sql.NVarChar(240), "Permisos del celular de los técnicos."],
+        ]
+      );
+    }
+    const rolId = num(fila.id);
+    await ej.ejecutar(`DELETE FROM dmc.rol_permiso WHERE rol_id = @id`, [["id", sql.BigInt, rolId]]);
+    for (const permiso of limpios) {
+      await ej.ejecutar(`INSERT INTO dmc.rol_permiso (rol_id, permiso) VALUES (@id, @permiso)`, [
+        ["id", sql.BigInt, rolId],
+        ["permiso", sql.VarChar(60), permiso],
+      ]);
+    }
+  });
+}
+
 /** Los roles del panel, o null si la base todavía no tiene la migración 008. */
 export async function listarRoles(): Promise<Rol[] | null> {
   try {
     const [roles, permisos] = await Promise.all([
-      consulta<{ id: number; nombre: string; descripcion: string | null; es_sistema: boolean; usuarios: number }>(
+      consultaCon<{ id: number; nombre: string; descripcion: string | null; es_sistema: boolean; usuarios: number }>(
         `SELECT r.id, r.nombre, r.descripcion, r.es_sistema,
                 (SELECT COUNT(*) FROM dmc.usuario u WHERE u.rol_id = r.id) AS usuarios
            FROM dmc.rol r
-          ORDER BY r.es_sistema DESC, r.nombre`
+          WHERE r.nombre <> @tecnico
+          ORDER BY r.es_sistema DESC, r.nombre`,
+        [["tecnico", sql.NVarChar(60), ROL_TECNICO]]
       ),
       consulta<{ rol_id: number; permiso: string }>(`SELECT rol_id, permiso FROM dmc.rol_permiso`),
     ]);

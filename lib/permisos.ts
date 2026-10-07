@@ -114,6 +114,35 @@ export const MODULOS: ModuloPermiso[] = [
   },
 ];
 
+/**
+ * Lo que puede hacer el técnico desde el celular. Es el mismo formato
+ * "<módulo>.<acción>", pero vive aparte: no abre ninguna pantalla del panel y
+ * no tiene "ver". Se edita en Usuarios › Roles y permisos, en el apartado
+ * «Permisos del celular», y lo heredan todas las cuentas de técnico.
+ */
+export const MODULOS_CELULAR: ModuloPermiso[] = [
+  {
+    clave: "celular",
+    label: "Celular",
+    acciones: [
+      { clave: "crearVisita", label: "Agregar visitas en terreno" },
+      { clave: "estado", label: "Reagendar, dejar pendiente o cancelar" },
+      { clave: "video", label: "Grabar y subir videos" },
+      { clave: "editarActa", label: "Corregir su acta ya cerrada (dentro del plazo)" },
+    ],
+  },
+];
+
+export const TODOS_LOS_PERMISOS_CELULAR: string[] = MODULOS_CELULAR.flatMap((m) =>
+  m.acciones.map((a) => `${m.clave}.${a.clave}`)
+);
+
+/** Deja solo permisos de celular que existen, en el orden del catálogo. */
+export function normalizarPermisosCelular(permisos: readonly string[]): string[] {
+  const validos = new Set(permisos);
+  return TODOS_LOS_PERMISOS_CELULAR.filter((p) => validos.has(p));
+}
+
 /** Todos los permisos que existen: lo que tiene el administrador. */
 export const TODOS_LOS_PERMISOS: string[] = MODULOS.flatMap((m) => m.acciones.map((a) => `${m.clave}.${a.clave}`));
 
