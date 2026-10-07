@@ -62,8 +62,8 @@ export function TablaVisitas({
     return malls.find((m) => m.id === s?.mallId)?.nombre ?? "—";
   };
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full">
+    <div className="px-4 md:px-7 overflow-x-auto">
+      <table className="table min-w-[640px]">
         <thead>
           <tr>
             <th>Folio</th>

@@ -34,7 +34,7 @@ export default async function SucursalFichaPage({ params }: { params: Promise<{ 
   const r = resumenVisitas(visitas);
 
   return (
-    <>
+    <div className="pb-10 animate-fade-in">
       <AdminHeader kicker="Maestros · sucursal" title={s.nombre}>
         <Link href="/admin/sucursales" className="btn btn-secondary">
           ← Sucursales
@@ -91,6 +91,6 @@ export default async function SucursalFichaPage({ params }: { params: Promise<{ 
           <p className="px-4 md:px-7 py-6 m-0 text-[14px] opacity-66">Tu rol no tiene acceso a las visitas.</p>
         )}
       </Seccion>
-    </>
+    </div>
   );
 }

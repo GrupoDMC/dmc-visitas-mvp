@@ -32,7 +32,7 @@ export default async function ClienteFichaPage({ params }: { params: Promise<{ i
   const r = resumenVisitas(visitas);
 
   return (
-    <>
+    <div className="pb-10 animate-fade-in">
       <AdminHeader kicker="Maestros · cliente" title={c.nombreFantasia}>
         <Link href="/admin/clientes" className="btn btn-secondary">
           ← Clientes
@@ -74,8 +74,8 @@ export default async function ClienteFichaPage({ params }: { params: Promise<{ i
 
       {verTiendas && tiendas.length ? (
         <Seccion titulo={`Sus tiendas · ${tiendas.length}`}>
-          <div className="overflow-x-auto">
-            <table className="w-full">
+          <div className="px-4 md:px-7 overflow-x-auto">
+            <table className="table min-w-[560px]">
               <thead>
                 <tr>
                   <th>Tienda</th>
@@ -114,6 +114,6 @@ export default async function ClienteFichaPage({ params }: { params: Promise<{ i
           <p className="px-4 md:px-7 py-6 m-0 text-[14px] opacity-66">Tu rol no tiene acceso a las visitas.</p>
         )}
       </Seccion>
-    </>
+    </div>
   );
 }
