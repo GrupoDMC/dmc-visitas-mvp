@@ -1,114 +1,66 @@
-import type { ReactNode } from "react";
-import Link from "next/link";
-import Tag from "@/components/Tag";
-import { ESTADO_VISITA_LABEL, ESTADO_VISITA_TAG, textoMotivos } from "@/lib/ui/estado";
-import { textoFechaVisita } from "@/lib/ui/fecha";
-import type { Mall, Sucursal, Visita } from "@/lib/types";
+import { ESTADO_PROBLEMA_CIERRE, textoMotivos } from "@/lib/ui/estado";
+import type { EstadoVisita, Mall, Sucursal, Visita } from "@/lib/types";
 
-/** Piezas compartidas por la ficha de una tienda y la de un cliente. */
-
-export function Cifra({ label, n, sub }: { label: string; n: ReactNode; sub?: string }) {
-  return (
-    <div className="px-4 md:px-6 pt-4 md:pt-[22px] pb-4.5 border-r max-lg:border-b border-black/[.2]">
-      <div className="text-[10px] tracking-[.12em] uppercase opacity-66">{label}</div>
-      <div className="font-extrabold text-[28px] md:text-[34px] leading-none tracking-[-.03em] tabular-nums mt-3">{n}</div>
-      {sub ? <div className="text-xs opacity-66 mt-2.5">{sub}</div> : null}
-    </div>
-  );
+/**
+ * Lo que la ficha de una tienda o de un cliente necesita de cada visita. Se
+ * arma en el servidor: la visita completa (fotos, firmas, trabajos…) no viaja
+ * al navegador solo para contar y listar.
+ */
+export interface FilaFicha {
+  id: number;
+  folio: string;
+  fecha: string;
+  fechaHasta: string | null;
+  hora: string | null;
+  estado: EstadoVisita;
+  motivos: string;
+  /** Cada motivo por separado, para el gráfico de los más frecuentes. */
+  motivosLista: string[];
+  tecnico: string;
+  ayudante: string | null;
+  tiendaId: number;
+  tienda: string;
+  mall: string | null;
+  problemas: number;
+  problemasAbiertos: number;
+  /** Minutos en sitio según el acta; null si no hay acta cerrada. */
+  minutos: number | null;
 }
 
-/** Pares «dato → valor»; los que vienen vacíos no se pintan. */
-export function Datos({ filas }: { filas: [string, ReactNode][] }) {
-  const con = filas.filter(([, v]) => v !== null && v !== undefined && v !== "");
-  return (
-    <dl className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-8 gap-y-4 m-0 px-4 md:px-7 py-5">
-      {con.map(([k, v]) => (
-        <div key={k} className="min-w-0">
-          <dt className="text-[10px] tracking-[.12em] uppercase opacity-66">{k}</dt>
-          <dd className="m-0 mt-1 text-[14px] break-words">{v}</dd>
-        </div>
-      ))}
-    </dl>
-  );
+export interface DatoFicha {
+  label: string;
+  valor: string;
+  href?: string;
 }
 
-export function Seccion({ titulo, children }: { titulo: string; children: ReactNode }) {
-  return (
-    <section>
-      <h2 className="px-4 md:px-7 pt-6 pb-2 text-[11px] tracking-[.14em] uppercase font-extrabold">{titulo}</h2>
-      {children}
-    </section>
-  );
-}
+const aMs = (ts: string) => Date.parse(ts.includes("T") ? ts : ts.replace(" ", "T"));
 
-/** El historial de visitas, de la más reciente a la más antigua. */
-export function TablaVisitas({
-  visitas,
-  malls,
-  sucursales,
-  conTienda,
-}: {
-  visitas: Visita[];
-  malls: Mall[];
-  sucursales: Sucursal[];
-  /** En la ficha de un cliente cada fila dice de qué tienda es. */
-  conTienda: boolean;
-}) {
-  if (!visitas.length) {
-    return <p className="px-4 md:px-7 py-6 m-0 text-[14px] opacity-66">Todavía no hay visitas registradas.</p>;
-  }
-  const mallDe = (v: Visita) => {
+export function aFilas(visitas: Visita[], malls: Mall[], sucursales: Sucursal[]): FilaFicha[] {
+  return visitas.map((v) => {
     const s = v.sucursal ?? sucursales.find((x) => x.id === v.sucursalId);
-    return malls.find((m) => m.id === s?.mallId)?.nombre ?? "—";
-  };
-  return (
-    <div className="px-4 md:px-7 overflow-x-auto">
-      <table className="table min-w-[640px]">
-        <thead>
-          <tr>
-            <th>Folio</th>
-            <th>Fecha</th>
-            <th>Estado</th>
-            {conTienda ? <th>Tienda</th> : null}
-            <th>Mall</th>
-            <th>Motivo</th>
-            <th>Técnico</th>
-          </tr>
-        </thead>
-        <tbody>
-          {visitas.map((v) => (
-            <tr key={v.id}>
-              <td className="whitespace-nowrap font-extrabold tabular-nums">
-                <Link href={`/admin/visitas/${encodeURIComponent(v.folio)}`} className="underline underline-offset-2">
-                  {v.folio}
-                </Link>
-              </td>
-              <td className="whitespace-nowrap tabular-nums">{textoFechaVisita(v)}</td>
-              <td>
-                <Tag variant={ESTADO_VISITA_TAG[v.estado]}>{ESTADO_VISITA_LABEL[v.estado]}</Tag>
-              </td>
-              {conTienda ? <td>{v.sucursal?.nombre ?? "—"}</td> : null}
-              <td>{mallDe(v)}</td>
-              <td className="max-w-[260px]">{textoMotivos(v)}</td>
-              <td>
-                {v.tecnico?.nombreCompleto ?? "—"}
-                {v.tecnicoAyudante ? <div className="text-[11px] opacity-66">+ {v.tecnicoAyudante.nombreCompleto}</div> : null}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-/** Los números de arriba: cuántas, cuántas cerradas, cuántas esperando y la última. */
-export function resumenVisitas(visitas: Visita[]) {
-  const completadas = visitas.filter((v) => v.estado === "COMPLETADA").length;
-  const abiertas = visitas.filter((v) =>
-    ["PROGRAMADA", "EN_CURSO", "PENDIENTE", "REAGENDADA"].includes(v.estado)
-  ).length;
-  // Vienen de la más reciente a la más antigua: la última hecha es la primera completada.
-  const ultima = visitas.find((v) => v.estado === "COMPLETADA")?.fechaProgramada ?? null;
-  return { total: visitas.length, completadas, abiertas, ultima };
+    const ini = v.ejecucion?.horaInicio ? aMs(v.ejecucion.horaInicio) : NaN;
+    const fin = v.ejecucion?.horaTermino ? aMs(v.ejecucion.horaTermino) : NaN;
+    const minutos = Number.isFinite(ini) && Number.isFinite(fin) && fin > ini ? Math.round((fin - ini) / 60000) : null;
+    const problemas = v.problemas ?? [];
+    const lista = v.motivosNombres.filter(Boolean);
+    return {
+      id: v.id,
+      folio: v.folio,
+      fecha: v.fechaProgramada,
+      fechaHasta: v.fechaHasta,
+      hora: v.horaProgramada,
+      estado: v.estado,
+      motivos: textoMotivos(v),
+      motivosLista: lista.length ? lista : [v.motivo?.nombre ?? v.motivoCodigo],
+      tecnico: v.tecnico?.nombreCompleto ?? "—",
+      ayudante: v.tecnicoAyudante?.nombreCompleto ?? null,
+      tiendaId: v.sucursalId,
+      tienda: s?.nombre ?? "—",
+      mall: malls.find((m) => m.id === s?.mallId)?.nombre ?? null,
+      problemas: problemas.length,
+      problemasAbiertos: problemas.filter((p) => p.estado !== ESTADO_PROBLEMA_CIERRE).length,
+      // Más de 12 horas es un acta que quedó abierta de un día para otro: no es tiempo en sitio.
+      minutos: minutos !== null && minutos <= 720 ? minutos : null,
+    };
+  });
 }
