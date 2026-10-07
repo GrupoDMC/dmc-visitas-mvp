@@ -59,6 +59,14 @@ function porTecnico(tecnicoId: number): Filtro {
   };
 }
 
+function porSucursal(sucursalId: number): Filtro {
+  return { where: "v.sucursal_id = @f_sucursal AND v.activo = 1", params: [["f_sucursal", sql.BigInt, sucursalId]] };
+}
+
+function porCliente(clienteId: number): Filtro {
+  return { where: "v.cliente_id = @f_cliente AND v.activo = 1", params: [["f_cliente", sql.BigInt, clienteId]] };
+}
+
 function porFolio(folio: string): Filtro {
   return { where: "v.folio = @f_folio AND v.activo = 1", params: [["f_folio", sql.VarChar(16), folio]] };
 }
@@ -725,6 +733,14 @@ export function getVisitasCompletas(): Promise<Visita[]> {
 
 export function getVisitasPorTecnico(tecnicoId: number): Promise<Visita[]> {
   return cargar(porTecnico(tecnicoId));
+}
+
+export function getVisitasPorSucursal(sucursalId: number): Promise<Visita[]> {
+  return cargar(porSucursal(sucursalId));
+}
+
+export function getVisitasPorCliente(clienteId: number): Promise<Visita[]> {
+  return cargar(porCliente(clienteId));
 }
 
 export async function getVisitaCompletaPorFolio(folio: string): Promise<Visita | undefined> {

@@ -55,7 +55,8 @@ export default function AdminSidebar({
     .toUpperCase();
 
   function NavButton({ item }: { item: NavItem }) {
-    const activo = pathname === item.href || pathname.startsWith(item.href + "/");
+    // "/admin" es la raíz de todo: solo cuenta cuando se está exactamente en el panel.
+    const activo = item.href === "/admin" ? pathname === item.href : pathname === item.href || pathname.startsWith(item.href + "/");
     return (
       <Link
         href={item.href}

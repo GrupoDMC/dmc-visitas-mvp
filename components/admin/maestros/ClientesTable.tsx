@@ -208,22 +208,32 @@ export default function ClientesTable({ clientes, sucursales }: { clientes: Clie
           ),
         },
       ]}
-      accionFila={
-        verSucursales
-          ? (c) => (
-              <Link
-                href={`/admin/sucursales?cliente=${c.id}`}
-                className="btn btn-icon w-8 h-8 border border-black/[.3]"
-                aria-label={`Locales de ${c.nombreFantasia}`}
-                title="Ver sus locales"
-              >
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M4 9l1.5-5h13L20 9M4 9v11h16V9M4 9h16M9 20v-6h6v6" />
-                </svg>
-              </Link>
-            )
-          : undefined
-      }
+      accionFila={(c) => (
+        <>
+          <Link
+            href={`/admin/clientes/${c.id}`}
+            className="btn btn-icon w-8 h-8 border border-black/[.3] mr-1.5"
+            aria-label={`Ficha de ${c.nombreFantasia}`}
+            title="Ver ficha y visitas"
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M6 3h9l4 4v14H6zM14 3v5h5M9 13h7M9 17h7" />
+            </svg>
+          </Link>
+          {verSucursales ? (
+            <Link
+              href={`/admin/sucursales?cliente=${c.id}`}
+              className="btn btn-icon w-8 h-8 border border-black/[.3]"
+              aria-label={`Locales de ${c.nombreFantasia}`}
+              title="Ver sus locales"
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M4 9l1.5-5h13L20 9M4 9v11h16V9M4 9h16M9 20v-6h6v6" />
+              </svg>
+            </Link>
+          ) : null}
+        </>
+      )}
       fields={[
         { k: "razonSocial", label: "Razón social", span: 2 },
         { k: "rut", label: "RUT", tipo: "rut", ph: "76.123.456-7" },

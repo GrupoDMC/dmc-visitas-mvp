@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import MaestroTable from "@/components/admin/MaestroTable";
 import SucursalesLoteDialogo from "@/components/admin/maestros/SucursalesLoteDialogo";
@@ -111,6 +112,18 @@ export default function SucursalesTable({
           setFCalibracion("");
         },
       }}
+      accionFila={(s) => (
+        <Link
+          href={`/admin/sucursales/${s.id}`}
+          className="btn btn-icon w-8 h-8 border border-black/[.3]"
+          aria-label={`Ficha de ${s.nombre}`}
+          title="Ver ficha y visitas"
+        >
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M6 3h9l4 4v14H6zM14 3v5h5M9 13h7M9 17h7" />
+          </svg>
+        </Link>
+      )}
       searchKeys={(s) => `${s.nombre} ${s.codigo ?? ""} ${s.comuna} ${s.direccion} ${nombreCliente(s.clienteId)} ${nombreMall(s.mallId)}`}
       columns={[
         { key: "nombre", label: "Sucursal" },
