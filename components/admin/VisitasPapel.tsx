@@ -7,7 +7,7 @@ import AdminHeader from "@/components/admin/AdminHeader";
 import Dialogo from "@/components/admin/Dialogo";
 import SelectBuscable from "@/components/ui/SelectBuscable";
 import { Toast, useToast } from "@/components/ui/Toast";
-import { crearVisitasPapelAction } from "@/app/actions/visitas-papel";
+import { crearVisitasPapelAction, firmantesDeSucursalesAction, type FirmanteSugerido } from "@/app/actions/visitas-papel";
 import { trabajoVaConMotivo, useReferencias } from "@/lib/ui/referencias";
 import { trabajosDelMotivo } from "@/lib/ui/motivos";
 import { fmtRut, mensajeRut } from "@/lib/ui/formato";
@@ -146,7 +146,12 @@ export default function VisitasPapel() {
   const [guardados, setGuardados] = useState<{ folio: string; nombre: string }[]>([]);
   const [cargado, setCargado] = useState(false);
   const [confirmando, setConfirmando] = useState(false);
+  // Quitar algo de la lista pide confirmar antes: se pierde lo ya escrito.
+  const [porQuitar, setPorQuitar] = useState<{ titulo: string; cta: string; accion: () => void } | null>(null);
   const foco = useRef<string | null>(null);
+  // Quién firmó antes en cada tienda (sucursalId → firmantes), para sugerirlo.
+  const [firmantesPrevios, setFirmantesPrevios] = useState<Record<string, FirmanteSugerido[]>>({});
+  const pedidos = useRef(new Set<string>());
 
   // El borrador se lee recién en el navegador: en el servidor no existe.
   useEffect(() => {
@@ -176,6 +181,16 @@ export default function VisitasPapel() {
       // Igual que arriba: el borrador es una comodidad, no un requisito.
     }
   }, [cargado, anio, bloques, grupos, tiendas, informes]);
+
+  // Al agregar una tienda se trae, una sola vez, quién ha firmado ahí antes.
+  useEffect(() => {
+    const nuevos = [...new Set(tiendas.map((t) => t.sucursalId))].filter((id) => id && !pedidos.current.has(id));
+    if (!nuevos.length) return;
+    nuevos.forEach((id) => pedidos.current.add(id));
+    firmantesDeSucursalesAction({ sucursalIds: nuevos.map(Number) })
+      .then((res) => setFirmantesPrevios((prev) => ({ ...prev, ...res })))
+      .catch(() => nuevos.forEach((id) => pedidos.current.delete(id)));
+  }, [tiendas]);
 
   // El informe recién agregado recibe el cursor: se agrega y se escribe.
   useEffect(() => {
@@ -251,7 +266,10 @@ export default function VisitasPapel() {
     setGrupos((prev) => prev.map((g) => (g.key === key ? { ...g, ...cambios } : g)));
   }
 
-  /** Un informe nuevo: copia el mes y el motivo del último de la tienda o, si no hay, del cliente. */
+  /**
+   * Un informe nuevo: copia mes, motivo, quién firmó y los trabajos del último de
+   * la tienda o, si no hay, del cliente. Solo quedan por escribir el día y la descripción.
+   */
   function informeNuevo(tienda: Tienda, previos: Informe[]): Informe {
     const delGrupo = new Set(tiendas.filter((t) => t.grupoKey === tienda.grupoKey).map((t) => t.key));
     delGrupo.add(tienda.key);
@@ -264,11 +282,29 @@ export default function VisitasPapel() {
       mes: previo?.mes ?? "",
       dia: "",
       motivo: previo?.motivo ?? "",
-      trabajos: [],
-      firmante: "",
-      rut: "",
+      trabajos: structuredClone(previo?.trabajos ?? []),
+      firmante: previo?.firmante ?? "",
+      rut: previo?.rut ?? "",
       descripcion: "",
     };
+  }
+
+  /** Copia un informe entero, salvo el día, y lo deja justo debajo para cambiar solo eso. */
+  function duplicarInforme(origen: Informe) {
+    const copia: Informe = {
+      ...origen,
+      key: nuevaKey(),
+      dia: "",
+      trabajos: structuredClone(origen.trabajos ?? []),
+      error: undefined,
+      repetida: false,
+      aunqueRepetida: false,
+    };
+    foco.current = `pp-${copia.key}-dia`;
+    setInformes((prev) => {
+      const i = prev.findIndex((x) => x.key === origen.key);
+      return i < 0 ? [...prev, copia] : [...prev.slice(0, i + 1), copia, ...prev.slice(i + 1)];
+    });
   }
 
   /** Agrega tiendas al cliente; cada una nace con un informe listo para llenar. */
@@ -530,7 +566,13 @@ export default function VisitasPapel() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => quitarBloque(b.tecnicoId)}
+                  onClick={() =>
+                    setPorQuitar({
+                      titulo: `¿Quitar a ${nombreTec} y sus informes?`,
+                      cta: "Sí, quitar",
+                      accion: () => quitarBloque(b.tecnicoId),
+                    })
+                  }
                   className="btn btn-icon w-8 h-8 flex-none border border-current text-inherit"
                   aria-label={`Quitar a ${nombreTec} y sus informes`}
                   title={`Quitar a ${nombreTec} y sus informes`}
@@ -600,7 +642,13 @@ export default function VisitasPapel() {
                           </button>
                           <BotonQuitar
                             label={`Quitar ${nombre}${delGrupo.length ? " y sus informes" : ""}`}
-                            onClick={() => quitarGrupos(new Set([g.key]))}
+                            onClick={() =>
+                              setPorQuitar({
+                                titulo: `¿Quitar ${nombre}${delGrupo.length ? " y sus informes" : ""}?`,
+                                cta: "Sí, quitar",
+                                accion: () => quitarGrupos(new Set([g.key])),
+                              })
+                            }
                           />
                         </div>
 
@@ -653,10 +701,24 @@ export default function VisitasPapel() {
                                 opcMotivos={opcMotivos}
                                 catalogoTrabajos={catalogoTrabajos}
                                 onAlternar={() => cambiarTienda(t.key, { abierto: !t.abierto })}
-                                onQuitar={() => quitarTienda(t.key)}
+                                onQuitar={() =>
+                                  setPorQuitar({
+                                    titulo: `¿Quitar ${sucursal(t.sucursalId)?.nombre ?? "la tienda"} y sus informes?`,
+                                    cta: "Sí, quitar",
+                                    accion: () => quitarTienda(t.key),
+                                  })
+                                }
+                                firmantesPrevios={firmantesPrevios[t.sucursalId] ?? []}
                                 onAgregarInforme={() => agregarInforme(t)}
+                                onDuplicarInforme={duplicarInforme}
                                 onCambiarInforme={cambiarInforme}
-                                onQuitarInforme={quitarInforme}
+                                onQuitarInforme={(key) =>
+                                  setPorQuitar({
+                                    titulo: "¿Quitar este informe?",
+                                    cta: "Sí, quitar",
+                                    accion: () => quitarInforme(key),
+                                  })
+                                }
                               />
                             ))}
                           </>
@@ -685,7 +747,7 @@ export default function VisitasPapel() {
               </span>
             ) : null}
           </div>
-          <button type="button" onClick={vaciar} disabled={Boolean(guardando)} className="btn btn-ghost ml-auto">
+          <button type="button" onClick={() => setPorQuitar({ titulo: "¿Vaciar toda la lista?", cta: "Sí, vaciar", accion: vaciar })} disabled={Boolean(guardando)} className="btn btn-ghost ml-auto">
             Vaciar la lista
           </button>
           <button
@@ -733,6 +795,24 @@ export default function VisitasPapel() {
             </p>
           ) : null}
         </Dialogo>
+      ) : null}
+
+      {porQuitar ? (
+        <Dialogo
+          kicker="Visitas en papel · quitar"
+          titulo={porQuitar.titulo}
+          cta={porQuitar.cta}
+          nota="Se pierde lo que ya está escrito ahí. No se puede deshacer."
+          campos={[]}
+          form={{}}
+          onCampo={() => {}}
+          onCerrar={() => setPorQuitar(null)}
+          onGuardar={() => {
+            const { accion } = porQuitar;
+            setPorQuitar(null);
+            accion();
+          }}
+        />
       ) : null}
 
       <Toast texto={toast} variante="panel" />
@@ -784,7 +864,9 @@ function BloqueTienda({
   catalogoTrabajos,
   onAlternar,
   onQuitar,
+  firmantesPrevios,
   onAgregarInforme,
+  onDuplicarInforme,
   onCambiarInforme,
   onQuitarInforme,
 }: {
@@ -797,11 +879,25 @@ function BloqueTienda({
   catalogoTrabajos: CatalogoTrabajo[];
   onAlternar: () => void;
   onQuitar: () => void;
+  firmantesPrevios: FirmanteSugerido[];
   onAgregarInforme: () => void;
+  onDuplicarInforme: (informe: Informe) => void;
   onCambiarInforme: (key: string, cambios: Partial<Informe>) => void;
   onQuitarInforme: (key: string) => void;
 }) {
   const incompletos = informes.filter((i) => faltante(i, anio, hoy)).length;
+  // Primero los que ya constan en el sistema; después los escritos en esta carga.
+  const sugeridos = useMemo(() => {
+    const vistos = new Map<string, FirmanteSugerido>();
+    for (const f of [...firmantesPrevios, ...informes.map((i) => ({ nombre: i.firmante.trim(), rut: i.rut }))]) {
+      const k = f.nombre.toLowerCase();
+      if (!k) continue;
+      const ya = vistos.get(k);
+      if (!ya) vistos.set(k, f);
+      else if (!ya.rut && f.rut) ya.rut = f.rut;
+    }
+    return [...vistos.values()];
+  }, [firmantesPrevios, informes]);
 
   return (
     <div className="border-t border-black/[.3] ml-3.5 sm:ml-6 border-l-2 border-l-[var(--color-divider)]">
@@ -833,7 +929,9 @@ function BloqueTienda({
               hoy={hoy}
               opcMotivos={opcMotivos}
               catalogoTrabajos={catalogoTrabajos}
+              sugeridos={sugeridos}
               onCambiar={onCambiarInforme}
+              onDuplicar={onDuplicarInforme}
               onQuitar={onQuitarInforme}
             />
           ))}
@@ -854,7 +952,9 @@ function FilaInforme({
   hoy,
   opcMotivos,
   catalogoTrabajos,
+  sugeridos,
   onCambiar,
+  onDuplicar,
   onQuitar,
 }: {
   n: number;
@@ -863,7 +963,9 @@ function FilaInforme({
   hoy: string;
   opcMotivos: { v: string; t: string }[];
   catalogoTrabajos: CatalogoTrabajo[];
+  sugeridos: FirmanteSugerido[];
   onCambiar: (key: string, cambios: Partial<Informe>) => void;
+  onDuplicar: (informe: Informe) => void;
   onQuitar: (key: string) => void;
 }) {
   const id = (k: string) => `pp-${inf.key}-${k}`;
@@ -927,7 +1029,15 @@ function FilaInforme({
             ariaLabel="Motivo"
           />
         </div>
-        <div className="mb-1 ml-auto">
+        <div className="mb-1 ml-auto flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => onDuplicar(inf)}
+            className="btn btn-secondary min-h-8 px-2.5 text-[12px]"
+            title="Copia este informe con otro día"
+          >
+            Duplicar
+          </button>
           <BotonQuitar label={`Quitar el informe ${n}`} onClick={() => onQuitar(inf.key)} />
         </div>
       </div>
@@ -947,11 +1057,24 @@ function FilaInforme({
           <input
             id={id("firmante")}
             value={inf.firmante}
-            onChange={poner("firmante")}
+            list={id("firmantes")}
+            onChange={(e) => {
+              const nombre = e.target.value;
+              // Si es uno de los sugeridos y el RUT está vacío, el RUT viene con él.
+              const conocido = sugeridos.find((f) => f.nombre.toLowerCase() === nombre.trim().toLowerCase());
+              onCambiar(inf.key, !inf.rut && conocido?.rut ? { firmante: nombre, rut: conocido.rut } : { firmante: nombre });
+            }}
             placeholder="Nombre de quien firmó"
             autoComplete="off"
             className="input"
           />
+          <datalist id={id("firmantes")}>
+            {sugeridos.map((f) => (
+              <option key={f.nombre} value={f.nombre}>
+                {f.rut}
+              </option>
+            ))}
+          </datalist>
         </div>
         <div className="field min-w-0">
           <label htmlFor={id("rut")}>RUT (opcional)</label>
@@ -1031,72 +1154,109 @@ function TrabajosDelInforme({
 
   return (
     <div className="mt-3 sm:pl-9">
-      <div className="text-[11px] tracking-[.09em] uppercase opacity-62 mb-1.5">Trabajos realizados (opcional)</div>
-      <div className="flex flex-wrap gap-1.5">
-        {delMotivo.map((t) => (
-          <Chip key={t.codigo} activo={Boolean(marcado(t.codigo))} fuerte onClick={() => alternarTrabajo(t.codigo)}>
-            {t.nombre}
-          </Chip>
-        ))}
+      <div className="flex items-baseline gap-2 mb-1.5">
+        <span className="text-[11px] tracking-[.09em] uppercase opacity-62">Trabajos realizados (opcional)</span>
+        {trabajos.length ? (
+          <span className="text-[11px] font-extrabold tabular-nums">{trabajos.length} marcados</span>
+        ) : null}
       </div>
-
-      {delMotivo
-        .filter((t) => marcado(t.codigo) && t.subtrabajos.some((x) => x.activo))
-        .map((t) => {
-          const subs = marcado(t.codigo)!.subs;
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+        {delMotivo.map((t) => {
+          const sel = marcado(t.codigo);
+          const subsActivos = t.subtrabajos.filter((x) => x.activo);
           return (
-            <div key={t.codigo} className="mt-2.5 pl-3 border-l-2 border-[var(--color-accent)]">
-              <div className="text-[11px] tracking-[.06em] uppercase mb-1.5">
-                <span className="font-extrabold">{t.nombre}</span>
-                <span className="opacity-62"> · {t.grupoLabel ?? "Subtrabajos"}</span>
-              </div>
-              <div className="flex flex-wrap gap-1.5">
-                {t.subtrabajos
-                  .filter((x) => x.activo)
-                  .map((x) => {
-                    const sub = subs.find((y) => y.etiqueta === x.etiqueta);
-                    return (
-                      <div key={x.id} className="flex items-stretch">
-                        <Chip
-                          activo={Boolean(sub)}
-                          onClick={() =>
-                            cambiarSubs(
-                              t.codigo,
-                              sub
-                                ? subs.filter((y) => y.etiqueta !== x.etiqueta)
-                                : [...subs, { etiqueta: x.etiqueta, cantidad: 1 }]
-                            )
-                          }
-                        >
-                          {x.etiqueta}
-                        </Chip>
-                        {sub && x.permiteCantidad ? (
-                          <input
-                            type="number"
-                            min={1}
-                            max={99}
-                            value={sub.cantidad}
-                            aria-label={`Cantidad de ${x.etiqueta}`}
-                            onChange={(e) =>
+            <div
+              key={t.codigo}
+              className="border"
+              style={{
+                borderColor: sel ? "var(--color-text)" : "rgba(32,30,29,.3)",
+                background: sel ? "var(--color-surface)" : "transparent",
+              }}
+            >
+              <button
+                type="button"
+                role="checkbox"
+                aria-checked={Boolean(sel)}
+                onClick={() => alternarTrabajo(t.codigo)}
+                className="w-full min-h-10 px-2.5 flex items-center gap-2.5 bg-transparent border-0 cursor-pointer text-left text-[var(--color-text)]"
+              >
+                <span
+                  className="w-[18px] h-[18px] flex-none grid place-items-center border-2"
+                  style={{
+                    borderColor: "var(--color-text)",
+                    background: sel ? "var(--color-text)" : "transparent",
+                    color: "var(--color-bg)",
+                  }}
+                >
+                  {sel ? (
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="4">
+                      <path d="M4 12l5 5L20 6" />
+                    </svg>
+                  ) : null}
+                </span>
+                <span className="text-[14px] leading-[1.25]" style={{ fontWeight: sel ? 800 : 500 }}>
+                  {t.nombre}
+                </span>
+                {sel && subsActivos.length ? (
+                  <span className="ml-auto text-[11px] tabular-nums opacity-66 flex-none">
+                    {sel.subs.length}/{subsActivos.length}
+                  </span>
+                ) : null}
+              </button>
+
+              {sel && subsActivos.length ? (
+                <div className="px-2.5 pb-2.5 pt-1 border-t border-[var(--color-divider-soft)]">
+                  <div className="text-[11px] tracking-[.06em] uppercase opacity-62 mb-1.5">
+                    {t.grupoLabel ?? "Subtrabajos"}
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {subsActivos.map((x) => {
+                      const sub = sel.subs.find((y) => y.etiqueta === x.etiqueta);
+                      return (
+                        <div key={x.id} className="flex items-stretch">
+                          <Chip
+                            activo={Boolean(sub)}
+                            onClick={() =>
                               cambiarSubs(
                                 t.codigo,
-                                subs.map((y) =>
-                                  y.etiqueta === x.etiqueta
-                                    ? { ...y, cantidad: Math.min(99, Math.max(1, Number(e.target.value) || 1)) }
-                                    : y
-                                )
+                                sub
+                                  ? sel.subs.filter((y) => y.etiqueta !== x.etiqueta)
+                                  : [...sel.subs, { etiqueta: x.etiqueta, cantidad: 1 }]
                               )
                             }
-                            className="w-14 -ml-px px-2 border border-[var(--color-accent)] bg-[var(--color-surface)] text-[13px] tabular-nums text-center"
-                          />
-                        ) : null}
-                      </div>
-                    );
-                  })}
-              </div>
+                          >
+                            {x.etiqueta}
+                          </Chip>
+                          {sub && x.permiteCantidad ? (
+                            <input
+                              type="number"
+                              min={1}
+                              max={99}
+                              value={sub.cantidad}
+                              aria-label={`Cantidad de ${x.etiqueta}`}
+                              onChange={(e) =>
+                                cambiarSubs(
+                                  t.codigo,
+                                  sel.subs.map((y) =>
+                                    y.etiqueta === x.etiqueta
+                                      ? { ...y, cantidad: Math.min(99, Math.max(1, Number(e.target.value) || 1)) }
+                                      : y
+                                  )
+                                )
+                              }
+                              className="w-14 -ml-px px-2 border border-[var(--color-accent)] bg-[var(--color-surface)] text-[13px] tabular-nums text-center"
+                            />
+                          ) : null}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : null}
             </div>
           );
         })}
+      </div>
     </div>
   );
 }

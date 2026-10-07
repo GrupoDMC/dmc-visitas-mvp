@@ -136,3 +136,46 @@ export async function crearVisitasPapelAction(lote: { informes: InformePapel[] }
   }
   return { ok: resultados.every((r) => r.ok), resultados };
 }
+
+/** Quién firmó antes en una tienda, con su RUT: las sugerencias del campo «Firmó». */
+export interface FirmanteSugerido {
+  nombre: string;
+  rut: string;
+}
+
+/**
+ * Los firmantes que ya constan en las visitas de esas sucursales, los más
+ * frecuentes primero. Solo lee: no toca nada.
+ */
+export async function firmantesDeSucursalesAction(lote: {
+  sucursalIds: number[];
+}): Promise<Record<string, FirmanteSugerido[]>> {
+  const sesion = await sesionCon("visitas.crear");
+  if (!sesion) return {};
+  const ids = [...new Set((lote?.sucursalIds ?? []).map(Number).filter((n) => Number.isInteger(n) && n > 0))].slice(0, 200);
+  if (ids.length === 0) return {};
+
+  try {
+    // Interpolado porque la lista es de largo variable; el filtro de arriba
+    // garantiza que solo son enteros positivos.
+    const filas = await consultaCon<{ sucursal_id: number; nombre: string; rut: string | null; n: number }>(
+      `SELECT sucursal_id, LTRIM(RTRIM(responsable_nombre)) AS nombre,
+              MAX(LTRIM(RTRIM(responsable_rut))) AS rut, COUNT(*) AS n
+         FROM dmc.visita
+        WHERE sucursal_id IN (${ids.join(",")})
+          AND responsable_nombre IS NOT NULL AND LTRIM(RTRIM(responsable_nombre)) <> ''
+        GROUP BY sucursal_id, LTRIM(RTRIM(responsable_nombre))
+        ORDER BY sucursal_id, COUNT(*) DESC`,
+      []
+    );
+    const salida: Record<string, FirmanteSugerido[]> = {};
+    for (const f of filas) {
+      const lista = (salida[String(num(f.sucursal_id))] ??= []);
+      if (lista.length < 8) lista.push({ nombre: f.nombre, rut: f.rut ?? "" });
+    }
+    return salida;
+  } catch (err) {
+    console.error("[firmantesDeSucursales]", err);
+    return {};
+  }
+}
