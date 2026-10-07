@@ -9,6 +9,8 @@ export interface CampoFiltro {
   valor: string;
   opciones: { v: string; t: string }[];
   onChange: (valor: string) => void;
+  /** "fecha" pinta un selector de día en vez de la lista; `opciones` va vacío. */
+  tipo?: "fecha";
 }
 
 export interface ChipFiltro {
@@ -134,7 +136,15 @@ export default function FiltrosBar({
                 <label htmlFor={c.id}>{c.label}</label>
                 {/* Con muchas opciones (sucursales, tecnicos) se escribe y
                     la lista filtra al momento; con pocas basta el nativo. */}
-                {c.opciones.length >= 7 ? (
+                {c.tipo === "fecha" ? (
+                  <input
+                    id={c.id}
+                    type="date"
+                    value={c.valor}
+                    onChange={(e) => c.onChange(e.target.value)}
+                    className="input"
+                  />
+                ) : c.opciones.length >= 7 ? (
                   <SelectBuscable
                     id={c.id}
                     valor={c.valor}

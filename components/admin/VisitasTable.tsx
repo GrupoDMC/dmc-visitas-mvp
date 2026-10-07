@@ -29,7 +29,9 @@ const ESTADOS: EstadoVisita[] = [
 
 interface Filtros {
   estado: string;
-  fecha: string;
+  desde: string;
+  hasta: string;
+  clienteId: string;
   tecnicoId: string;
   tipo: string;
 }
@@ -40,7 +42,7 @@ interface Filtros {
  */
 const ELIMINADAS = "ELIMINADAS";
 
-const SIN_FILTROS: Filtros = { estado: "TODAS", fecha: "", tecnicoId: "", tipo: "" };
+const SIN_FILTROS: Filtros = { estado: "TODAS", desde: "", hasta: "", clienteId: "", tecnicoId: "", tipo: "" };
 
 export default function VisitasTable({
   kicker,
@@ -75,7 +77,10 @@ export default function VisitasTable({
   const [busqueda, setBusqueda] = useState("");
   const [f, setF] = useState<Filtros>({
     estado: estadoInicial ?? "TODAS",
-    fecha: fechaInicial ?? "",
+    // Un día suelto (los enlaces del panel) es un rango de ese día a ese día.
+    desde: fechaInicial ?? "",
+    hasta: fechaInicial ?? "",
+    clienteId: "",
     tecnicoId: tecnicoInicial ?? "",
     tipo: tipoInicial ?? "",
   });
@@ -112,22 +117,25 @@ export default function VisitasTable({
     setMarcadas([]);
   }
 
-  const fechas = useMemo(
-    () => [...new Set(visitas.map((v) => v.fechaProgramada))].sort().reverse(),
-    [visitas]
-  );
+  const clientes = useMemo(() => {
+    const porId = new Map<number, string>();
+    for (const v of visitas) if (v.cliente) porId.set(v.clienteId, v.cliente.nombreFantasia);
+    return [...porId].sort((a, b) => a[1].localeCompare(b[1], "es"));
+  }, [visitas]);
 
   const filtradas = useMemo(() => {
     const q = sinTildes(busqueda.trim());
     // Las eliminadas van en su propia lista: nunca se mezclan con las vigentes.
     return (verEliminadas ? eliminadas ?? [] : visitas).filter((v) => {
       if (!verEliminadas && f.estado !== "TODAS" && v.estado !== f.estado) return false;
-      if (f.fecha && v.fechaProgramada !== f.fecha) return false;
+      if (f.desde && v.fechaProgramada < f.desde) return false;
+      if (f.hasta && v.fechaProgramada > f.hasta) return false;
+      if (f.clienteId && String(v.clienteId) !== f.clienteId) return false;
       // Filtrar por técnico trae también las visitas en las que va de ayudante.
       if (f.tecnicoId && String(v.tecnicoId) !== f.tecnicoId && String(v.tecnicoAyudanteId) !== f.tecnicoId) {
         return false;
       }
-      if (f.tipo && !(v.problemas ?? []).some((p) => p.tipoCodigo === f.tipo)) return false;
+      if (!f.clienteId && f.tipo && !(v.problemas ?? []).some((p) => p.tipoCodigo === f.tipo)) return false;
       if (!q) return true;
       const hay = `${v.folio} ${v.sucursal?.nombre ?? ""} ${v.cliente?.nombreFantasia ?? ""} ${v.tecnico?.nombreCompleto ?? ""} ${v.tecnicoAyudante?.nombreCompleto ?? ""} ${v.motivosNombres.join(" ")}`;
       return sinTildes(hay).includes(q);
@@ -155,12 +163,17 @@ export default function VisitasTable({
       onQuitar: () => setF((p) => ({ ...p, estado: "TODAS" })),
     });
   }
-  if (f.fecha) chips.push({ label: `Fecha: ${f.fecha}`, onQuitar: () => setF((p) => ({ ...p, fecha: "" })) });
+  if (f.clienteId) {
+    const c = clientes.find(([id]) => String(id) === f.clienteId);
+    chips.push({ label: `Cliente: ${c?.[1] ?? ""}`, onQuitar: () => setF((p) => ({ ...p, clienteId: "" })) });
+  }
+  if (f.desde) chips.push({ label: `Desde: ${f.desde}`, onQuitar: () => setF((p) => ({ ...p, desde: "" })) });
+  if (f.hasta) chips.push({ label: `Hasta: ${f.hasta}`, onQuitar: () => setF((p) => ({ ...p, hasta: "" })) });
   if (f.tecnicoId) {
     const t = tecnicos.find((x) => String(x.id) === f.tecnicoId);
     chips.push({ label: `Técnico: ${t?.nombreCompleto ?? ""}`, onQuitar: () => setF((p) => ({ ...p, tecnicoId: "" })) });
   }
-  if (f.tipo) {
+  if (f.tipo && !f.clienteId) {
     const t = catalogoProblema.find((x) => x.codigo === f.tipo);
     chips.push({ label: `Falla: ${t?.nombre ?? f.tipo}`, onQuitar: () => setF((p) => ({ ...p, tipo: "" })) });
   }
@@ -230,11 +243,28 @@ export default function VisitasTable({
               onChange: (v) => setF((p) => ({ ...p, estado: v })),
             },
             {
-              id: "fv-fecha",
-              label: "Fecha",
-              valor: f.fecha,
-              opciones: [{ v: "", t: "Todas las fechas" }, ...fechas.map((x) => ({ v: x, t: x }))],
-              onChange: (v) => setF((p) => ({ ...p, fecha: v })),
+              id: "fv-cliente",
+              label: "Cliente",
+              valor: f.clienteId,
+              opciones: [{ v: "", t: "Todos los clientes" }, ...clientes.map(([id, n]) => ({ v: String(id), t: n }))],
+              // Con un cliente elegido el tipo de falla deja de aplicar: se limpia.
+              onChange: (v) => setF((p) => ({ ...p, clienteId: v, tipo: v ? "" : p.tipo })),
+            },
+            {
+              id: "fv-desde",
+              label: "Desde",
+              tipo: "fecha",
+              valor: f.desde,
+              opciones: [],
+              onChange: (v) => setF((p) => ({ ...p, desde: v })),
+            },
+            {
+              id: "fv-hasta",
+              label: "Hasta",
+              tipo: "fecha",
+              valor: f.hasta,
+              opciones: [],
+              onChange: (v) => setF((p) => ({ ...p, hasta: v })),
             },
             {
               id: "fv-tecnico",
@@ -246,6 +276,9 @@ export default function VisitasTable({
               ],
               onChange: (v) => setF((p) => ({ ...p, tecnicoId: v })),
             },
+            ...(f.clienteId
+              ? []
+              : [
             {
               id: "fv-tipo",
               label: "Tipo de falla registrada",
@@ -254,8 +287,9 @@ export default function VisitasTable({
                 { v: "", t: "Todas las fallas" },
                 ...catalogoProblema.map((t) => ({ v: t.codigo, t: t.nombre })),
               ],
-              onChange: (v) => setF((p) => ({ ...p, tipo: v })),
+              onChange: (v: string) => setF((p) => ({ ...p, tipo: v })),
             },
+              ]),
           ]}
         />
 
