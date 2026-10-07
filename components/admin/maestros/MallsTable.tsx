@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { sinTildes } from "@/lib/ui/formato";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import MaestroTable from "@/components/admin/MaestroTable";
 import Dialogo from "@/components/admin/Dialogo";
@@ -82,22 +83,32 @@ export default function MallsTable({
           })
         }
         emptyRow={{ nombre: "", direccion: "", comuna: "", region: REGIONES[0], activo: true }}
-        accionFila={
-          puede(ref, "malls.editar")
-            ? (m) => (
-                <button
-                  onClick={() => setTiendasDe(m)}
-                  className="btn btn-icon w-8 h-8 border border-black/[.3]"
-                  aria-label={`Tiendas de ${m.nombre}`}
-                  title="Tiendas del mall"
-                >
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path d="M4 9l1.5-5h13L20 9M4 9v11h16V9M4 9h16M9 20v-6h6v6" />
-                  </svg>
-                </button>
-              )
-            : undefined
-        }
+        accionFila={(m) => (
+          <>
+            <Link
+              href={`/admin/malls/${m.id}`}
+              className="btn btn-icon w-8 h-8 border border-black/[.3] mr-1.5"
+              aria-label={`Ficha de ${m.nombre}`}
+              title="Ver ficha y visitas"
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M6 3h9l4 4v14H6zM14 3v5h5M9 13h7M9 17h7" />
+              </svg>
+            </Link>
+            {puede(ref, "malls.editar") ? (
+              <button
+                onClick={() => setTiendasDe(m)}
+                className="btn btn-icon w-8 h-8 border border-black/[.3]"
+                aria-label={`Tiendas de ${m.nombre}`}
+                title="Tiendas del mall"
+              >
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M4 9l1.5-5h13L20 9M4 9v11h16V9M4 9h16M9 20v-6h6v6" />
+                </svg>
+              </button>
+            ) : null}
+          </>
+        )}
       />
 
       {tiendasDe ? (

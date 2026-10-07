@@ -51,6 +51,7 @@ export default async function SucursalFichaPage({ params }: { params: Promise<{ 
 
   return (
     <FichaVisitas
+      modo="sucursal"
       kicker="Maestros · ficha de sucursal"
       titulo={s.nombre}
       subtitulo={[cliente?.nombreFantasia, mall?.nombre, s.comuna].filter(Boolean).join(" · ")}

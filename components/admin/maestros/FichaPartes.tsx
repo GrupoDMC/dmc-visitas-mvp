@@ -20,6 +20,7 @@ export interface FilaFicha {
   ayudante: string | null;
   tiendaId: number;
   tienda: string;
+  cliente: string;
   mall: string | null;
   problemas: number;
   problemasAbiertos: number;
@@ -56,6 +57,7 @@ export function aFilas(visitas: Visita[], malls: Mall[], sucursales: Sucursal[])
       ayudante: v.tecnicoAyudante?.nombreCompleto ?? null,
       tiendaId: v.sucursalId,
       tienda: s?.nombre ?? "—",
+      cliente: v.cliente?.nombreFantasia ?? "—",
       mall: malls.find((m) => m.id === s?.mallId)?.nombre ?? null,
       problemas: problemas.length,
       problemasAbiertos: problemas.filter((p) => p.estado !== ESTADO_PROBLEMA_CIERRE).length,

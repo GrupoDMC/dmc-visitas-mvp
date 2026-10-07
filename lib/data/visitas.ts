@@ -67,6 +67,14 @@ function porCliente(clienteId: number): Filtro {
   return { where: "v.cliente_id = @f_cliente AND v.activo = 1", params: [["f_cliente", sql.BigInt, clienteId]] };
 }
 
+/** Por la tienda: es el mall donde está hoy la tienda, no donde estaba el día de la visita. */
+function porMall(mallId: number): Filtro {
+  return {
+    where: "v.sucursal_id IN (SELECT s.id FROM dmc.sucursal s WHERE s.mall_id = @f_mall) AND v.activo = 1",
+    params: [["f_mall", sql.BigInt, mallId]],
+  };
+}
+
 function porFolio(folio: string): Filtro {
   return { where: "v.folio = @f_folio AND v.activo = 1", params: [["f_folio", sql.VarChar(16), folio]] };
 }
@@ -741,6 +749,10 @@ export function getVisitasPorSucursal(sucursalId: number): Promise<Visita[]> {
 
 export function getVisitasPorCliente(clienteId: number): Promise<Visita[]> {
   return cargar(porCliente(clienteId));
+}
+
+export function getVisitasPorMall(mallId: number): Promise<Visita[]> {
+  return cargar(porMall(mallId));
 }
 
 export async function getVisitaCompletaPorFolio(folio: string): Promise<Visita | undefined> {

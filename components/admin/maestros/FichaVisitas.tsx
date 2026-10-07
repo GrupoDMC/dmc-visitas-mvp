@@ -28,6 +28,7 @@ export interface TiendaFicha {
   id: number;
   nombre: string;
   mall: string | null;
+  cliente: string;
   comuna: string;
   activo: boolean;
 }
@@ -38,6 +39,7 @@ const pct = (n: number, de: number) => (de ? Math.round((n / de) * 100) : 0);
 const diasEntre = (a: string, b: string) => Math.round((Date.parse(b) - Date.parse(a)) / 86400000);
 
 export default function FichaVisitas({
+  modo,
   kicker,
   titulo,
   subtitulo,
@@ -51,6 +53,8 @@ export default function FichaVisitas({
   verVisitas,
   hoy,
 }: {
+  /** De qué es la ficha: cambia un gráfico y las columnas de las tablas. */
+  modo: "sucursal" | "cliente" | "mall";
   kicker: string;
   titulo: string;
   subtitulo: string;
@@ -60,14 +64,16 @@ export default function FichaVisitas({
   datos: DatoFicha[];
   notas: string | null;
   filas: FilaFicha[];
-  /** Solo en la ficha del cliente: sus tiendas, para el ranking y la tabla. */
+  /** En la ficha del cliente o del mall: sus tiendas, para la tabla y el filtro. */
   tiendas?: TiendaFicha[];
   verVisitas: boolean;
   hoy: string;
 }) {
   const router = useRouter();
   const historial = useRef<HTMLDivElement>(null);
-  const esCliente = Boolean(tiendas);
+  const esCliente = modo === "cliente";
+  const esMall = modo === "mall";
+  const conTiendas = Boolean(tiendas);
 
   const [busqueda, setBusqueda] = useState("");
   const [fEstado, setFEstado] = useState("");
@@ -123,6 +129,7 @@ export default function FichaVisitas({
   const motivos = ranking(filas.flatMap((f) => f.motivosLista));
   const tecnicos = ranking(filas.flatMap((f) => (f.ayudante ? [f.tecnico, f.ayudante] : [f.tecnico])));
   const malls = ranking(filas.map((f) => f.mall ?? "Sin mall"));
+  const clientes = ranking(filas.map((f) => f.cliente));
 
   const visitasPorTienda = useMemo(() => {
     const m = new Map<number, { n: number; ultima: string | null }>();
@@ -155,7 +162,7 @@ export default function FichaVisitas({
         (!fEstado || f.estado === fEstado) &&
         (!fAnio || f.fecha.startsWith(fAnio)) &&
         (!fTienda || String(f.tiendaId) === fTienda) &&
-        (!q || sinTildes(`${f.folio} ${f.tienda} ${f.mall ?? ""} ${f.tecnico} ${f.ayudante ?? ""} ${f.motivos}`.toLowerCase()).includes(q))
+        (!q || sinTildes(`${f.folio} ${f.tienda} ${f.cliente} ${f.mall ?? ""} ${f.tecnico} ${f.ayudante ?? ""} ${f.motivos}`.toLowerCase()).includes(q))
     );
   }, [filas, busqueda, fEstado, fAnio, fTienda]);
 
@@ -167,7 +174,7 @@ export default function FichaVisitas({
   return (
     <>
       <AdminHeader kicker={kicker} title={titulo}>
-        <Tag variant={activo ? "accent" : "neutral"}>{activo ? (esCliente ? "Activo" : "Activa") : esCliente ? "Inactivo" : "Inactiva"}</Tag>
+        <Tag variant={activo ? "accent" : "neutral"}>{activo ? (modo === "sucursal" ? "Activa" : "Activo") : modo === "sucursal" ? "Inactiva" : "Inactivo"}</Tag>
         {acciones?.map((a) => (
           <Link key={a.href} href={a.href} className="btn btn-secondary">
             {a.label}
@@ -208,7 +215,7 @@ export default function FichaVisitas({
 
         <div className="grid grid-cols-1 lg:grid-cols-2">
           {/* Datos */}
-          <Panel titulo={esCliente ? "Datos del cliente" : "Datos de la tienda"} borde="r">
+          <Panel titulo={esCliente ? "Datos del cliente" : esMall ? "Datos del mall" : "Datos de la tienda"} borde="r">
             <dl className="m-0 mt-2">
               {datos.map((d) => (
                 <div key={d.label} className="flex gap-4 py-2.5 border-b border-black/[.1]">
@@ -276,6 +283,10 @@ export default function FichaVisitas({
             <Panel titulo="Visitas por mall" extra={`${malls.length} ${malls.length === 1 ? "lugar" : "lugares"}`} borde="r">
               <Barras filas={malls} color="var(--color-text)" vacio="Sin visitas todavía." />
             </Panel>
+          ) : esMall ? (
+            <Panel titulo="Visitas por cliente" extra={`${clientes.length} ${clientes.length === 1 ? "cliente" : "clientes"}`} borde="r">
+              <Barras filas={clientes} color="var(--color-text)" vacio="Sin visitas todavía." />
+            </Panel>
           ) : (
             <Panel titulo="Técnicos que han ido" extra="histórico" borde="r">
               <Barras filas={tecnicos} color="var(--color-text)" vacio="Sin visitas todavía." />
@@ -322,7 +333,7 @@ export default function FichaVisitas({
                   <thead>
                     <tr>
                       <th>Tienda</th>
-                      <th>Mall</th>
+                      <th>{esMall ? "Cliente" : "Mall"}</th>
                       <th>Comuna</th>
                       <th style={{ width: 220 }}>Visitas</th>
                       <th>Última hecha</th>
@@ -335,7 +346,7 @@ export default function FichaVisitas({
                       return (
                         <tr key={t.id} onClick={() => router.push(`/admin/sucursales/${t.id}`)} className="cursor-pointer hover:bg-black/5">
                           <td className="font-semibold">{t.nombre}</td>
-                          <td className="opacity-70">{t.mall ?? "—"}</td>
+                          <td className="opacity-70">{esMall ? t.cliente : (t.mall ?? "—")}</td>
                           <td className="opacity-70">{t.comuna}</td>
                           <td>
                             <div className="flex items-center gap-2">
@@ -356,7 +367,7 @@ export default function FichaVisitas({
                 </table>
               </div>
             ) : (
-              <Vacio texto="Este cliente no tiene tiendas." />
+              <Vacio texto={esMall ? "Este mall no tiene tiendas." : "Este cliente no tiene tiendas."} />
             )}
           </section>
         ) : null}
@@ -368,7 +379,7 @@ export default function FichaVisitas({
             <>
               <FiltrosBar
                 busqueda={busqueda}
-                phBusqueda={esCliente ? "Buscar folio, tienda, mall, técnico…" : "Buscar folio, técnico, motivo…"}
+                phBusqueda={conTiendas ? "Buscar folio, tienda, cliente, técnico…" : "Buscar folio, técnico, motivo…"}
                 onBusqueda={setBusqueda}
                 campos={[
                   {
@@ -413,8 +424,8 @@ export default function FichaVisitas({
                       <th>Folio</th>
                       <th>Fecha</th>
                       <th>Hora</th>
-                      {esCliente ? <th>Tienda</th> : null}
-                      <th>Mall</th>
+                      {conTiendas ? <th>Tienda</th> : null}
+                      {esMall ? <th>Cliente</th> : <th>Mall</th>}
                       <th>Técnico</th>
                       <th>Motivo</th>
                       <th>Problemas</th>
@@ -427,8 +438,8 @@ export default function FichaVisitas({
                         <td className="font-semibold tabular-nums whitespace-nowrap">{f.folio}</td>
                         <td className="tabular-nums opacity-65 whitespace-nowrap">{textoFechaVisita({ fechaProgramada: f.fecha, fechaHasta: f.fechaHasta })}</td>
                         <td className={`tabular-nums whitespace-nowrap ${f.hora ? "opacity-90" : "opacity-45"}`}>{f.hora ?? "Sin hora"}</td>
-                        {esCliente ? <td className="font-semibold">{f.tienda}</td> : null}
-                        <td className="opacity-70">{f.mall ?? "—"}</td>
+                        {conTiendas ? <td className="font-semibold">{f.tienda}</td> : null}
+                        <td className="opacity-70">{esMall ? f.cliente : (f.mall ?? "—")}</td>
                         <td className="opacity-70">{f.ayudante ? `${f.tecnico} + ${f.ayudante}` : f.tecnico}</td>
                         <td className="opacity-70 max-w-[260px]">{f.motivos}</td>
                         <td className="tabular-nums">

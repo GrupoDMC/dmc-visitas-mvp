@@ -42,6 +42,7 @@ export default async function ClienteFichaPage({ params }: { params: Promise<{ i
 
   return (
     <FichaVisitas
+      modo="cliente"
       kicker="Maestros · ficha de cliente"
       titulo={c.nombreFantasia}
       subtitulo={`${c.razonSocial !== c.nombreFantasia ? `${c.razonSocial} · ` : ""}RUT ${c.rut}`}
@@ -57,6 +58,7 @@ export default async function ClienteFichaPage({ params }: { params: Promise<{ i
               id: s.id,
               nombre: s.nombre,
               mall: malls.find((m) => m.id === s.mallId)?.nombre ?? null,
+              cliente: c.nombreFantasia,
               comuna: s.comuna,
               activo: s.activo,
             }))
