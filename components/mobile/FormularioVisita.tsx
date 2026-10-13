@@ -9,7 +9,7 @@ import VideoSheet, { type ClipGrabado } from "./VideoSheet";
 import FirmaSheet, { type FirmaGuardada } from "./FirmaSheet";
 import { Toast, useToast } from "./toast";
 import { fmtRut, fmtTel, mensajeRut, rutCompleto, rutDvCorrecto, telCompleto } from "@/lib/ui/formato";
-import { comprimirFoto } from "@/lib/ui/imagen";
+import { ajustarFotos, comprimirFoto, PRESUPUESTO_FOTOS_BYTES, pesoDeFotos } from "@/lib/ui/imagen";
 import { useUsuarioLocal } from "@/lib/ui/usuario-local";
 import SelectBuscable from "@/components/ui/SelectBuscable";
 import { cargoVigente } from "@/lib/ui/cargos";
@@ -184,6 +184,20 @@ export default function FormularioVisita({
 
   // 5 · Fotos y videos (los del trabajo y los internos, separados por `interno`)
   const [fotos, setFotos] = useState<FotoForm[]>(inicial?.fotos ?? []);
+  // Sin tope de fotos: cuando juntas no caben en el request, se les baja la
+  // calidad (ver ajustarFotos) en vez de impedir que se tomen más.
+  useEffect(() => {
+    if (pesoDeFotos(fotos) <= PRESUPUESTO_FOTOS_BYTES) return;
+    let vigente = true;
+    void ajustarFotos(fotos).then((ajustadas) => {
+      if (!vigente || ajustadas === fotos) return;
+      const nuevas = new Map(ajustadas.map((f) => [f.id, f.src]));
+      setFotos((prev) => prev.map((f) => (nuevas.has(f.id) && f.src.startsWith("data:") ? { ...f, src: nuevas.get(f.id)! } : f)));
+    });
+    return () => {
+      vigente = false;
+    };
+  }, [fotos]);
   // El video no se acumula en el formulario como las fotos: se sube a
   // dmc.visita_video en cuanto se termina de grabar, porque un minuto en 720p
   // pesa unos 11 MB y no cabe ni en una Server Action ni en localStorage. Por
