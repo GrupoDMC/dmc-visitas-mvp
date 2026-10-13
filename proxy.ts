@@ -24,7 +24,7 @@ import { CSP_CABECERA, CSP_RUTA_REPORTE, construirCsp, generarNonce } from "@/li
 
 const PUBLICAS = new Set(["/login", CSP_RUTA_REPORTE]);
 
-export async function middleware(req: NextRequest) {
+export async function proxy(req: NextRequest) {
   // El nonce viaja a Next en la cabecera de la petición (así lo marca en sus
   // scripts) y la política sale en la respuesta. Va en todas las respuestas
   // que dejan pasar la petición, públicas o no.
