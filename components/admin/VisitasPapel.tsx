@@ -1017,8 +1017,10 @@ function FilaInforme({
             ))}
           </select>
         </div>
-        <div className="field flex-1 min-w-[200px]">
-          <label htmlFor={id("motivo")}>Motivo</label>
+        <div className="field flex-1 min-w-[200px] border-l-4 border-[var(--color-text)] pl-2.5">
+          <label htmlFor={id("motivo")} className="font-extrabold">
+            Motivo de la visita
+          </label>
           <SelectBuscable
             id={id("motivo")}
             valor={inf.motivo}
@@ -1257,7 +1259,7 @@ function TrabajosDelInforme({
   };
 
   return (
-    <div className="mt-3 sm:pl-9">
+    <div className="mt-3 sm:ml-9 pl-3 border-l-2 border-black/[.3]">
       <div className="flex items-baseline gap-2 mb-1.5">
         <span className="text-[11px] tracking-[.09em] uppercase opacity-62">Trabajos realizados (opcional)</span>
         {trabajos.length ? (
@@ -1271,6 +1273,7 @@ function TrabajosDelInforme({
             return (
               <SeccionPlegable
                 key={g.nombre ?? "__sin"}
+                etiqueta="Sección"
                 titulo={g.nombre ?? "Sin sección"}
                 total={g.items.length}
                 marcados={marcadosAca}

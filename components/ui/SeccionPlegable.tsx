@@ -17,9 +17,12 @@ export default function SeccionPlegable({
   abiertaInicial = false,
   forzarAbierta = false,
   tono = "panel",
+  etiqueta,
   children,
 }: {
   titulo: string;
+  /** Una marca chica antes del título, p. ej. «Sección», para distinguirla de otros encabezados. */
+  etiqueta?: string;
   total: number;
   marcados?: number;
   abiertaInicial?: boolean;
@@ -41,6 +44,11 @@ export default function SeccionPlegable({
         className={`w-full flex items-center gap-2.5 px-3 ${movil ? "min-h-[52px]" : "min-h-10"} bg-transparent border-0 cursor-pointer text-left text-[var(--color-text)]`}
         style={{ background: visible ? "#e3e1e0" : "var(--color-surface)" }}
       >
+        {etiqueta ? (
+          <span className="flex-none text-[10px] tracking-[.09em] uppercase px-1.5 py-0.5 border border-black/[.35] opacity-70">
+            {etiqueta}
+          </span>
+        ) : null}
         <span className={`flex-1 min-w-0 font-extrabold ${movil ? "text-[15px]" : "text-[13px]"} leading-[1.2]`}>
           {titulo}
         </span>
