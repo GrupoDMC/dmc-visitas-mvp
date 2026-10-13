@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { sinTildes } from "@/lib/ui/formato";
 import { useRouter } from "next/navigation";
 import AdminHeader from "@/components/admin/AdminHeader";
-import Confirmar, { type ConfirmarCfg } from "@/components/admin/Confirmar";
+import Confirmar, { type ConfirmarCfg } from "@/components/ui/Confirmar";
 import Tag from "@/components/Tag";
 import { Toast, useToast } from "@/components/ui/Toast";
 import {

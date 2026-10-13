@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import AdminHeader from "@/components/admin/AdminHeader";
-import Confirmar, { type ConfirmarCfg } from "@/components/admin/Confirmar";
+import Confirmar, { type ConfirmarCfg } from "@/components/ui/Confirmar";
 import Dialogo, { type CampoDef, type FormValores } from "@/components/admin/Dialogo";
 import Tag from "@/components/Tag";
 import { Toast, useToast } from "@/components/ui/Toast";

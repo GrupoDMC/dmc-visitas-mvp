@@ -4,7 +4,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Sheet from "./Sheet";
 import Tag from "@/components/Tag";
-import { Toast, useToast } from "./toast";
+import { Toast, useToast } from "@/components/ui/Toast";
 import { cambiarEstadoVisitaAction, iniciarVisitaAction } from "@/app/actions/visitas";
 import { ESTADO_VISITA_LABEL, ESTADO_VISITA_TAG, nombreDeQuienLaTomo, textoMotivos } from "@/lib/ui/estado";
 import { puede, useReferencias } from "@/lib/ui/referencias";
