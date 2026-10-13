@@ -1,5 +1,17 @@
 import "server-only";
-import { agrupar, consulta, consultaCon, ejecutar, num, sql } from "@/lib/data/sql";
+import {
+  agrupar,
+  consulta,
+  consultaCon,
+  ejecutar,
+  enTransaccion,
+  num,
+  paramIds,
+  sql,
+  subIds,
+  type Ejecutor,
+  type Parametro,
+} from "@/lib/data/sql";
 import { ESTADO_PROBLEMA_CIERRE, ESTADO_PROBLEMA_INICIAL, ESTADOS_PROBLEMA_BASE } from "@/lib/ui/estado";
 import { trabajosDelMotivo } from "@/lib/ui/motivos";
 import type {
@@ -69,9 +81,10 @@ export async function haySecciones(): Promise<boolean> {
 /** Las secciones activas de motivos o de trabajos, en su orden. */
 export async function listarSecciones(tipo: "MOTIVO" | "TRABAJO"): Promise<CatalogoSeccion[]> {
   if (!(await haySecciones())) return [];
-  const filas = await consulta<{ id: number; nombre: string; orden: number }>(
+  const filas = await consultaCon<{ id: number; nombre: string; orden: number }>(
     `SELECT id, nombre, orden FROM dmc.catalogo_seccion
-      WHERE tipo = '${tipo}' AND activo = 1 ORDER BY orden, id`
+      WHERE tipo = @tipo AND activo = 1 ORDER BY orden, id`,
+    [["tipo", sql.VarChar(10), tipo]]
   );
   return filas.map((f) => ({ id: num(f.id), nombre: f.nombre, orden: f.orden }));
 }
@@ -446,8 +459,11 @@ function codigoDeEstado(nombre: string, usados: Set<string>): string {
  * nunca se desactivan, aunque el borrador no los traiga: el primero es con el
  * que nace un problema y el segundo es el que lo cierra.
  */
-async function guardarEstadosProblema(items: MotivoBorrador[]): Promise<{ vivos: number; desactivados: number }> {
-  const filas = await consulta<{ id: number; codigo: string; nombre: string }>(
+async function guardarEstadosProblema(
+  ej: Ejecutor,
+  items: MotivoBorrador[]
+): Promise<{ vivos: number; desactivados: number }> {
+  const filas = await ej.consulta<{ id: number; codigo: string; nombre: string }>(
     `SELECT id, codigo, nombre FROM dmc.catalogo_problema_estado`
   );
   const ids = new Set(filas.map((f) => num(f.id)));
@@ -462,7 +478,7 @@ async function guardarEstadosProblema(items: MotivoBorrador[]): Promise<{ vivos:
     // quitado antes se reactiva en vez de chocar con la unicidad).
     const previo = item.id !== null && ids.has(item.id) ? item.id : porNombre.get(nombre.toLowerCase());
     if (previo !== undefined && !vivos.includes(previo)) {
-      await ejecutar(
+      await ej.ejecutar(
         `UPDATE dmc.catalogo_problema_estado SET nombre = @nombre, orden = @orden, activo = 1 WHERE id = @id`,
         [
           ["nombre", sql.NVarChar(80), nombre],
@@ -473,7 +489,7 @@ async function guardarEstadosProblema(items: MotivoBorrador[]): Promise<{ vivos:
       vivos.push(previo);
       continue;
     }
-    const [fila] = await consultaCon<{ id: number }>(
+    const [fila] = await ej.consulta<{ id: number }>(
       `INSERT INTO dmc.catalogo_problema_estado (codigo, nombre, orden, activo)
        OUTPUT INSERTED.id AS id VALUES (@codigo, @nombre, @orden, 1)`,
       [
@@ -485,13 +501,17 @@ async function guardarEstadosProblema(items: MotivoBorrador[]): Promise<{ vivos:
     vivos.push(num(fila.id));
   }
 
-  const lista = vivos.length ? vivos.join(",") : "0";
-  const desactivados = await ejecutar(
+  const desactivados = await ej.ejecutar(
     `UPDATE dmc.catalogo_problema_estado SET activo = 0
-      WHERE activo = 1 AND id NOT IN (${lista})
-        AND codigo NOT IN ('${ESTADO_PROBLEMA_INICIAL}', '${ESTADO_PROBLEMA_CIERRE}')`
+      WHERE activo = 1 AND id NOT IN ${subIds("vivos")}
+        AND codigo NOT IN (@inicial, @cierre)`,
+    [
+      paramIds("vivos", vivos),
+      ["inicial", sql.VarChar(10), ESTADO_PROBLEMA_INICIAL],
+      ["cierre", sql.VarChar(10), ESTADO_PROBLEMA_CIERRE],
+    ]
   );
-  const [cuenta] = await consulta<{ n: number }>(
+  const [cuenta] = await ej.consulta<{ n: number }>(
     `SELECT COUNT(*) AS n FROM dmc.catalogo_problema_estado WHERE activo = 1`
   );
   return { vivos: num(cuenta?.n ?? 0), desactivados };
@@ -588,6 +608,13 @@ export interface ResumenChecklist {
  * borra ninguna fila: los códigos siguen referenciados por visitas y actas.
  */
 export async function guardarChecklist(borrador: BorradorChecklist): Promise<ResumenChecklist> {
+  // Son decenas de sentencias sobre siete tablas: o queda el borrador entero o
+  // no queda nada. Si se cae a la mitad, un checklist con los motivos nuevos y
+  // los trabajos viejos es peor que el checklist de antes.
+  return enTransaccion((ej) => guardarChecklistEn(ej, borrador));
+}
+
+async function guardarChecklistEn(ej: Ejecutor, borrador: BorradorChecklist): Promise<ResumenChecklist> {
   let desactivados = 0;
 
   // Sin la migración 020 las secciones no tienen dónde vivir: se avisa antes de
@@ -600,12 +627,12 @@ export async function guardarChecklist(borrador: BorradorChecklist): Promise<Res
   if (traeSecciones && !(await haySecciones())) throw new FaltaMigracionSecciones();
 
   // ── Motivos ──
-  const motivos = await guardarListaSimple("dmc.catalogo_motivo", borrador.motivos, "MOTIVO");
+  const motivos = await guardarListaSimple(ej, "dmc.catalogo_motivo", borrador.motivos, "MOTIVO");
   const vivosMotivo = motivos.vivos;
   desactivados += motivos.desactivados;
 
   // ── Tipos de problema ──
-  const padresProblema = await padresExistentes("dmc.catalogo_problema");
+  const padresProblema = await padresExistentes(ej, "dmc.catalogo_problema");
   const vivosProblema: number[] = [];
   for (const [i, p] of borrador.problemas.entries()) {
     const nombre = p.nombre.trim();
@@ -613,7 +640,7 @@ export async function guardarChecklist(borrador: BorradorChecklist): Promise<Res
     const resuelto = resolverPadre(padresProblema, p.id, nombre, "TIPO");
     let id = resuelto.id;
     if (resuelto.esNuevo) {
-      const [fila] = await consultaCon<{ id: number }>(
+      const [fila] = await ej.consulta<{ id: number }>(
         `INSERT INTO dmc.catalogo_problema (codigo, nombre, grupo_label, orden, activo)
          OUTPUT INSERTED.id AS id VALUES (@codigo, @nombre, @grupo, @orden, 1)`,
         [
@@ -625,7 +652,7 @@ export async function guardarChecklist(borrador: BorradorChecklist): Promise<Res
       );
       id = num(fila.id);
     } else {
-      await ejecutar(
+      await ej.ejecutar(
         `UPDATE dmc.catalogo_problema
             SET nombre = @nombre, grupo_label = @grupo, orden = @orden, activo = 1
           WHERE id = @id`,
@@ -639,16 +666,17 @@ export async function guardarChecklist(borrador: BorradorChecklist): Promise<Res
     }
     vivosProblema.push(id);
     desactivados += await guardarHijos(
+      ej,
       "dmc.catalogo_problema_opcion",
       "problema_id",
       id,
       p.opciones
     );
   }
-  desactivados += await desactivarSobrantes("dmc.catalogo_problema", vivosProblema);
+  desactivados += await desactivarSobrantes(ej, "dmc.catalogo_problema", vivosProblema);
 
   // ── Trabajos realizados ──
-  const padresTrabajo = await padresExistentes("dmc.catalogo_trabajo");
+  const padresTrabajo = await padresExistentes(ej, "dmc.catalogo_trabajo");
   const vivosTrabajo: number[] = [];
   const trabajoPorNombre = new Map<string, number>();
   for (const [i, t] of borrador.trabajos.entries()) {
@@ -657,7 +685,7 @@ export async function guardarChecklist(borrador: BorradorChecklist): Promise<Res
     const resuelto = resolverPadre(padresTrabajo, t.id, nombre, "TRABAJO");
     let id = resuelto.id;
     if (resuelto.esNuevo) {
-      const [fila] = await consultaCon<{ id: number }>(
+      const [fila] = await ej.consulta<{ id: number }>(
         `INSERT INTO dmc.catalogo_trabajo (codigo, nombre, grupo_label, orden, activo)
          OUTPUT INSERTED.id AS id VALUES (@codigo, @nombre, @grupo, @orden, 1)`,
         [
@@ -669,7 +697,7 @@ export async function guardarChecklist(borrador: BorradorChecklist): Promise<Res
       );
       id = num(fila.id);
     } else {
-      await ejecutar(
+      await ej.ejecutar(
         `UPDATE dmc.catalogo_trabajo
             SET nombre = @nombre, grupo_label = @grupo, orden = @orden, activo = 1
           WHERE id = @id`,
@@ -684,26 +712,27 @@ export async function guardarChecklist(borrador: BorradorChecklist): Promise<Res
     vivosTrabajo.push(id);
     trabajoPorNombre.set(nombre.toLowerCase(), id);
     desactivados += await guardarHijos(
+      ej,
       "dmc.catalogo_trabajo_subtrabajo",
       "trabajo_id",
       id,
       t.subtrabajos
     );
   }
-  desactivados += await desactivarSobrantes("dmc.catalogo_trabajo", vivosTrabajo);
+  desactivados += await desactivarSobrantes(ej, "dmc.catalogo_trabajo", vivosTrabajo);
 
   // ── Qué trabajos van en cada motivo ──
-  await guardarTrabajosPorMotivo(borrador.motivos, motivos.idPorNombre, trabajoPorNombre);
+  await guardarTrabajosPorMotivo(ej, borrador.motivos, motivos.idPorNombre, trabajoPorNombre);
 
   // ── Secciones de motivos y de trabajos ── (migración 020)
-  await guardarSecciones(borrador, motivos.idPorNombre, trabajoPorNombre);
+  await guardarSecciones(ej, borrador, motivos.idPorNombre, trabajoPorNombre);
 
   // ── Checklist del comentario interno ──
   // Sin la lista en el borrador (un panel viejo todavía abierto) no se toca:
   // si no, guardar los motivos vaciaría el checklist interno.
   let vivosInterno: number;
   if (borrador.internos) {
-    const internos = await guardarListaSimple("dmc.catalogo_interno", borrador.internos, "INTERNO");
+    const internos = await guardarListaSimple(ej, "dmc.catalogo_interno", borrador.internos, "INTERNO");
     vivosInterno = internos.vivos.length;
     desactivados += internos.desactivados;
   } else {
@@ -716,7 +745,7 @@ export async function guardarChecklist(borrador: BorradorChecklist): Promise<Res
   let vivosPendiente = 0;
   if (await hayGestionPendientes()) {
     if (borrador.pendientes) {
-      const pendientes = await guardarListaSimple("dmc.catalogo_pendiente", borrador.pendientes, "PENDIENTE");
+      const pendientes = await guardarListaSimple(ej, "dmc.catalogo_pendiente", borrador.pendientes, "PENDIENTE");
       vivosPendiente = pendientes.vivos.length;
       desactivados += pendientes.desactivados;
     } else {
@@ -730,7 +759,7 @@ export async function guardarChecklist(borrador: BorradorChecklist): Promise<Res
   let vivosCargo = 0;
   if (await hayCargos()) {
     if (borrador.cargos) {
-      const cargos = await guardarListaSimple("dmc.catalogo_cargo", borrador.cargos, "CARGO");
+      const cargos = await guardarListaSimple(ej, "dmc.catalogo_cargo", borrador.cargos, "CARGO");
       vivosCargo = cargos.vivos.length;
       desactivados += cargos.desactivados;
     } else {
@@ -744,7 +773,7 @@ export async function guardarChecklist(borrador: BorradorChecklist): Promise<Res
   let vivosGestionProblema = 0;
   if (await hayGestionProblemas()) {
     if (borrador.gestionProblemas) {
-      const gestion = await guardarListaSimple("dmc.catalogo_problema_gestion", borrador.gestionProblemas, "GESTION");
+      const gestion = await guardarListaSimple(ej, "dmc.catalogo_problema_gestion", borrador.gestionProblemas, "GESTION");
       vivosGestionProblema = gestion.vivos.length;
       desactivados += gestion.desactivados;
     } else {
@@ -759,7 +788,7 @@ export async function guardarChecklist(borrador: BorradorChecklist): Promise<Res
   let vivosEstado = ESTADOS_PROBLEMA_BASE.length;
   if (await hayEstadosProblema()) {
     if (borrador.estadosProblema) {
-      const estados = await guardarEstadosProblema(borrador.estadosProblema);
+      const estados = await guardarEstadosProblema(ej, borrador.estadosProblema);
       vivosEstado = estados.vivos;
       desactivados += estados.desactivados;
     } else {
@@ -792,13 +821,15 @@ export async function guardarChecklist(borrador: BorradorChecklist): Promise<Res
  * desactiva (sus entradas quedan «sin sección») y nada se borra.
  */
 async function guardarSecciones(
+  ej: Ejecutor,
   borrador: BorradorChecklist,
   motivoPorNombre: Map<string, number>,
   trabajoPorNombre: Map<string, number>
 ): Promise<void> {
   if (!(await haySecciones())) return;
-  await guardarSeccionesDe("MOTIVO", "dmc.catalogo_motivo", borrador.seccionesMotivo, borrador.motivos, motivoPorNombre);
+  await guardarSeccionesDe(ej, "MOTIVO", "dmc.catalogo_motivo", borrador.seccionesMotivo, borrador.motivos, motivoPorNombre);
   await guardarSeccionesDe(
+    ej,
     "TRABAJO",
     "dmc.catalogo_trabajo",
     borrador.seccionesTrabajo,
@@ -808,6 +839,7 @@ async function guardarSecciones(
 }
 
 async function guardarSeccionesDe(
+  ej: Ejecutor,
   tipo: "MOTIVO" | "TRABAJO",
   tabla: "dmc.catalogo_motivo" | "dmc.catalogo_trabajo",
   nombres: string[] | undefined,
@@ -817,8 +849,9 @@ async function guardarSeccionesDe(
   // Sin la lista en el borrador (un panel viejo todavía abierto) no se toca.
   if (!nombres) return;
 
-  const existentes = await consulta<{ id: number; nombre: string }>(
-    `SELECT id, nombre FROM dmc.catalogo_seccion WHERE tipo = '${tipo}'`
+  const existentes = await ej.consulta<{ id: number; nombre: string }>(
+    `SELECT id, nombre FROM dmc.catalogo_seccion WHERE tipo = @tipo`,
+    [["tipo", sql.VarChar(10), tipo]]
   );
   const previas = new Map(existentes.map((f) => [f.nombre.trim().toLowerCase(), num(f.id)]));
   const idPorSeccion = new Map<string, number>();
@@ -831,17 +864,18 @@ async function guardarSeccionesDe(
     const previa = previas.get(clave);
     let id: number;
     if (previa !== undefined) {
-      await ejecutar(`UPDATE dmc.catalogo_seccion SET nombre = @nombre, orden = @orden, activo = 1 WHERE id = @id`, [
+      await ej.ejecutar(`UPDATE dmc.catalogo_seccion SET nombre = @nombre, orden = @orden, activo = 1 WHERE id = @id`, [
         ["nombre", sql.NVarChar(80), nombre],
         ["orden", sql.SmallInt, i + 1],
         ["id", sql.BigInt, previa],
       ]);
       id = previa;
     } else {
-      const [fila] = await consultaCon<{ id: number }>(
+      const [fila] = await ej.consulta<{ id: number }>(
         `INSERT INTO dmc.catalogo_seccion (tipo, nombre, orden, activo)
-         OUTPUT INSERTED.id AS id VALUES ('${tipo}', @nombre, @orden, 1)`,
+         OUTPUT INSERTED.id AS id VALUES (@tipo, @nombre, @orden, 1)`,
         [
+          ["tipo", sql.VarChar(10), tipo],
           ["nombre", sql.NVarChar(80), nombre],
           ["orden", sql.SmallInt, i + 1],
         ]
@@ -851,7 +885,10 @@ async function guardarSeccionesDe(
     idPorSeccion.set(clave, id);
     vivas.push(id);
   }
-  await desactivarSobrantes("dmc.catalogo_seccion", vivas, `tipo = '${tipo}'`);
+  await desactivarSobrantes(ej, "dmc.catalogo_seccion", vivas, {
+    sql: "tipo = @tipo",
+    params: [["tipo", sql.VarChar(10), tipo]],
+  });
 
   // Cada entrada, en su sección. Un UPDATE por sección y no uno por entrada.
   const entero = (n: number | undefined): n is number => n !== undefined && Number.isSafeInteger(n) && n > 0;
@@ -863,7 +900,11 @@ async function guardarSeccionesDe(
     porSeccion.set(seccion, [...(porSeccion.get(seccion) ?? []), id]);
   }
   for (const [seccion, ids] of porSeccion) {
-    await ejecutar(`UPDATE ${tabla} SET seccion_id = ${seccion ?? "NULL"} WHERE id IN (${ids.join(",")})`);
+    // `tabla` sale de la unión de literales del parámetro: nunca de la entrada.
+    await ej.ejecutar(`UPDATE ${tabla} SET seccion_id = @seccion WHERE id IN ${subIds("ids")}`, [
+      ["seccion", sql.BigInt, seccion],
+      paramIds("ids", ids),
+    ]);
   }
 }
 
@@ -873,17 +914,18 @@ async function guardarSeccionesDe(
  * desactivaron conservan sus enlaces: si vuelven, vuelven con sus trabajos.
  *
  * Va en dos sentencias y no en una por enlace: con 20 motivos de 5 trabajos
- * serían 100 idas y vueltas al servidor. Los ids se interpolan, así que se
- * filtran a enteros de verdad.
+ * serían 100 idas y vueltas al servidor. Los enlaces viajan como un parámetro
+ * JSON y se leen con OPENJSON.
  */
 async function guardarTrabajosPorMotivo(
+  ej: Ejecutor,
   motivos: MotivoConTrabajos[],
   motivoPorNombre: Map<string, number>,
   trabajoPorNombre: Map<string, number>
 ): Promise<void> {
   const entero = (n: number | undefined): n is number => n !== undefined && Number.isSafeInteger(n) && n > 0;
   const tocados: number[] = [];
-  const filas: string[] = [];
+  const enlaces: { m: number; t: number; o: number }[] = [];
   for (const m of motivos) {
     const motivoId = motivoPorNombre.get(m.nombre.trim().toLowerCase());
     if (!entero(motivoId)) continue;
@@ -893,27 +935,21 @@ async function guardarTrabajosPorMotivo(
       const trabajoId = trabajoPorNombre.get(nombre.trim().toLowerCase());
       if (!entero(trabajoId) || vistos.has(trabajoId)) continue;
       vistos.add(trabajoId);
-      filas.push(`(${motivoId}, ${trabajoId}, ${vistos.size})`);
+      enlaces.push({ m: motivoId, t: trabajoId, o: vistos.size });
     }
   }
   if (!tocados.length) return;
 
   const conOrden = await hayTrabajosPorMotivo();
-  const valores = conOrden ? filas : filas.map((f) => f.replace(/, \d+\)$/, ")"));
-  // Un INSERT … VALUES admite hasta 1000 filas.
-  const inserts: string[] = [];
-  for (let i = 0; i < valores.length; i += 900) {
-    inserts.push(
-      `INSERT INTO dmc.catalogo_motivo_trabajo (motivo_id, trabajo_id${conOrden ? ", orden" : ""})
-       VALUES ${valores.slice(i, i + 900).join(",")};`
-    );
-  }
-  await ejecutar(
-    `SET XACT_ABORT ON;
-     BEGIN TRANSACTION;
-     DELETE FROM dmc.catalogo_motivo_trabajo WHERE motivo_id IN (${tocados.join(",")});
-     ${inserts.join("\n")}
-     COMMIT TRANSACTION;`
+  await ej.ejecutar(`DELETE FROM dmc.catalogo_motivo_trabajo WHERE motivo_id IN ${subIds("tocados")}`, [
+    paramIds("tocados", tocados),
+  ]);
+  if (!enlaces.length) return;
+  await ej.ejecutar(
+    `INSERT INTO dmc.catalogo_motivo_trabajo (motivo_id, trabajo_id${conOrden ? ", orden" : ""})
+     SELECT m, t${conOrden ? ", o" : ""}
+       FROM OPENJSON(@enlaces) WITH (m bigint '$.m', t bigint '$.t', o smallint '$.o')`,
+    [["enlaces", sql.NVarChar(sql.MAX), JSON.stringify(enlaces)]]
   );
 }
 
@@ -922,6 +958,8 @@ async function guardarTrabajosPorMotivo(
  * lista plana de (codigo, nombre, orden, activo), así que se guardan igual.
  */
 async function guardarListaSimple(
+  ej: Ejecutor,
+  // `tabla` se interpola en el texto: por eso es una unión cerrada de literales.
   tabla:
     | "dmc.catalogo_motivo"
     | "dmc.catalogo_interno"
@@ -931,7 +969,7 @@ async function guardarListaSimple(
   items: MotivoBorrador[],
   respaldo: string
 ): Promise<{ vivos: number[]; idPorNombre: Map<string, number>; desactivados: number }> {
-  const padres = await padresExistentes(tabla);
+  const padres = await padresExistentes(ej, tabla);
   const vivos: number[] = [];
   const idPorNombre = new Map<string, number>();
   for (const [i, m] of items.entries()) {
@@ -940,7 +978,7 @@ async function guardarListaSimple(
     const resuelto = resolverPadre(padres, m.id, nombre, respaldo);
     let id = resuelto.id;
     if (resuelto.esNuevo) {
-      const [fila] = await consultaCon<{ id: number }>(
+      const [fila] = await ej.consulta<{ id: number }>(
         `INSERT INTO ${tabla} (codigo, nombre, orden, activo)
          OUTPUT INSERTED.id AS id VALUES (@codigo, @nombre, @orden, 1)`,
         [
@@ -951,7 +989,7 @@ async function guardarListaSimple(
       );
       id = num(fila.id);
     } else {
-      await ejecutar(`UPDATE ${tabla} SET nombre = @nombre, orden = @orden, activo = 1 WHERE id = @id`, [
+      await ej.ejecutar(`UPDATE ${tabla} SET nombre = @nombre, orden = @orden, activo = 1 WHERE id = @id`, [
         ["nombre", sql.NVarChar(80), nombre],
         ["orden", sql.SmallInt, i + 1],
         ["id", sql.BigInt, id],
@@ -960,7 +998,7 @@ async function guardarListaSimple(
     vivos.push(id);
     idPorNombre.set(nombre.toLowerCase(), id);
   }
-  const desactivados = await desactivarSobrantes(tabla, vivos);
+  const desactivados = await desactivarSobrantes(ej, tabla, vivos);
   return { vivos, idPorNombre, desactivados };
 }
 
@@ -973,14 +1011,17 @@ async function guardarListaSimple(
  * cuenta también lo inactivo.
  */
 async function guardarHijos(
-  tabla: string,
-  columnaPadre: string,
+  ej: Ejecutor,
+  // Nombres de tabla y de columna interpolados: solo los dos pares de literales
+  // con que lo llama guardarChecklist, nunca algo que venga del navegador.
+  tabla: "dmc.catalogo_problema_opcion" | "dmc.catalogo_trabajo_subtrabajo",
+  columnaPadre: "problema_id" | "trabajo_id",
   padreId: number,
   items: ItemBorrador[]
 ): Promise<number> {
   // Los ids que de verdad cuelgan de este padre. Uno que no esté acá se trata
   // como alta: no se escribe sobre la fila de otro trabajo por un id inventado.
-  const existentes = await consultaCon<{ id: number }>(`SELECT id FROM ${tabla} WHERE ${columnaPadre} = @padre`, [
+  const existentes = await ej.consulta<{ id: number }>(`SELECT id FROM ${tabla} WHERE ${columnaPadre} = @padre`, [
     ["padre", sql.BigInt, padreId],
   ]);
   const idsHijos = new Set(existentes.map((f) => num(f.id)));
@@ -990,7 +1031,7 @@ async function guardarHijos(
     if (!etiqueta) continue;
 
     if (item.id !== null && idsHijos.has(item.id)) {
-      await ejecutar(
+      await ej.ejecutar(
         `UPDATE ${tabla}
             SET etiqueta = @etiqueta, orden = @orden, permite_cantidad = @cantidad, activo = 1
           WHERE id = @id`,
@@ -1005,7 +1046,7 @@ async function guardarHijos(
       continue;
     }
 
-    const [fila] = await consultaCon<{ id: number }>(
+    const [fila] = await ej.consulta<{ id: number }>(
       `DECLARE @salida TABLE (id bigint);
 
        UPDATE ${tabla}
@@ -1029,19 +1070,29 @@ async function guardarHijos(
     if (fila) vivos.push(num(fila.id));
   }
 
-  return desactivarSobrantes(tabla, vivos, `${columnaPadre} = ${padreId}`);
+  return desactivarSobrantes(ej, tabla, vivos, {
+    sql: `${columnaPadre} = @padre_filtro`,
+    params: [["padre_filtro", sql.BigInt, padreId]],
+  });
 }
 
 /**
  * Apaga lo que quedó fuera del borrador. Devuelve cuántas filas cambiaron.
  *
- * La lista de ids se interpola, así que se filtra a enteros de verdad: un valor
- * raro colado desde el navegador no puede terminar dentro de la sentencia.
+ * Los ids a conservar viajan como parámetro JSON. `tabla` y el texto de `donde`
+ * se interpolan: salen de literales del código (sus valores variables van en
+ * `donde.params`), nunca de la entrada.
  */
-async function desactivarSobrantes(tabla: string, vivos: number[], extra = "1 = 1"): Promise<number> {
-  const enteros = vivos.map(Number).filter((n) => Number.isSafeInteger(n) && n > 0);
-  const lista = enteros.length ? enteros.join(",") : "0";
-  return ejecutar(`UPDATE ${tabla} SET activo = 0 WHERE ${extra} AND activo = 1 AND id NOT IN (${lista})`);
+async function desactivarSobrantes(
+  ej: Ejecutor,
+  tabla: string,
+  vivos: number[],
+  donde: { sql: string; params: Parametro[] } = { sql: "1 = 1", params: [] }
+): Promise<number> {
+  return ej.ejecutar(`UPDATE ${tabla} SET activo = 0 WHERE ${donde.sql} AND activo = 1 AND id NOT IN ${subIds("vivos")}`, [
+    ...donde.params,
+    paramIds("vivos", vivos),
+  ]);
 }
 
 // ── Plantilla propia ────────────────────────────────────────────────────────
@@ -1270,8 +1321,9 @@ interface PadresExistentes {
   tomados: Set<number>;
 }
 
-async function padresExistentes(tabla: string): Promise<PadresExistentes> {
-  const filas = await consulta<{ id: number; codigo: string; nombre: string }>(
+// `tabla` es siempre un literal de este módulo.
+async function padresExistentes(ej: Ejecutor, tabla: string): Promise<PadresExistentes> {
+  const filas = await ej.consulta<{ id: number; codigo: string; nombre: string }>(
     `SELECT id, codigo, nombre FROM ${tabla}`
   );
   const porNombre = new Map<string, number>();

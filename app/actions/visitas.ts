@@ -5,7 +5,7 @@ import { getSesion } from "@/lib/auth";
 import { tiene } from "@/lib/permisos";
 import {
   cambiarEstadoVisita,
-  crearVisita,
+  crearEIniciarVisita,
   getVisitaCompletaPorFolio,
   guardarActa,
   iniciarVisita,
@@ -209,7 +209,9 @@ export async function crearVisitaTecnicoAction(input: {
   }
 
   try {
-    const visita = await crearVisita(
+    // Crear e iniciar van en una sola transacción: si iniciar falla no queda
+    // una visita creada y sin iniciar.
+    const res = await crearEIniciarVisita(
       {
         clienteId: sucursal.clienteId,
         sucursalId: sucursal.id,
@@ -227,16 +229,11 @@ export async function crearVisitaTecnicoAction(input: {
         responsableCargo: input.responsableCargo || null,
         creadaEnTerreno: true,
       },
-      sesion.usuario.id
+      { tecnicoId: sesion.tecnico.id, usuarioId: sesion.usuario.id }
     );
-
-    const fallo = await iniciarVisita(visita.folio, visita.responsableNombre, {
-      tecnicoId: sesion.tecnico.id,
-      usuarioId: sesion.usuario.id,
-    });
-    if (fallo) return { ok: false, error: fallo.error };
-    revalidar(visita.folio);
-    return { ok: true, folio: visita.folio };
+    if ("error" in res) return { ok: false, error: res.error };
+    revalidar(res.folio);
+    return { ok: true, folio: res.folio };
   } catch (err) {
     return comoError(err, "crearVisitaTecnico");
   }

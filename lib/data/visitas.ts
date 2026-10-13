@@ -3,10 +3,14 @@ import {
   agrupar,
   consultaCon,
   ejecutar,
+  ejecutorSuelto,
+  conTransaccion,
   enTransaccion,
   num,
   numONull,
+  paramIds,
   sql,
+  subIds,
   F_FECHA,
   F_HORA,
   F_TS,
@@ -857,7 +861,17 @@ export async function iniciarVisita(
   responsable: string | null,
   ctx: { tecnicoId: number; usuarioId: number | null }
 ): Promise<{ error: string } | null> {
-  return enTransaccion(async (ej) => {
+  return enTransaccion((ej) => iniciarVisitaEn(ej, folio, responsable, ctx));
+}
+
+/** iniciarVisita dentro de una transacción ajena (ver crearEIniciarVisita). */
+async function iniciarVisitaEn(
+  ej: Ejecutor,
+  folio: string,
+  responsable: string | null,
+  ctx: { tecnicoId: number; usuarioId: number | null }
+): Promise<{ error: string } | null> {
+  {
     const [visita] = await ej.consulta<{
       id: number;
       estado: EstadoVisita;
@@ -913,7 +927,7 @@ export async function iniciarVisita(
       ]
     );
     return null;
-  });
+  }
 }
 
 /**
@@ -986,35 +1000,39 @@ export async function cambiarEstadoVisita(input: {
   if (!visita) return false;
   const id = num(visita.id);
 
-  if (input.estado === "REAGENDADA") {
-    await ejecutar(
-      `INSERT INTO dmc.reagendamiento
-         (visita_id, fecha_anterior, hora_anterior, fecha_nueva, hora_nueva, motivo, origen, tecnico_id, usuario_id)
-       VALUES (@id, @fechaAnt, @horaAnt, @fechaNue, @horaNue, @motivo, @origen, @tecnico, @usuario)`,
-      [
-        ["id", sql.BigInt, id],
-        ["fechaAnt", sql.Date, visita.fecha],
-        ["horaAnt", sql.VarChar(8), visita.hora],
-        ["fechaNue", sql.Date, input.fechaNueva || null],
-        ["horaNue", sql.VarChar(8), input.horaNueva || null],
-        ["motivo", sql.NVarChar(sql.MAX), input.motivo],
-        ["origen", sql.VarChar(6), input.origen],
-        ["tecnico", sql.BigInt, input.tecnicoId ?? null],
-        ["usuario", sql.BigInt, input.usuarioId ?? null],
-      ]
-    );
-    if (input.fechaNueva) {
-      // Reagendar deja un día fijo: el margen que tuviera se suelta.
-      const sinMargen = (await hayMargenDeDias()) ? ", fecha_hasta = NULL" : "";
-      await ejecutar(`UPDATE dmc.visita SET fecha_programada = @fecha, hora_programada = @hora${sinMargen} WHERE id = @id`, [
-        ["fecha", sql.Date, input.fechaNueva],
-        ["hora", sql.VarChar(8), input.horaNueva || null],
-        ["id", sql.BigInt, id],
-      ]);
+  // Reagendar toca tres tablas (reagendamiento, visita y la bitácora): o quedan
+  // las tres o ninguna.
+  const sinMargen = (await hayMargenDeDias()) ? ", fecha_hasta = NULL" : "";
+  await enTransaccion(async (ej) => {
+    if (input.estado === "REAGENDADA") {
+      await ej.ejecutar(
+        `INSERT INTO dmc.reagendamiento
+           (visita_id, fecha_anterior, hora_anterior, fecha_nueva, hora_nueva, motivo, origen, tecnico_id, usuario_id)
+         VALUES (@id, @fechaAnt, @horaAnt, @fechaNue, @horaNue, @motivo, @origen, @tecnico, @usuario)`,
+        [
+          ["id", sql.BigInt, id],
+          ["fechaAnt", sql.Date, visita.fecha],
+          ["horaAnt", sql.VarChar(8), visita.hora],
+          ["fechaNue", sql.Date, input.fechaNueva || null],
+          ["horaNue", sql.VarChar(8), input.horaNueva || null],
+          ["motivo", sql.NVarChar(sql.MAX), input.motivo],
+          ["origen", sql.VarChar(6), input.origen],
+          ["tecnico", sql.BigInt, input.tecnicoId ?? null],
+          ["usuario", sql.BigInt, input.usuarioId ?? null],
+        ]
+      );
+      if (input.fechaNueva) {
+        // Reagendar deja un día fijo: el margen que tuviera se suelta.
+        await ej.ejecutar(`UPDATE dmc.visita SET fecha_programada = @fecha, hora_programada = @hora${sinMargen} WHERE id = @id`, [
+          ["fecha", sql.Date, input.fechaNueva],
+          ["hora", sql.VarChar(8), input.horaNueva || null],
+          ["id", sql.BigInt, id],
+        ]);
+      }
     }
-  }
 
-  await marcarEstado(id, input.estado, input.motivo, input.origen, input.usuarioId ?? null);
+    await marcarEstado(id, input.estado, input.motivo, input.origen, input.usuarioId ?? null, ej);
+  });
   return true;
 }
 
@@ -1150,9 +1168,10 @@ async function marcarEstado(
   estado: EstadoVisita,
   motivo: string | null,
   origen: OrigenRegistro,
-  usuarioId: number | null
+  usuarioId: number | null,
+  ej: Ejecutor = ejecutorSuelto
 ): Promise<void> {
-  await ejecutar(
+  await ej.ejecutar(
     `DECLARE @antes bigint =
        (SELECT ISNULL(MAX(id), 0) FROM dmc.visita_estado_historial WHERE visita_id = @id);
 
@@ -1220,8 +1239,34 @@ async function margenPara(datos: DatosVisita): Promise<boolean> {
 /** "Nueva visita" del panel y "Agregar visita" del celular. Nace PROGRAMADA. */
 export async function crearVisita(datos: DatosVisita, creadaPor: number | null): Promise<Visita> {
   const conMargen = await margenPara(datos);
+  const { id, folio, cargo } = await enTransaccion((ej) => crearVisitaEn(ej, datos, creadaPor, conMargen));
+  return visitaCreada(id, folio, datos, cargo);
+}
+
+/** Lo que va después de confirmada la creación: la lista de la tienda y la relectura. */
+async function visitaCreada(id: number, folio: string, datos: DatosVisita, cargo: string | null): Promise<Visita> {
+  // Fuera de la transacción: es un favor a la próxima visita, nunca lanza, y un
+  // fallo suyo no debe deshacer la visita.
+  await registrarPersonaLocal(datos.sucursalId, {
+    nombre: datos.responsableNombre,
+    rut: datos.responsableRut,
+    telefono: datos.responsableTelefono,
+    cargo,
+  });
+  const visita = await getVisitaCompleta(id);
+  if (!visita) throw new Error(`La visita ${folio} se creó pero no se pudo releer.`);
+  return visita;
+}
+
+/** Las escrituras de crearVisita: la visita, su enlace al problema, los motivos y el cargo. */
+async function crearVisitaEn(
+  ej: Ejecutor,
+  datos: DatosVisita,
+  creadaPor: number | null,
+  conMargen: boolean
+): Promise<{ id: number; folio: string; cargo: string | null }> {
   // El folio lo genera el DEFAULT de dmc.visita con la secuencia seq_folio_visita.
-  const [fila] = await consultaCon<{ id: number; folio: string }>(
+  const [fila] = await ej.consulta<{ id: number; folio: string }>(
     `INSERT INTO dmc.visita
        (cliente_id, sucursal_id, tecnico_id, tecnico_ayudante_id, motivo_codigo, fecha_programada,
         hora_programada, trabajo_solicitado, indicaciones_acceso, responsable_nombre, responsable_rut,
@@ -1255,7 +1300,7 @@ export async function crearVisita(datos: DatosVisita, creadaPor: number | null):
   // La visita que nace de un problema queda enlazada: así el panel muestra el
   // problema como "agendado" y no lo vuelve a ofrecer.
   if (datos.problemaOrigenId) {
-    await ejecutar(
+    await ej.ejecutar(
       `IF NOT EXISTS (SELECT 1 FROM dmc.problema_visita_resolucion
                        WHERE problema_id = @problema AND visita_id = @visita)
          INSERT INTO dmc.problema_visita_resolucion (problema_id, visita_id, agendado_por)
@@ -1268,28 +1313,52 @@ export async function crearVisita(datos: DatosVisita, creadaPor: number | null):
     );
   }
 
-  await sincronizarMotivos(id, "PLAN", motivosDe(datos));
-  const cargo = await guardarCargoAgendado(id, datos.responsableCargo);
-  await registrarPersonaLocal(datos.sucursalId, {
-    nombre: datos.responsableNombre,
-    rut: datos.responsableRut,
-    telefono: datos.responsableTelefono,
-    cargo,
-  });
-
-  const visita = await getVisitaCompleta(id);
-  if (!visita) throw new Error(`La visita ${fila.folio} se creó pero no se pudo releer.`);
-  return visita;
+  await sincronizarMotivos(ej, id, "PLAN", motivosDe(datos));
+  const cargo = await guardarCargoAgendado(ej, id, datos.responsableCargo);
+  return { id, folio: fila.folio, cargo };
 }
+
+/**
+ * "Agregar visita" del celular: crea la visita y la inicia en una sola
+ * transacción. Si iniciarla falla no queda una visita creada y sin iniciar.
+ *
+ * Devuelve el folio, o por qué no se pudo.
+ */
+export async function crearEIniciarVisita(
+  datos: DatosVisita,
+  ctx: { tecnicoId: number; usuarioId: number }
+): Promise<{ folio: string } | { error: string }> {
+  const conMargen = await margenPara(datos);
+  try {
+    const creada = await enTransaccion(async (ej) => {
+      const nueva = await crearVisitaEn(ej, datos, ctx.usuarioId, conMargen);
+      const fallo = await iniciarVisitaEn(ej, nueva.folio, datos.responsableNombre, ctx);
+      // Lanzar es lo que deshace la creación: devolver el error confirmaría.
+      if (fallo) throw new NoSePudoIniciar(fallo.error);
+      return nueva;
+    });
+    await visitaCreada(creada.id, creada.folio, datos, creada.cargo);
+    return { folio: creada.folio };
+  } catch (err) {
+    if (err instanceof NoSePudoIniciar) return { error: err.message };
+    throw err;
+  }
+}
+
+class NoSePudoIniciar extends Error {}
 
 /**
  * Deja en la visita el cargo del responsable, si es uno del checklist (vacío lo
  * borra). Devuelve el que quedó. Sin la migración 022 no hace nada.
  */
-async function guardarCargoAgendado(visitaId: number, pedido: string | null | undefined): Promise<string | null> {
+async function guardarCargoAgendado(
+  ej: Ejecutor,
+  visitaId: number,
+  pedido: string | null | undefined
+): Promise<string | null> {
   if (!(await hayCargos())) return null;
   const cargo = await cargoDelChecklist(pedido);
-  await ejecutar(`UPDATE dmc.visita SET responsable_cargo = @cargo WHERE id = @id`, [
+  await ej.ejecutar(`UPDATE dmc.visita SET responsable_cargo = @cargo WHERE id = @id`, [
     ["cargo", sql.NVarChar(80), cargo],
     ["id", sql.BigInt, visitaId],
   ]);
@@ -1307,10 +1376,15 @@ function motivosDe(datos: DatosVisita): string[] {
  * orden en que vienen. Es un reemplazo completo: los que ya no estan se borran
  * porque no son un dato historico, son la seleccion actual de la visita.
  */
-async function sincronizarMotivos(visitaId: number, ambito: "PLAN" | "REAL", codigos: string[]): Promise<void> {
+async function sincronizarMotivos(
+  ej: Ejecutor,
+  visitaId: number,
+  ambito: "PLAN" | "REAL",
+  codigos: string[]
+): Promise<void> {
   const lista = [...new Set(codigos.filter(Boolean))];
 
-  await ejecutar(
+  await ej.ejecutar(
     `DELETE FROM dmc.visita_motivo
       WHERE visita_id = @visita AND ambito = @ambito
         AND (@codigos IS NULL OR motivo_codigo NOT IN
@@ -1323,7 +1397,7 @@ async function sincronizarMotivos(visitaId: number, ambito: "PLAN" | "REAL", cod
   );
 
   for (const [i, codigo] of lista.entries()) {
-    await ejecutar(
+    await ej.ejecutar(
       `MERGE dmc.visita_motivo AS destino
        USING (SELECT @visita AS visita_id, @ambito AS ambito, @codigo AS motivo_codigo) AS origen
           ON destino.visita_id = origen.visita_id
@@ -1343,8 +1417,14 @@ async function sincronizarMotivos(visitaId: number, ambito: "PLAN" | "REAL", cod
 }
 
 /** "Corregir visita" del acta. Si venía REAGENDADA vuelve a PROGRAMADA. */
-export async function editarVisita(folio: string, datos: DatosVisita, usuarioId: number | null): Promise<boolean> {
-  const [visita] = await consultaCon<{ id: number; estado: EstadoVisita }>(
+export async function editarVisita(
+  folio: string,
+  datos: DatosVisita,
+  usuarioId: number | null,
+  // Dentro de una transacción ajena (ver modificarVisita) todo se lee y escribe por ella.
+  ejAjeno?: Ejecutor
+): Promise<boolean> {
+  const [visita] = await (ejAjeno ?? ejecutorSuelto).consulta<{ id: number; estado: EstadoVisita }>(
     `SELECT id, estado FROM dmc.visita WHERE folio = @folio AND activo = 1`,
     [["folio", sql.VarChar(16), folio]]
   );
@@ -1352,56 +1432,69 @@ export async function editarVisita(folio: string, datos: DatosVisita, usuarioId:
   const id = num(visita.id);
   const conMargen = await margenPara(datos);
 
-  await ejecutar(
-    `UPDATE dmc.visita
-        SET cliente_id = @cliente, sucursal_id = @sucursal, tecnico_id = @tecnico,
-            tecnico_ayudante_id = @ayudante, motivo_codigo = @motivo, fecha_programada = @fecha, hora_programada = @hora,
-            trabajo_solicitado = @trabajo, indicaciones_acceso = @acceso,
-            responsable_nombre = @responsable, responsable_rut = @rut,
-            responsable_telefono = @telefono${conMargen ? ", fecha_hasta = @hasta" : ""}
-      WHERE id = @id`,
-    [
-      ["hasta", sql.Date, datos.fechaHasta || null],
-      ["cliente", sql.BigInt, datos.clienteId],
-      ["sucursal", sql.BigInt, datos.sucursalId],
-      ["tecnico", sql.BigInt, datos.tecnicoId],
-      ["ayudante", sql.BigInt, datos.tecnicoAyudanteId || null],
-      ["motivo", sql.VarChar(40), datos.motivoCodigo],
-      ["fecha", sql.Date, datos.fechaProgramada],
-      ["hora", sql.VarChar(8), datos.horaProgramada || null],
-      ["trabajo", sql.NVarChar(sql.MAX), datos.trabajoSolicitado],
-      ["acceso", sql.NVarChar(sql.MAX), datos.indicacionesAcceso],
-      ["responsable", sql.NVarChar(120), datos.responsableNombre],
-      ["rut", sql.VarChar(12), datos.responsableRut || null],
-      ["telefono", sql.VarChar(30), datos.responsableTelefono],
-      ["id", sql.BigInt, id],
-    ]
-  );
+  // Datos, motivos, cargo y estado van juntos: una visita con los datos nuevos
+  // y los motivos viejos es peor que una sin corregir.
+  const cargo = await conTransaccion(ejAjeno, async (ej) => {
+    await ej.ejecutar(
+      `UPDATE dmc.visita
+          SET cliente_id = @cliente, sucursal_id = @sucursal, tecnico_id = @tecnico,
+              tecnico_ayudante_id = @ayudante, motivo_codigo = @motivo, fecha_programada = @fecha, hora_programada = @hora,
+              trabajo_solicitado = @trabajo, indicaciones_acceso = @acceso,
+              responsable_nombre = @responsable, responsable_rut = @rut,
+              responsable_telefono = @telefono${conMargen ? ", fecha_hasta = @hasta" : ""}
+        WHERE id = @id`,
+      [
+        ["hasta", sql.Date, datos.fechaHasta || null],
+        ["cliente", sql.BigInt, datos.clienteId],
+        ["sucursal", sql.BigInt, datos.sucursalId],
+        ["tecnico", sql.BigInt, datos.tecnicoId],
+        ["ayudante", sql.BigInt, datos.tecnicoAyudanteId || null],
+        ["motivo", sql.VarChar(40), datos.motivoCodigo],
+        ["fecha", sql.Date, datos.fechaProgramada],
+        ["hora", sql.VarChar(8), datos.horaProgramada || null],
+        ["trabajo", sql.NVarChar(sql.MAX), datos.trabajoSolicitado],
+        ["acceso", sql.NVarChar(sql.MAX), datos.indicacionesAcceso],
+        ["responsable", sql.NVarChar(120), datos.responsableNombre],
+        ["rut", sql.VarChar(12), datos.responsableRut || null],
+        ["telefono", sql.VarChar(30), datos.responsableTelefono],
+        ["id", sql.BigInt, id],
+      ]
+    );
 
-  await sincronizarMotivos(id, "PLAN", motivosDe(datos));
-  const cargo = await guardarCargoAgendado(id, datos.responsableCargo);
+    await sincronizarMotivos(ej, id, "PLAN", motivosDe(datos));
+    const cargoGuardado = await guardarCargoAgendado(ej, id, datos.responsableCargo);
+    if (visita.estado === "REAGENDADA") {
+      await marcarEstado(id, "PROGRAMADA", "Corregida desde coordinación.", "WEB", usuarioId, ej);
+    }
+    return cargoGuardado;
+  });
   await registrarPersonaLocal(datos.sucursalId, {
     nombre: datos.responsableNombre,
     rut: datos.responsableRut,
     telefono: datos.responsableTelefono,
     cargo,
   });
-
-  if (visita.estado === "REAGENDADA") {
-    await marcarEstado(id, "PROGRAMADA", "Corregida desde coordinación.", "WEB", usuarioId);
-  }
   return true;
 }
 
 /** "Cambiar fecha y técnico": reagendadas, pendientes y canceladas. */
-export async function reprogramarVisita(input: {
-  folio: string;
-  tecnicoId: number;
-  fecha: string;
-  hora: string | null;
-  usuarioId: number | null;
-}): Promise<boolean> {
-  const [visita] = await consultaCon<{ id: number; fecha: string; hora: string | null; motivo: string | null }>(
+export async function reprogramarVisita(
+  input: {
+    folio: string;
+    tecnicoId: number;
+    fecha: string;
+    hora: string | null;
+    usuarioId: number | null;
+  },
+  // Dentro de una transacción ajena (ver modificarVisita) todo se lee y escribe por ella.
+  ejAjeno?: Ejecutor
+): Promise<boolean> {
+  const [visita] = await (ejAjeno ?? ejecutorSuelto).consulta<{
+    id: number;
+    fecha: string;
+    hora: string | null;
+    motivo: string | null;
+  }>(
     `SELECT v.id, ${F_FECHA("v.fecha_programada")} AS fecha, ${F_HORA("v.hora_programada")} AS hora,
             ${MOTIVO_PENDIENTE} AS motivo
        FROM dmc.visita v WHERE v.folio = @folio AND v.activo = 1`,
@@ -1410,39 +1503,41 @@ export async function reprogramarVisita(input: {
   if (!visita) return false;
   const id = num(visita.id);
 
-  await ejecutar(
-    `INSERT INTO dmc.reagendamiento
-       (visita_id, fecha_anterior, hora_anterior, fecha_nueva, hora_nueva, motivo, origen, usuario_id)
-     VALUES (@id, @fechaAnt, @horaAnt, @fechaNue, @horaNue, @motivo, 'WEB', @usuario)`,
-    [
-      ["id", sql.BigInt, id],
-      ["fechaAnt", sql.Date, visita.fecha],
-      ["horaAnt", sql.VarChar(8), visita.hora],
-      ["fechaNue", sql.Date, input.fecha],
-      ["horaNue", sql.VarChar(8), input.hora || null],
-      ["motivo", sql.NVarChar(sql.MAX), visita.motivo ?? "Reprogramada desde coordinación."],
-      ["usuario", sql.BigInt, input.usuarioId],
-    ]
-  );
-
   // Reprogramar deja un día fijo: el margen que tuviera se suelta.
   const sinMargen = (await hayMargenDeDias()) ? "fecha_hasta = NULL," : "";
-  await ejecutar(
-    // Si el nuevo asignado era el ayudante, pasa a ir solo: no puede ser las dos cosas.
-    `UPDATE dmc.visita
-        SET tecnico_id = @tecnico, fecha_programada = @fecha, hora_programada = @hora, ${sinMargen}
-            tecnico_ayudante_id = CASE WHEN tecnico_ayudante_id = @tecnico THEN NULL
-                                       ELSE tecnico_ayudante_id END
-      WHERE id = @id`,
-    [
-      ["tecnico", sql.BigInt, input.tecnicoId],
-      ["fecha", sql.Date, input.fecha],
-      ["hora", sql.VarChar(8), input.hora || null],
-      ["id", sql.BigInt, id],
-    ]
-  );
+  await conTransaccion(ejAjeno, async (ej) => {
+    await ej.ejecutar(
+      `INSERT INTO dmc.reagendamiento
+         (visita_id, fecha_anterior, hora_anterior, fecha_nueva, hora_nueva, motivo, origen, usuario_id)
+       VALUES (@id, @fechaAnt, @horaAnt, @fechaNue, @horaNue, @motivo, 'WEB', @usuario)`,
+      [
+        ["id", sql.BigInt, id],
+        ["fechaAnt", sql.Date, visita.fecha],
+        ["horaAnt", sql.VarChar(8), visita.hora],
+        ["fechaNue", sql.Date, input.fecha],
+        ["horaNue", sql.VarChar(8), input.hora || null],
+        ["motivo", sql.NVarChar(sql.MAX), visita.motivo ?? "Reprogramada desde coordinación."],
+        ["usuario", sql.BigInt, input.usuarioId],
+      ]
+    );
 
-  await marcarEstado(id, "PROGRAMADA", "Reprogramada desde coordinación.", "WEB", input.usuarioId);
+    await ej.ejecutar(
+      // Si el nuevo asignado era el ayudante, pasa a ir solo: no puede ser las dos cosas.
+      `UPDATE dmc.visita
+          SET tecnico_id = @tecnico, fecha_programada = @fecha, hora_programada = @hora, ${sinMargen}
+              tecnico_ayudante_id = CASE WHEN tecnico_ayudante_id = @tecnico THEN NULL
+                                         ELSE tecnico_ayudante_id END
+        WHERE id = @id`,
+      [
+        ["tecnico", sql.BigInt, input.tecnicoId],
+        ["fecha", sql.Date, input.fecha],
+        ["hora", sql.VarChar(8), input.hora || null],
+        ["id", sql.BigInt, id],
+      ]
+    );
+
+    await marcarEstado(id, "PROGRAMADA", "Reprogramada desde coordinación.", "WEB", input.usuarioId, ej);
+  });
   return true;
 }
 
@@ -1469,39 +1564,41 @@ export async function actualizarProblema(
   // CHECK se evalúan durante el UPDATE: tg_problema_cambio es AFTER UPDATE y
   // corre demasiado tarde para salvarlo. Por eso marcar «Resuelto» desde el
   // panel fallaba siempre con una violación de constraint.
-  await ejecutar(
-    `UPDATE dmc.problema
-        SET estado = @estado,
-            tipo_codigo = @tipo,
-            resuelto_en = CASE WHEN @estado = 'RESUELTO'
-                               THEN COALESCE(resuelto_en, SYSDATETIME())
-                               ELSE NULL END
-      WHERE id = @id`,
-    [
-      ["estado", sql.VarChar(10), estado],
-      ["tipo", sql.VarChar(40), tipoCodigo],
-      ["id", sql.BigInt, problemaId],
-    ]
-  );
-
-  for (const [campo, antes, ahora] of [
-    ["ESTADO", actual.estado, estado],
-    ["TIPO", actual.tipo_codigo, tipoCodigo],
-  ] as const) {
-    if (antes === ahora) continue;
-    await ejecutar(
-      `INSERT INTO dmc.problema_historial (problema_id, campo, valor_anterior, valor_nuevo, motivo, usuario_id)
-       VALUES (@id, @campo, @antes, @ahora, @nota, @usuario)`,
+  await enTransaccion(async (ej) => {
+    await ej.ejecutar(
+      `UPDATE dmc.problema
+          SET estado = @estado,
+              tipo_codigo = @tipo,
+              resuelto_en = CASE WHEN @estado = 'RESUELTO'
+                                 THEN COALESCE(resuelto_en, SYSDATETIME())
+                                 ELSE NULL END
+        WHERE id = @id`,
       [
+        ["estado", sql.VarChar(10), estado],
+        ["tipo", sql.VarChar(40), tipoCodigo],
         ["id", sql.BigInt, problemaId],
-        ["campo", sql.VarChar(20), campo],
-        ["antes", sql.NVarChar(40), antes],
-        ["ahora", sql.NVarChar(40), ahora],
-        ["nota", sql.NVarChar(sql.MAX), nota],
-        ["usuario", sql.BigInt, usuarioId],
       ]
     );
-  }
+
+    for (const [campo, antes, ahora] of [
+      ["ESTADO", actual.estado, estado],
+      ["TIPO", actual.tipo_codigo, tipoCodigo],
+    ] as const) {
+      if (antes === ahora) continue;
+      await ej.ejecutar(
+        `INSERT INTO dmc.problema_historial (problema_id, campo, valor_anterior, valor_nuevo, motivo, usuario_id)
+         VALUES (@id, @campo, @antes, @ahora, @nota, @usuario)`,
+        [
+          ["id", sql.BigInt, problemaId],
+          ["campo", sql.VarChar(20), campo],
+          ["antes", sql.NVarChar(40), antes],
+          ["ahora", sql.NVarChar(40), ahora],
+          ["nota", sql.NVarChar(sql.MAX), nota],
+          ["usuario", sql.BigInt, usuarioId],
+        ]
+      );
+    }
+  });
   return true;
 }
 
@@ -1835,14 +1932,11 @@ export async function guardarActa(
     //      solo se decide cuáles quedan y en qué orden. Los que sacó del
     //      formulario se dejan inactivos, igual que las fotos.
     const videosIds = [...new Set((entrada.videosIds ?? []).filter((n) => Number.isInteger(n) && n > 0))];
-    // Interpolado y no parametrizado porque la lista es de largo variable; el
-    // filtro de arriba garantiza que solo son enteros positivos.
-    const listaVideos = videosIds.length ? videosIds.join(",") : "0";
     await ej.ejecutar(
       `UPDATE dmc.visita_video
           SET activo = 0
-        WHERE visita_id = @id AND activo = 1 AND id NOT IN (${listaVideos})`,
-      [["id", sql.BigInt, id]]
+        WHERE visita_id = @id AND activo = 1 AND id NOT IN ${subIds("vivos")}`,
+      [["id", sql.BigInt, id], paramIds("vivos", videosIds)]
     );
     const internosVideo = new Set(entrada.videosInternosIds ?? []);
     for (const [i, videoId] of videosIds.entries()) {

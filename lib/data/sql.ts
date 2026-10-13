@@ -56,6 +56,22 @@ export async function ejecutar(texto: string, params: Parametro[] = []): Promise
 }
 
 /**
+ * Lista de ids como parámetro JSON, para `IN (…)` sin armar el texto de la
+ * sentencia. Se usa junto a `subIds`:
+ *
+ *   consultaCon(`… WHERE id IN ${subIds("ids")}`, [paramIds("ids", ids)])
+ *
+ * Lo que no sea un entero positivo seguro se descarta.
+ */
+export function paramIds(nombre: string, ids: readonly number[]): Parametro {
+  const enteros = ids.map(Number).filter((n) => Number.isSafeInteger(n) && n > 0);
+  return [nombre, sql.NVarChar(sql.MAX), JSON.stringify(enteros)];
+}
+
+/** El subselect que lee el parámetro creado con `paramIds`. */
+export const subIds = (nombre: string) => `(SELECT CAST(value AS bigint) FROM OPENJSON(@${nombre}))`;
+
+/**
  * Lo mínimo que necesita quien escribe: consultar y ejecutar. Existe para que
  * una función pueda correr igual suelta o dentro de una transacción.
  */
@@ -106,6 +122,14 @@ export async function enTransaccion<T>(fn: (ej: Ejecutor) => Promise<T>): Promis
     await tx.rollback().catch((e) => console.error("[dmc] rollback fallido:", e));
     throw err;
   }
+}
+
+/**
+ * Corre `fn` en la transacción `ej` si ya hay una abierta; si no, abre una.
+ * Para las funciones que sirven tanto sueltas como dentro de una operación mayor.
+ */
+export function conTransaccion<T>(ej: Ejecutor | undefined, fn: (ej: Ejecutor) => Promise<T>): Promise<T> {
+  return ej ? fn(ej) : enTransaccion(fn);
 }
 
 /** Agrupa filas hijas por el id de su padre. */

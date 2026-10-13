@@ -5,6 +5,7 @@ import {
   reprogramarVisita,
   type DatosVisita,
 } from "@/lib/data/visitas";
+import { enTransaccion } from "@/lib/data/sql";
 import { ESTADO_VISITA_LABEL } from "@/lib/ui/estado";
 import { algunoPideHora } from "@/lib/ui/motivos";
 import type { CatalogoMotivo, EstadoVisita } from "@/lib/types";
@@ -31,6 +32,8 @@ export interface CambiosVisita {
 const SE_PUEDE_MOVER: EstadoVisita[] = ["PROGRAMADA", "REAGENDADA", "PENDIENTE", "CANCELADA"];
 /** Con fecha nueva, estas vuelven a quedar programadas (igual que «Cambiar fecha y técnico»). */
 const VUELVE_A_PROGRAMADA: EstadoVisita[] = ["REAGENDADA", "PENDIENTE", "CANCELADA"];
+
+class NoEncontrada extends Error {}
 
 /**
  * Aplica los cambios a una visita. Devuelve por qué no se pudo, o null si
@@ -80,11 +83,12 @@ export async function modificarVisita(
   // Una reagendada, pendiente o cancelada con fecha nueva se reprograma: queda
   // el registro del cambio de fecha y vuelve a Programada.
   const reprograma = cambiaFecha && VUELVE_A_PROGRAMADA.includes(v.estado);
-  if (reprograma) {
+  const soloReprograma = reprograma && !cambiaDetalle && ayudanteId === v.tecnicoAyudanteId;
+  if (soloReprograma) {
     if (!(await reprogramarVisita({ folio, tecnicoId, fecha, hora, usuarioId }))) {
       return { error: "No encontramos esa visita." };
     }
-    if (!cambiaDetalle && ayudanteId === v.tecnicoAyudanteId) return null;
+    return null;
   }
 
   const datos: DatosVisita = {
@@ -105,6 +109,21 @@ export async function modificarVisita(
     responsableRut: v.responsableRut,
     responsableTelefono: v.responsableTelefono,
   };
-  if (!(await editarVisita(folio, datos, usuarioId))) return { error: "No encontramos esa visita." };
+  if (!reprograma) {
+    if (!(await editarVisita(folio, datos, usuarioId))) return { error: "No encontramos esa visita." };
+    return null;
+  }
+
+  // Reprogramar y corregir el detalle son un solo cambio: o quedan los dos o
+  // ninguno. Lanzar es lo que deshace el primero si el segundo no se pudo.
+  try {
+    await enTransaccion(async (ej) => {
+      if (!(await reprogramarVisita({ folio, tecnicoId, fecha, hora, usuarioId }, ej))) throw new NoEncontrada();
+      if (!(await editarVisita(folio, datos, usuarioId, ej))) throw new NoEncontrada();
+    });
+  } catch (err) {
+    if (err instanceof NoEncontrada) return { error: "No encontramos esa visita." };
+    throw err;
+  }
   return null;
 }

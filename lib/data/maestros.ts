@@ -25,6 +25,7 @@ export class RutRepetido extends Error {
  * otra forma. Al guardar se normaliza además el formato, para que las filas
  * viejas y las nuevas se vean igual.
  */
+// `tabla` se interpola en el texto: es una unión cerrada de literales, nunca entrada del usuario.
 async function rutTomado(tabla: "cliente" | "tecnico", rut: string, idPropio: number | null): Promise<boolean> {
   const limpio = rutLimpio(rut);
   if (!limpio) return false;

@@ -1,5 +1,5 @@
 import "server-only";
-import { enTransaccion, num, sql } from "@/lib/data/sql";
+import { enTransaccion, num, paramIds, sql, subIds } from "@/lib/data/sql";
 import {
   decodificarImagen,
   DIAS_PARA_EDITAR,
@@ -569,13 +569,12 @@ export async function editarActa(entrada: EdicionActaEntrada, ctx: ContextoEdici
       if (cambios.internos) await escribirInternos(ej, id, entrada.internosCodigos);
 
       // 5 · Fotos: las quitadas quedan inactivas y las nuevas van al final.
-      //     Las listas van interpoladas porque son de largo variable; salen de
-      //     ids leídos de la base, no del cliente.
+      //     Las listas de ids viajan como parámetro JSON.
       if (cambios.fotosQuitadas.length) {
         await ej.ejecutar(
           `UPDATE dmc.visita_foto SET activo = 0
-            WHERE visita_id = @id AND activo = 1 AND id IN (${cambios.fotosQuitadas.join(",")})`,
-          p()
+            WHERE visita_id = @id AND activo = 1 AND id IN ${subIds("quitadas")}`,
+          p([paramIds("quitadas", cambios.fotosQuitadas)])
         );
       }
       const ultimoOrden = Math.max(0, ...(antes.fotos ?? []).map((f) => f.orden));
@@ -584,10 +583,10 @@ export async function editarActa(entrada: EdicionActaEntrada, ctx: ContextoEdici
       // 5b · Videos. Los que se grabaron al editar ya están subidos, pero
       //      inactivos: recién acá entran al acta.
       if (cambios.videos.cambio) {
-        const lista = cambios.videos.ids.length ? cambios.videos.ids.join(",") : "0";
         await ej.ejecutar(
-          `UPDATE dmc.visita_video SET activo = 0 WHERE visita_id = @id AND activo = 1 AND id NOT IN (${lista})`,
-          p()
+          `UPDATE dmc.visita_video SET activo = 0
+            WHERE visita_id = @id AND activo = 1 AND id NOT IN ${subIds("vivos")}`,
+          p([paramIds("vivos", cambios.videos.ids)])
         );
         for (const [i, videoId] of cambios.videos.ids.entries()) {
           await ej.ejecutar(

@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { sesionCon } from "@/lib/auth";
 import { listarMotivos, listarTrabajos } from "@/lib/data/catalogos";
-import { consultaCon, num } from "@/lib/data/sql";
+import { consultaCon, num, paramIds, subIds } from "@/lib/data/sql";
 import { crearInformePapel, type InformePapel } from "@/lib/data/visitas-papel";
 import { hoyISO } from "@/lib/ui/fecha";
 import { PRIMER_ANIO_PAPEL } from "@/lib/ui/papel";
@@ -49,10 +49,8 @@ export async function crearVisitasPapelAction(lote: { informes: InformePapel[] }
     listarTrabajos(),
     idsSucursal.length
       ? consultaCon<{ id: number; cliente_id: number }>(
-          // Interpolado porque la lista es de largo variable; el filtro de
-          // arriba garantiza que solo son enteros positivos.
-          `SELECT id, cliente_id FROM dmc.sucursal WHERE id IN (${idsSucursal.join(",")})`,
-          []
+          `SELECT id, cliente_id FROM dmc.sucursal WHERE id IN ${subIds("ids")}`,
+          [paramIds("ids", idsSucursal)]
         )
       : Promise.resolve([]),
     consultaCon<{ id: number }>(`SELECT id FROM dmc.tecnico`, []),
@@ -156,17 +154,15 @@ export async function firmantesDeSucursalesAction(lote: {
   if (ids.length === 0) return {};
 
   try {
-    // Interpolado porque la lista es de largo variable; el filtro de arriba
-    // garantiza que solo son enteros positivos.
     const filas = await consultaCon<{ sucursal_id: number; nombre: string; rut: string | null; n: number }>(
       `SELECT sucursal_id, LTRIM(RTRIM(responsable_nombre)) AS nombre,
               MAX(LTRIM(RTRIM(responsable_rut))) AS rut, COUNT(*) AS n
          FROM dmc.visita
-        WHERE sucursal_id IN (${ids.join(",")})
+        WHERE sucursal_id IN ${subIds("ids")}
           AND responsable_nombre IS NOT NULL AND LTRIM(RTRIM(responsable_nombre)) <> ''
         GROUP BY sucursal_id, LTRIM(RTRIM(responsable_nombre))
         ORDER BY sucursal_id, COUNT(*) DESC`,
-      []
+      [paramIds("ids", ids)]
     );
     const salida: Record<string, FirmanteSugerido[]> = {};
     for (const f of filas) {
