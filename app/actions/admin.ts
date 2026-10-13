@@ -10,7 +10,6 @@ import {
   crearVisita,
   editarVisita,
   eliminarVisita,
-  FaltaMigracionMargen,
   getVisitaCompletaPorFolio,
   liberarVisita,
   registrarEnvioActa,
@@ -21,11 +20,6 @@ import { marcarGestionPendiente } from "@/lib/data/pendientes";
 import { marcarGestionProblema } from "@/lib/data/problemas";
 import {
   aplicarPlantilla,
-  FaltaMigracionCargos,
-  FaltaMigracionEstadosProblema,
-  FaltaMigracionGestionProblemas,
-  FaltaMigracionPendientes,
-  FaltaMigracionSecciones,
   getPlantilla,
   guardarChecklist,
   guardarPlantilla,
@@ -77,18 +71,10 @@ function revalidarPanel(folio?: string) {
 }
 
 function comoError(err: unknown, contexto: string): ResultadoAdmin {
-  if (err instanceof FaltaMigracionMargen) {
-    return { ok: false, error: "Para agendar con margen de días falta correr la migración 010 en la base." };
-  }
   const texto = err instanceof Error ? err.message : String(err);
   if (/ck_visita_fecha_hasta/i.test(texto)) return { ok: false, error: ERROR_MARGEN };
   if (/fk_visita_motivo/i.test(texto)) {
     return { ok: false, error: "Ese motivo ya no existe en el checklist. Elige otro." };
-  }
-  if (/ck_visita_hora_instalacion/i.test(texto)) {
-    // Solo pasa en una base sin la migración 007: el CHECK viejo todavía mira
-    // el código INSTALACION, que hoy es otro motivo.
-    return { ok: false, error: "La base todavía exige hora para este motivo. Falta correr la migración 007." };
   }
   if (/ck_visita_ayudante/i.test(texto)) {
     return { ok: false, error: "El ayudante no puede ser el mismo técnico asignado." };
@@ -671,21 +657,6 @@ function revalidarChecklist() {
 }
 
 function errorChecklist(err: unknown, contexto: string): ResultadoChecklist {
-  if (err instanceof FaltaMigracionPendientes) {
-    return { ok: false, error: "Para guardar la lista «Gestión de pendientes» falta correr la migración 014 en la base." };
-  }
-  if (err instanceof FaltaMigracionCargos) {
-    return { ok: false, error: "Para guardar la lista «Cargos del responsable» falta correr la migración 022 en la base." };
-  }
-  if (err instanceof FaltaMigracionEstadosProblema) {
-    return { ok: false, error: "Para cambiar la lista «Estados del problema» falta correr la migración 016 en la base." };
-  }
-  if (err instanceof FaltaMigracionGestionProblemas) {
-    return { ok: false, error: "Para guardar la lista «Gestión de problemas» falta correr la migración 015 en la base." };
-  }
-  if (err instanceof FaltaMigracionSecciones) {
-    return { ok: false, error: "Para guardar secciones falta correr la migración 020 en la base." };
-  }
   const texto = err instanceof Error ? err.message : String(err);
   if (/uq_\w*nombre/i.test(texto)) return { ok: false, error: "Hay dos entradas con el mismo nombre en la misma lista." };
   if (/uq_\w*opcion|uq_\w*subtrabajo/i.test(texto)) {

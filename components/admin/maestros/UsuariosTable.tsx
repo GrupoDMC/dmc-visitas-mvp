@@ -18,7 +18,7 @@ export default function UsuariosTable({
 }: {
   usuarios: Usuario[];
   tecnicos: Tecnico[];
-  /** Los roles del panel. Vacío si la base no tiene la migración 008. */
+  /** Los roles del panel. */
   roles: Rol[];
   pestanas?: React.ReactNode;
 }) {

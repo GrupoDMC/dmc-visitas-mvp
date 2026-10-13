@@ -104,6 +104,9 @@ reales.
 - Las migraciones son idempotentes y se aplican **en orden** con una cuenta con permisos de DDL.
   La cuenta que usa la aplicación solo lee y escribe datos.
 - Cada migración nueva también se refleja en el script del esquema base.
+- Cada migración registra su número en `dmc.schema_version`. La aplicación espera la versión de
+  `lib/data/esquema.ts` y no tiene caminos alternativos para una base atrasada; `/api/salud` informa
+  la versión aplicada.
 - `sql/dmc_contingencia_sqlserver.sql` contiene solo el esquema y lo mínimo que la aplicación necesita
   (estados de problema y el rol «Coordinador»). Los datos de ejemplo, **ficticios**, están aparte en
   `sql/semillas-demo.sql`.

@@ -3,10 +3,6 @@
 import { revalidatePath } from "next/cache";
 import { crearSesion, sesionCon } from "@/lib/auth";
 import {
-  faltaMigracionDetalle,
-  faltaMigracionNotas,
-  faltaMigracionMalls,
-  faltaMigracionUbicacionMall,
   guardarCliente,
   guardarMall,
   guardarSucursal,
@@ -70,18 +66,6 @@ function mensajeDeError(err: unknown, contexto: string): string {
   }
   if (err instanceof TiendaEnOtroMall) {
     return `Ya está en otro mall: ${err.tiendas.join(", ")}. Una sucursal está en un solo mall: quítala de ese primero.`;
-  }
-  if (faltaMigracionNotas(err)) {
-    return "Falta aplicar la migración 009 en la base de datos. Avísale al administrador.";
-  }
-  if (faltaMigracionMalls(err)) {
-    return "Falta aplicar la migración 011 en la base de datos. Avísale al administrador.";
-  }
-  if (faltaMigracionUbicacionMall(err)) {
-    return "Falta aplicar la migración 012 en la base de datos. Avísale al administrador.";
-  }
-  if (faltaMigracionDetalle(err)) {
-    return "Falta aplicar la migración 017 o la 018 en la base de datos para guardar ese detalle. Déjalo en «Sin indicar» o avísale al administrador.";
   }
   const texto = err instanceof Error ? err.message : String(err);
   if (/uq_mall_nombre/i.test(texto)) return "Ya existe un mall con ese nombre.";

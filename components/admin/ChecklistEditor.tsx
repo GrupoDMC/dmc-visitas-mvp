@@ -262,15 +262,9 @@ export default function ChecklistEditor({
   trabajosIniciales,
   internosIniciales,
   pendientesIniciales,
-  gestionDisponible,
   cargosIniciales,
-  cargosDisponible,
   gestionProblemasIniciales,
-  gestionProblemasDisponible,
   estadosProblemaIniciales,
-  estadosProblemaDisponible,
-  trabajosPorMotivoDisponible,
-  seccionesDisponible,
   seccionesMotivoIniciales,
   seccionesTrabajoIniciales,
   plantillaInicial,
@@ -280,22 +274,10 @@ export default function ChecklistEditor({
   trabajosIniciales: CatalogoTrabajo[];
   internosIniciales: CatalogoInterno[];
   pendientesIniciales: CatalogoPendiente[];
-  /** false = falta la migración 014: la Lista 5 se muestra, pero no se puede guardar. */
-  gestionDisponible: boolean;
   cargosIniciales: CatalogoCargo[];
-  /** false = falta la migración 022: la Lista 8 se muestra, pero no se puede guardar. */
-  cargosDisponible: boolean;
   gestionProblemasIniciales: CatalogoGestionProblema[];
-  /** false = falta la migración 015: la Lista 6 se muestra, pero no se puede guardar. */
-  gestionProblemasDisponible: boolean;
   /** Solo los activos, en su orden. */
   estadosProblemaIniciales: CatalogoEstadoProblema[];
-  /** false = falta la migración 016: la Lista 7 se muestra con los tres de siempre, sin poder cambiarla. */
-  estadosProblemaDisponible: boolean;
-  /** false = falta la migración 019: un trabajo sin motivos sigue apareciendo en todos. */
-  trabajosPorMotivoDisponible: boolean;
-  /** false = falta la migración 020: no se pueden crear secciones. */
-  seccionesDisponible: boolean;
   seccionesMotivoIniciales: CatalogoSeccion[];
   seccionesTrabajoIniciales: CatalogoSeccion[];
   plantillaInicial: ChecklistPlantilla | null;
@@ -675,9 +657,6 @@ export default function ChecklistEditor({
   }
 
   function agregarSeccion(set: React.Dispatch<React.SetStateAction<Seccion[]>>) {
-    if (!seccionesDisponible) {
-      return aviso("Para crear secciones falta correr la migración 020 en la base");
-    }
     const key = nuevaClave();
     editar(set, (prev) => [...prev, { key, nombre: "" }]);
     aviso("Sección agregada · escribe su nombre");
@@ -1026,17 +1005,6 @@ export default function ChecklistEditor({
           onAgregar={() => agregarMotivo()}
           ctaExtra={{ label: "Nueva sección", onClick: () => agregarSeccion(setSeccionesMotivo) }}
         >
-          {!seccionesDisponible ? (
-            <div className="mb-3 px-3.5 py-3 bg-[var(--color-accent-200)] border-l-4 border-[var(--color-accent)] text-[13px] text-[var(--color-accent-800)] max-w-[720px]">
-              Las secciones necesitan la migración 020 en la base. Hasta que se corra no se pueden crear.
-            </div>
-          ) : null}
-          {!trabajosPorMotivoDisponible ? (
-            <div className="mb-3 px-3.5 py-3 bg-[var(--color-accent-200)] border-l-4 border-[var(--color-accent)] text-[13px] text-[var(--color-accent-800)] max-w-[720px]">
-              Falta la migración 019 en la base. Hasta que se corra, el orden de los trabajos dentro de cada motivo no
-              se guarda y un trabajo que no esté en ningún motivo le sigue apareciendo al técnico en todos.
-            </div>
-          ) : null}
           {seccionesMotivo.length === 0 ? (
             <div className="flex flex-col gap-2.5">
               {motivosVisibles.map(({ m, i }) => filaMotivo(m, i, motivos.length, () => true, "todos"))}
@@ -1300,12 +1268,6 @@ export default function ChecklistEditor({
           cta="Nuevo paso"
           onAgregar={agregarPendiente}
         >
-          {!gestionDisponible ? (
-            <div className="mb-3 px-3.5 py-3 bg-[var(--color-accent-200)] border-l-4 border-[var(--color-accent)] text-[13px] text-[var(--color-accent-800)] max-w-[720px]">
-              Esta lista necesita la migración 014 en la base. Hasta que se corra, lo que agregues acá no se puede
-              guardar.
-            </div>
-          ) : null}
           <FilasSimples
             grupo="pendiente"
             lista={pendientes}
@@ -1342,12 +1304,6 @@ export default function ChecklistEditor({
           cta="Nuevo paso"
           onAgregar={agregarGestionProblema}
         >
-          {!gestionProblemasDisponible ? (
-            <div className="mb-3 px-3.5 py-3 bg-[var(--color-accent-200)] border-l-4 border-[var(--color-accent)] text-[13px] text-[var(--color-accent-800)] max-w-[720px]">
-              Esta lista necesita la migración 015 en la base. Hasta que se corra, lo que agregues acá no se puede
-              guardar.
-            </div>
-          ) : null}
           <FilasSimples
             grupo="gestionproblema"
             lista={gestionProblemas}
@@ -1383,12 +1339,6 @@ export default function ChecklistEditor({
           cta="Nuevo estado"
           onAgregar={agregarEstadoProblema}
         >
-          {!estadosProblemaDisponible ? (
-            <div className="mb-3 px-3.5 py-3 bg-[var(--color-accent-200)] border-l-4 border-[var(--color-accent)] text-[13px] text-[var(--color-accent-800)] max-w-[720px]">
-              Esta lista necesita la migración 016 en la base. Hasta que se corra siguen los tres estados de siempre y
-              lo que cambies acá no se puede guardar.
-            </div>
-          ) : null}
           <FilasSimples
             grupo="estadoproblema"
             lista={estadosProblema}
@@ -1426,12 +1376,6 @@ export default function ChecklistEditor({
           cta="Nuevo cargo"
           onAgregar={agregarCargo}
         >
-          {!cargosDisponible ? (
-            <div className="mb-3 px-3.5 py-3 bg-[var(--color-accent-200)] border-l-4 border-[var(--color-accent)] text-[13px] text-[var(--color-accent-800)] max-w-[720px]">
-              Esta lista necesita la migración 022 en la base. Hasta que se corra, lo que agregues acá no se puede
-              guardar.
-            </div>
-          ) : null}
           <FilasSimples
             grupo="cargo"
             lista={cargos}

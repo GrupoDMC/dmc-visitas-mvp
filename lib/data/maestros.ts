@@ -1,7 +1,7 @@
 import "server-only";
 import { consulta, consultaCon, ejecutar, enTransaccion, num, numONull, sql, F_FECHA, F_TS } from "@/lib/data/sql";
 import { hashearPassword } from "@/lib/password";
-import { leerCuenta, leerRol, permisosDelPanel, rolesDeUsuarios, type Cuenta } from "@/lib/data/roles";
+import { leerCuenta, leerRol, permisosDelPanel, type Cuenta } from "@/lib/data/roles";
 import { fmtRut, rutLimpio } from "@/lib/ui/formato";
 import type { Cliente, Mall, RolUsuario, Sucursal, Tecnico, Usuario } from "@/lib/types";
 
@@ -43,56 +43,8 @@ async function rutTomado(tabla: "cliente" | "tecnico", rut: string, idPropio: nu
 
 // ── Clientes ────────────────────────────────────────────────────────────────
 
-/**
- * ¿El error es que la base todavía no tiene la migración 009?
- *
- * Las listas de clientes y sucursales las lee toda la app, el celular del
- * técnico incluido: sin la migración tienen que seguir saliendo, solo que sin
- * notas ni motivo.
- */
-export function faltaMigracionNotas(err: unknown): boolean {
-  const texto = err instanceof Error ? err.message : String(err);
-  return /invalid column name '(notas|motivo_inactivo)'/i.test(texto);
-}
-
-/** Lee con las columnas de la 009 y, si la base no las tiene, sin ellas. */
-async function consultaConNotas<T>(armar: (extra: string) => string, extra: string): Promise<T[]> {
-  try {
-    return await consulta<T>(armar(extra));
-  } catch (err) {
-    if (!faltaMigracionNotas(err)) throw err;
-    return consulta<T>(armar(""));
-  }
-}
-
-/**
- * ¿El error es que la base todavía no tiene la migración 017 o la 018?
- *
- * Sin ellas clientes y sucursales se leen y se guardan igual, solo que sin el
- * plan de calibración ni el detalle de la sucursal.
- */
-export function faltaMigracionDetalle(err: unknown): boolean {
-  const texto = err instanceof Error ? err.message : String(err);
-  return /invalid column name '(plan_calibracion|fecha_instalacion|remota|en_garantia)'/i.test(texto);
-}
-
 /** Un bit que admite «no se sabe»: null sigue siendo null. */
 const bitONull = (v: boolean | number | null | undefined) => (v === null || v === undefined ? null : Boolean(v));
-
-/**
- * Prueba las consultas en orden y se queda con la primera que la base acepta.
- * Cada una pide menos columnas que la anterior: solo se pasa a la siguiente si
- * lo que falló es una migración que todavía no se aplica.
- */
-async function primeraQueResponda<T>(intentos: (() => Promise<T>)[], faltaMigracion: (err: unknown) => boolean) {
-  for (let i = 0; ; i++) {
-    try {
-      return await intentos[i]();
-    } catch (err) {
-      if (i === intentos.length - 1 || !faltaMigracion(err)) throw err;
-    }
-  }
-}
 
 interface FilaCliente {
   id: number;
@@ -100,28 +52,24 @@ interface FilaCliente {
   razon_social: string;
   nombre_fantasia: string;
   activo: boolean;
-  motivo_inactivo?: string | null;
-  notas?: string | null;
-  plan_calibracion?: boolean | null;
+  motivo_inactivo: string | null;
+  notas: string | null;
+  plan_calibracion: boolean | null;
 }
 
 export async function listarClientes(): Promise<Cliente[]> {
-  const leer = (detalle: string) =>
-    consultaConNotas<FilaCliente>(
-      (extra) =>
-        `SELECT id, rut, razon_social, nombre_fantasia, activo${detalle}${extra}
-           FROM dmc.cliente ORDER BY nombre_fantasia`,
-      ", motivo_inactivo, notas"
-    );
-  const filas = await primeraQueResponda([() => leer(", plan_calibracion"), () => leer("")], faltaMigracionDetalle);
+  const filas = await consulta<FilaCliente>(
+    `SELECT id, rut, razon_social, nombre_fantasia, activo, motivo_inactivo, notas, plan_calibracion
+       FROM dmc.cliente ORDER BY nombre_fantasia`
+  );
   return filas.map((f) => ({
     id: num(f.id),
     rut: f.rut,
     razonSocial: f.razon_social,
     nombreFantasia: f.nombre_fantasia,
     activo: Boolean(f.activo),
-    motivoInactivo: f.motivo_inactivo ?? null,
-    notas: f.notas ?? null,
+    motivoInactivo: f.motivo_inactivo,
+    notas: f.notas,
     planCalibracion: bitONull(f.plan_calibracion),
   }));
 }
@@ -152,77 +100,38 @@ export async function guardarCliente(id: number | null, d: DatosCliente): Promis
     ["notas", sql.NVarChar(sql.MAX), d.notas?.trim() || null],
     ["plan", sql.Bit, d.planCalibracion],
   ];
-  const guardar = (conDetalle: boolean) => async () => {
-    const plan = conDetalle ? { col: ", plan_calibracion", val: ", @plan", set: ", plan_calibracion = @plan" } : { col: "", val: "", set: "" };
-    if (id === null) {
-      const [fila] = await consultaCon<{ id: number }>(
-        `INSERT INTO dmc.cliente (rut, razon_social, nombre_fantasia, activo, motivo_inactivo, notas${plan.col})
-         OUTPUT INSERTED.id AS id
-         VALUES (@rut, @razon, @fantasia, @activo, @motivo, @notas${plan.val})`,
-        params
-      );
-      return num(fila.id);
-    }
-    await ejecutar(
-      `UPDATE dmc.cliente
-          SET rut = @rut, razon_social = @razon, nombre_fantasia = @fantasia, activo = @activo,
-              motivo_inactivo = @motivo, notas = @notas${plan.set}
-        WHERE id = @id`,
-      [...params, ["id", sql.BigInt, id]]
+  if (id === null) {
+    const [fila] = await consultaCon<{ id: number }>(
+      `INSERT INTO dmc.cliente (rut, razon_social, nombre_fantasia, activo, motivo_inactivo, notas, plan_calibracion)
+       OUTPUT INSERTED.id AS id
+       VALUES (@rut, @razon, @fantasia, @activo, @motivo, @notas, @plan)`,
+      params
     );
-    return id;
-  };
-  // Sin la 017 se guarda igual, pero solo si no se marcó nada: lo que el
-  // usuario llenó no se pierde callado, se avisa que falta la migración.
-  return primeraQueResponda(
-    d.planCalibracion === null ? [guardar(true), guardar(false)] : [guardar(true)],
-    faltaMigracionDetalle
+    return num(fila.id);
+  }
+  await ejecutar(
+    `UPDATE dmc.cliente
+        SET rut = @rut, razon_social = @razon, nombre_fantasia = @fantasia, activo = @activo,
+            motivo_inactivo = @motivo, notas = @notas, plan_calibracion = @plan
+      WHERE id = @id`,
+    [...params, ["id", sql.BigInt, id]]
   );
+  return id;
 }
 
 // ── Malls ───────────────────────────────────────────────────────────────────
-
-/**
- * ¿El error es que la base todavía no tiene la migración 011?
- *
- * Los malls bajan con las referencias del panel entero: sin la migración el
- * panel tiene que seguir abriendo, solo que sin malls.
- */
-export function faltaMigracionMalls(err: unknown): boolean {
-  const texto = err instanceof Error ? err.message : String(err);
-  return /invalid object name 'dmc\.mall'|invalid column name 'mall_id'/i.test(texto);
-}
-
-/**
- * ¿El error es que la base todavía no tiene la migración 012?
- *
- * Sin ella los malls siguen saliendo, solo que sin comuna ni región.
- */
-export function faltaMigracionUbicacionMall(err: unknown): boolean {
-  const texto = err instanceof Error ? err.message : String(err);
-  return /invalid column name '(comuna|region)'/i.test(texto);
-}
 
 interface FilaMall {
   id: number;
   nombre: string;
   direccion: string;
-  comuna?: string;
-  region?: string;
+  comuna: string | null;
+  region: string | null;
   activo: boolean;
 }
 
 export async function listarMalls(): Promise<Mall[]> {
-  const leer = (extra: string) =>
-    consulta<FilaMall>(`SELECT id, nombre, direccion, activo${extra} FROM dmc.mall ORDER BY nombre`);
-  let filas: FilaMall[];
-  try {
-    filas = await leer(", comuna, region");
-  } catch (err) {
-    if (faltaMigracionMalls(err)) return [];
-    if (!faltaMigracionUbicacionMall(err)) throw err;
-    filas = await leer("");
-  }
+  const filas = await consulta<FilaMall>(`SELECT id, nombre, direccion, comuna, region, activo FROM dmc.mall ORDER BY nombre`);
   return filas.map((f) => ({
     id: num(f.id),
     nombre: f.nombre,
@@ -312,7 +221,7 @@ export async function ponerTiendasDeMall(mallId: number, sucursalIds: number[]):
 interface FilaSucursal {
   id: number;
   cliente_id: number;
-  mall_id?: number | null;
+  mall_id: number | null;
   nombre: string;
   codigo: string | null;
   direccion: string;
@@ -320,39 +229,25 @@ interface FilaSucursal {
   region: string;
   telefono: string | null;
   activo: boolean;
-  motivo_inactivo?: string | null;
-  notas?: string | null;
-  fecha_instalacion?: string | null;
-  remota?: boolean | null;
-  en_garantia?: boolean | null;
-  plan_calibracion?: boolean | null;
+  motivo_inactivo: string | null;
+  notas: string | null;
+  fecha_instalacion: string | null;
+  remota: boolean | null;
+  en_garantia: boolean | null;
+  plan_calibracion: boolean | null;
 }
 
-const DETALLE_SUCURSAL = `, ${F_FECHA("fecha_instalacion")} AS fecha_instalacion, remota, en_garantia`;
-
 export async function listarSucursales(): Promise<Sucursal[]> {
-  // El mall es de la migración 011, el detalle de la 017 y la calibración de
-  // la 018: sin ellas la lista sale igual, sin eso.
-  const leer = (columnas: string) =>
-    consultaConNotas<FilaSucursal>(
-      (extra) =>
-        `SELECT id, cliente_id, nombre, codigo, direccion, comuna, region, telefono, activo${columnas}${extra}
-           FROM dmc.sucursal ORDER BY nombre`,
-      ", motivo_inactivo, notas"
-    );
-  const filas = await primeraQueResponda(
-    [
-      () => leer(`, mall_id${DETALLE_SUCURSAL}, plan_calibracion`),
-      () => leer(`, mall_id${DETALLE_SUCURSAL}`),
-      () => leer(", mall_id"),
-      () => leer(""),
-    ],
-    (err) => faltaMigracionDetalle(err) || faltaMigracionMalls(err)
+  const filas = await consulta<FilaSucursal>(
+    `SELECT id, cliente_id, mall_id, nombre, codigo, direccion, comuna, region, telefono, activo,
+            motivo_inactivo, notas, ${F_FECHA("fecha_instalacion")} AS fecha_instalacion, remota, en_garantia,
+            plan_calibracion
+       FROM dmc.sucursal ORDER BY nombre`
   );
   return filas.map((f) => ({
     id: num(f.id),
     clienteId: num(f.cliente_id),
-    mallId: numONull(f.mall_id ?? null),
+    mallId: numONull(f.mall_id),
     nombre: f.nombre,
     codigo: f.codigo,
     direccion: f.direccion,
@@ -360,9 +255,9 @@ export async function listarSucursales(): Promise<Sucursal[]> {
     region: f.region,
     telefono: f.telefono,
     activo: Boolean(f.activo),
-    motivoInactivo: f.motivo_inactivo ?? null,
-    notas: f.notas ?? null,
-    fechaInstalacion: f.fecha_instalacion ?? null,
+    motivoInactivo: f.motivo_inactivo,
+    notas: f.notas,
+    fechaInstalacion: f.fecha_instalacion,
     remota: bitONull(f.remota),
     enGarantia: bitONull(f.en_garantia),
     planCalibracion: bitONull(f.plan_calibracion),
@@ -389,7 +284,7 @@ export interface DatosSucursal {
   remota: boolean | null;
   enGarantia: boolean | null;
   /**
-   * La de la tienda por su cuenta (migración 018). Si el cliente está en plan,
+   * La de la tienda por su cuenta. Si el cliente está en plan,
    * la tienda lo está igual: esto solo cuenta cuando el cliente no lo está.
    */
   planCalibracion: boolean | null;
@@ -414,47 +309,27 @@ export async function guardarSucursal(id: number | null, d: DatosSucursal): Prom
     ["garantia", sql.Bit, d.enGarantia],
     ["plan", sql.Bit, d.planCalibracion],
   ];
-  // Columna y parámetro de cada dato que depende de una migración.
-  const de017: [string, string][] = [
-    ["fecha_instalacion", "instalacion"],
-    ["remota", "remota"],
-    ["en_garantia", "garantia"],
-  ];
-  const de018: [string, string][] = [["plan_calibracion", "plan"]];
-  const guardar = (extra: [string, string][]) => async () => {
-    const det = {
-      col: extra.map(([c]) => `, ${c}`).join(""),
-      val: extra.map(([, p]) => `, @${p}`).join(""),
-      set: extra.map(([c, p]) => `, ${c} = @${p}`).join(""),
-    };
-    if (id === null) {
-      const [fila] = await consultaCon<{ id: number }>(
-        `INSERT INTO dmc.sucursal (cliente_id, mall_id, nombre, codigo, direccion, comuna, region, telefono, activo,
-                                   motivo_inactivo, notas${det.col})
-         OUTPUT INSERTED.id AS id
-         VALUES (@cliente, @mall, @nombre, @codigo, @direccion, @comuna, @region, @telefono, @activo, @motivo, @notas${det.val})`,
-        params
-      );
-      return num(fila.id);
-    }
-    await ejecutar(
-      `UPDATE dmc.sucursal
-          SET cliente_id = @cliente, mall_id = @mall, nombre = @nombre, codigo = @codigo, direccion = @direccion,
-              comuna = @comuna, region = @region, telefono = @telefono, activo = @activo,
-              motivo_inactivo = @motivo, notas = @notas${det.set}
-        WHERE id = @id`,
-      [...params, ["id", sql.BigInt, id]]
+  if (id === null) {
+    const [fila] = await consultaCon<{ id: number }>(
+      `INSERT INTO dmc.sucursal (cliente_id, mall_id, nombre, codigo, direccion, comuna, region, telefono, activo,
+                                 motivo_inactivo, notas, fecha_instalacion, remota, en_garantia, plan_calibracion)
+       OUTPUT INSERTED.id AS id
+       VALUES (@cliente, @mall, @nombre, @codigo, @direccion, @comuna, @region, @telefono, @activo, @motivo, @notas,
+               @instalacion, @remota, @garantia, @plan)`,
+      params
     );
-    return id;
-  };
-  // Si la base no tiene la 018 (o la 017) se guarda sin esas columnas, pero
-  // solo si no se llenó nada en ellas: lo escrito no se pierde callado.
-  const intentos = [guardar([...de017, ...de018])];
-  if (d.planCalibracion === null) {
-    intentos.push(guardar(de017));
-    if (!d.fechaInstalacion && d.remota === null && d.enGarantia === null) intentos.push(guardar([]));
+    return num(fila.id);
   }
-  return primeraQueResponda(intentos, faltaMigracionDetalle);
+  await ejecutar(
+    `UPDATE dmc.sucursal
+        SET cliente_id = @cliente, mall_id = @mall, nombre = @nombre, codigo = @codigo, direccion = @direccion,
+            comuna = @comuna, region = @region, telefono = @telefono, activo = @activo,
+            motivo_inactivo = @motivo, notas = @notas, fecha_instalacion = @instalacion, remota = @remota,
+            en_garantia = @garantia, plan_calibracion = @plan
+      WHERE id = @id`,
+    [...params, ["id", sql.BigInt, id]]
+  );
+  return id;
 }
 
 /** Una sucursal nueva dentro de un alta masiva. */
@@ -580,26 +455,22 @@ interface FilaUsuarioLista {
   id: number;
   email: string;
   rol: RolUsuario;
+  rol_id: number | null;
   tecnico_id: number | null;
   activo: boolean;
   ultimo_acceso_en: string | null;
 }
 
 export async function listarUsuarios(): Promise<Usuario[]> {
-  // El rol del panel va en una consulta aparte: así la lista sigue saliendo en
-  // una base que todavía no tiene la migración 008.
-  const [filas, roles] = await Promise.all([
-    consulta<FilaUsuarioLista>(
-      `SELECT id, email, rol, tecnico_id, activo, ${F_TS("ultimo_acceso_en")} AS ultimo_acceso_en
-         FROM dmc.usuario ORDER BY email`
-    ),
-    rolesDeUsuarios(),
-  ]);
+  const filas = await consulta<FilaUsuarioLista>(
+    `SELECT id, email, rol, rol_id, tecnico_id, activo, ${F_TS("ultimo_acceso_en")} AS ultimo_acceso_en
+       FROM dmc.usuario ORDER BY email`
+  );
   return filas.map((f) => ({
     id: num(f.id),
     email: f.email,
     rol: f.rol,
-    rolId: roles.get(num(f.id)) ?? null,
+    rolId: numONull(f.rol_id),
     tecnicoId: numONull(f.tecnico_id),
     activo: Boolean(f.activo),
     ultimoAccesoEn: f.ultimo_acceso_en,

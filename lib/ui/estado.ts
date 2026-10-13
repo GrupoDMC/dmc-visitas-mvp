@@ -82,7 +82,7 @@ export const ESTADO_PROBLEMA_CIERRE = "RESUELTO";
 
 /**
  * Los tres estados de siempre. Es con lo que nace la Lista 7 del Checklist y
- * lo que se usa mientras la base no tenga el catálogo (migración 016).
+ * el nombre de respaldo de un código que el catálogo no trae.
  */
 export const ESTADOS_PROBLEMA_BASE: CatalogoEstadoProblema[] = [
   { id: null, codigo: "ABIERTO", nombre: "Abierto", orden: 1, activo: true },

@@ -49,7 +49,7 @@ export interface Cliente {
   motivoInactivo?: string | null;
   /** Texto libre del panel. */
   notas?: string | null;
-  /** En plan de calibración. null = no se sabe (o falta la migración 017). */
+  /** En plan de calibración. null = no se sabe. */
   planCalibracion?: boolean | null;
 }
 
@@ -143,7 +143,7 @@ export interface CatalogoMotivo {
   nombre: string;
   orden: number;
   activo: boolean;
-  /** Nombre de su sección. Null = sin sección (o falta la migración 020). */
+  /** Nombre de su sección. Null = sin sección. */
   seccion?: string | null;
   /** El orden de esa sección entre las demás. */
   seccionOrden?: number;
@@ -197,7 +197,7 @@ export interface CatalogoTrabajo {
   motivosCodigos: string[];
   /** Su posición dentro de cada motivo (código del motivo → orden). */
   ordenEnMotivo: Record<string, number>;
-  /** Nombre de su sección. Null = sin sección (o falta la migración 020). */
+  /** Nombre de su sección. Null = sin sección. */
   seccion?: string | null;
   /** El orden de esa sección entre las demás. */
   seccionOrden?: number;

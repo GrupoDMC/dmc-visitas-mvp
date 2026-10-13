@@ -67,7 +67,7 @@ export default function PendientesView({ datos }: { datos: DatosPendientes }) {
   const router = useRouter();
   const ref = useReferencias();
   const { toast, aviso } = useToast();
-  const { pendientes, historial, pasos, conGestion } = datos;
+  const { pendientes, historial, pasos } = datos;
 
   const [busqueda, setBusqueda] = useState("");
   const [f, setF] = useState<Filtros>(SIN_FILTROS);
@@ -86,7 +86,7 @@ export default function PendientesView({ datos }: { datos: DatosPendientes }) {
   // cada paso y cuándo.
   useEffect(() => setMarcas(marcasIniciales(pendientes)), [pendientes]);
 
-  const puedeGestionar = conGestion && puede(ref, "reagendas.gestionar");
+  const puedeGestionar = puede(ref, "reagendas.gestionar");
   // «Cancelar por admin» no va: solo vale sobre visitas programadas o en curso.
   const accionesLote: { accion: AccionLote; label: string }[] = puede(ref, "visitas.masivo")
     ? [
@@ -439,7 +439,7 @@ function Tarjeta({
   const router = useRouter();
   const ref = useReferencias();
   const { visita: v, desde, dias } = pendiente;
-  const { pasos, conGestion } = datos;
+  const { pasos } = datos;
 
   const reagenda = v.reagendamientos?.[0];
   const motivoTecnico = v.motivoPendiente ?? reagenda?.motivo ?? null;
@@ -609,9 +609,8 @@ function Tarjeta({
             </div>
           ) : (
             <div className="px-3.5 py-2.5 border border-dashed border-black/[.35] text-[13px] opacity-70 max-w-[80ch]">
-              {conGestion
-                ? "Todavía no hay pasos de gestión. Agrégalos en Maestros › Checklist › Lista 5 «Gestión de pendientes» y aparecen acá para marcarlos en cada visita."
-                : "El checklist de gestión necesita la migración 014 en la base."}
+              Todavía no hay pasos de gestión. Agrégalos en Maestros › Checklist › Lista 5 «Gestión de pendientes» y
+              aparecen acá para marcarlos en cada visita.
             </div>
           )}
         </div>

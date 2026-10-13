@@ -1,5 +1,4 @@
 import "server-only";
-import { log } from "@/lib/log";
 import {
   agrupar,
   consultaCon,
@@ -19,9 +18,9 @@ import {
   type Parametro,
 } from "@/lib/data/sql";
 import { decodificarImagen, mimeDeImagen } from "@/lib/imagen";
-import { cargoDelChecklist, hayCargos } from "@/lib/data/catalogos";
+import { cargoDelChecklist } from "@/lib/data/catalogos";
 import { registrarPersonaLocal } from "@/lib/data/personas-local";
-import { cancelarVisitasVencidas, hayMargenDeDias } from "@/lib/data/vencimiento";
+import { cancelarVisitasVencidas } from "@/lib/data/vencimiento";
 import type {
   EstadoProblema,
   EstadoVisita,
@@ -123,6 +122,7 @@ interface FilaVisita {
   responsable_nombre: string | null;
   responsable_rut: string | null;
   responsable_telefono: string | null;
+  responsable_cargo: string | null;
   motivo_pendiente: string | null;
   tomada_por: number | null;
   problema_origen_id: number | null;
@@ -189,15 +189,14 @@ export const TOMADA_POR = `
          ELSE v.tecnico_id END
   END`;
 
-// `conMargen` = la base ya tiene v.fecha_hasta (migración 010).
-const selectVisita = (conMargen: boolean) => `
+const SELECT_VISITA = `
   SELECT v.id, v.folio, v.cliente_id, v.sucursal_id, v.tecnico_id, v.tecnico_ayudante_id,
          v.motivo_codigo, v.estado,
          ${F_FECHA("v.fecha_programada")} AS fecha_programada,
-         ${conMargen ? F_FECHA("v.fecha_hasta") : "CAST(NULL AS varchar(10))"} AS fecha_hasta,
+         ${F_FECHA("v.fecha_hasta")}      AS fecha_hasta,
          ${F_HORA("v.hora_programada")}   AS hora_programada,
          v.trabajo_solicitado, v.indicaciones_acceso, v.responsable_nombre,
-         v.responsable_rut, v.responsable_telefono,
+         v.responsable_rut, v.responsable_telefono, v.responsable_cargo,
          ${MOTIVO_PENDIENTE} AS motivo_pendiente,
          ${TOMADA_POR} AS tomada_por,
          v.problema_origen_id, v.creada_en_terreno,
@@ -231,6 +230,7 @@ interface FilaEjecucion {
   responsable_nombre: string;
   responsable_rut: string | null;
   responsable_telefono: string | null;
+  responsable_cargo: string | null;
   motivo_real_codigo: string | null;
   observaciones: string | null;
   comentario_interno: string | null;
@@ -259,17 +259,6 @@ interface FilaEdicion {
   secciones: string;
   detalle: string;
   editado_en: string;
-}
-
-/**
- * ¿El error es porque falta la migración 013 (dmc.visita_edicion)?
- *
- * Sin ella la app sigue leyendo visitas igual, solo que sin ediciones; lo que
- * no se puede es guardar una edición.
- */
-export function faltaMigracionEdicion(err: unknown): boolean {
-  const texto = err instanceof Error ? err.message : String(err);
-  return /invalid object name 'dmc\.visita_edicion'/i.test(texto);
 }
 
 interface FilaTrabajo {
@@ -358,13 +347,6 @@ interface FilaMotivoVisita {
   ambito: "PLAN" | "REAL";
 }
 
-/** Los cargos del responsable, el de la agenda y el del acta (migración 022). */
-interface FilaCargo {
-  visita_id: number;
-  agendado: string | null;
-  acta: string | null;
-}
-
 interface FilaReagendamiento {
   id: number;
   visita_id: number;
@@ -382,7 +364,6 @@ async function cargar(filtro: Filtro): Promise<Visita[]> {
   // Antes de leer, lo vencido pasa a CANCELADA: así ni el panel ni el celular
   // muestran abierta una visita que ya salió del plazo.
   await cancelarVisitasVencidas();
-  const conMargen = await hayMargenDeDias();
   const ids = subconsultaIds(filtro);
   const p = () => filtro.params.map((x) => [...x] as Parametro);
 
@@ -400,10 +381,9 @@ async function cargar(filtro: Filtro): Promise<Visita[]> {
     reagendas,
     internos,
     ediciones,
-    cargos,
   ] = await Promise.all([
       consultaCon<FilaVisita>(
-        `${selectVisita(conMargen)} WHERE ${filtro.where} ORDER BY v.fecha_programada DESC, v.hora_programada, v.id DESC`,
+        `${SELECT_VISITA} WHERE ${filtro.where} ORDER BY v.fecha_programada DESC, v.hora_programada, v.id DESC`,
         p()
       ),
       consultaCon<FilaMotivoVisita>(
@@ -415,8 +395,8 @@ async function cargar(filtro: Filtro): Promise<Visita[]> {
       ),
       consultaCon<FilaEjecucion>(
         `SELECT visita_id, ${F_TS("hora_inicio")} AS hora_inicio, ${F_TS("hora_termino")} AS hora_termino,
-                responsable_nombre, responsable_rut, responsable_telefono, motivo_real_codigo,
-                observaciones, comentario_interno, dispositivo, app_version, registrado_offline,
+                responsable_nombre, responsable_rut, responsable_telefono, responsable_cargo,
+                motivo_real_codigo, observaciones, comentario_interno, dispositivo, app_version, registrado_offline,
                 ${F_TS("sincronizado_en")} AS sincronizado_en,
                 ${F_TS(EDITABLE_HASTA)} AS editable_hasta,
                 CAST(CASE WHEN hora_termino IS NOT NULL AND ${EDITABLE_HASTA} >= SYSDATETIME()
@@ -496,24 +476,7 @@ async function cargar(filtro: Filtro): Promise<Visita[]> {
            LEFT JOIN dmc.tecnico t ON t.id = e.tecnico_id
           WHERE e.visita_id IN (${ids}) ORDER BY e.editado_en DESC, e.id DESC`,
         p()
-      ).catch((err) => {
-        if (faltaMigracionEdicion(err)) return [] as FilaEdicion[];
-        throw err;
-      }),
-      // Aparte y con su propia red: sin la migración 022 la columna no existe y
-      // el resto de la ficha tiene que seguir cargando.
-      (await hayCargos())
-        ? consultaCon<FilaCargo>(
-            `SELECT v.id AS visita_id, v.responsable_cargo AS agendado, e.responsable_cargo AS acta
-               FROM dmc.visita v
-               LEFT JOIN dmc.visita_ejecucion e ON e.visita_id = v.id
-              WHERE v.id IN (${ids})`,
-            p()
-          ).catch((err) => {
-            log.error("cargos del responsable", { err });
-            return [] as FilaCargo[];
-          })
-        : Promise.resolve([] as FilaCargo[]),
+      ),
     ]);
 
   const subPorTrabajo = agrupar(subtrabajos, (s) => num(s.visita_trabajo_id));
@@ -528,7 +491,6 @@ async function cargar(filtro: Filtro): Promise<Visita[]> {
   const motivosPorVisita = agrupar(motivosVisita, (m) => num(m.visita_id));
   const internosPorVisita = agrupar(internos, (x) => num(x.visita_id));
   const edicionesPorVisita = agrupar(ediciones, (x) => num(x.visita_id));
-  const cargoPorVisita = new Map(cargos.map((c) => [num(c.visita_id), c]));
 
   return visitas.map((v) => {
     const id = num(v.id);
@@ -536,7 +498,7 @@ async function cargar(filtro: Filtro): Promise<Visita[]> {
     const susMotivos = motivosPorVisita.get(id) ?? [];
 
     // El motivo principal encabeza siempre la lista, aunque dmc.visita_motivo
-    // todavia no tenga fila (base sin migrar o visita anterior a la migracion).
+    // todavia no tenga fila (visita anterior a dmc.visita_motivo).
     const codigosDe = (ambito: "PLAN" | "REAL", principal: string | null) => {
       const codigos = susMotivos.filter((m) => m.ambito === ambito).map((m) => m.motivo_codigo);
       if (principal && !codigos.includes(principal)) codigos.unshift(principal);
@@ -561,7 +523,7 @@ async function cargar(filtro: Filtro): Promise<Visita[]> {
       responsableNombre: v.responsable_nombre,
       responsableRut: v.responsable_rut,
       responsableTelefono: v.responsable_telefono,
-      responsableCargo: cargoPorVisita.get(id)?.agendado ?? null,
+      responsableCargo: v.responsable_cargo,
       motivoPendiente: v.motivo_pendiente,
       problemaOrigenId: numONull(v.problema_origen_id),
       creadaEnTerreno: Boolean(v.creada_en_terreno),
@@ -630,7 +592,7 @@ async function cargar(filtro: Filtro): Promise<Visita[]> {
             responsableNombre: ejec.responsable_nombre,
             responsableRut: ejec.responsable_rut,
             responsableTelefono: ejec.responsable_telefono,
-            responsableCargo: cargoPorVisita.get(id)?.acta ?? null,
+            responsableCargo: ejec.responsable_cargo,
             motivoRealCodigo: ejec.motivo_real_codigo,
             motivosRealesCodigos: codigosDe("REAL", ejec.motivo_real_codigo),
             observaciones: ejec.observaciones,
@@ -1004,7 +966,6 @@ export async function cambiarEstadoVisita(input: {
 
   // Reagendar toca tres tablas (reagendamiento, visita y la bitácora): o quedan
   // las tres o ninguna.
-  const sinMargen = (await hayMargenDeDias()) ? ", fecha_hasta = NULL" : "";
   await enTransaccion(async (ej) => {
     if (input.estado === "REAGENDADA") {
       await ej.ejecutar(
@@ -1025,7 +986,7 @@ export async function cambiarEstadoVisita(input: {
       );
       if (input.fechaNueva) {
         // Reagendar deja un día fijo: el margen que tuviera se suelta.
-        await ej.ejecutar(`UPDATE dmc.visita SET fecha_programada = @fecha, hora_programada = @hora${sinMargen} WHERE id = @id`, [
+        await ej.ejecutar(`UPDATE dmc.visita SET fecha_programada = @fecha, hora_programada = @hora, fecha_hasta = NULL WHERE id = @id`, [
           ["fecha", sql.Date, input.fechaNueva],
           ["hora", sql.VarChar(8), input.horaNueva || null],
           ["id", sql.BigInt, id],
@@ -1223,25 +1184,9 @@ export interface DatosVisita {
   creadaEnTerreno?: boolean;
 }
 
-/** Pedir margen de días en una base que todavía no tiene la migración 010. */
-export class FaltaMigracionMargen extends Error {
-  constructor() {
-    super("Falta la migración 010: dmc.visita.fecha_hasta");
-    this.name = "FaltaMigracionMargen";
-  }
-}
-
-/** ¿Se puede escribir fecha_hasta? Si piden margen y no hay columna, se avisa. */
-async function margenPara(datos: DatosVisita): Promise<boolean> {
-  const conMargen = await hayMargenDeDias();
-  if (datos.fechaHasta && !conMargen) throw new FaltaMigracionMargen();
-  return conMargen;
-}
-
 /** "Nueva visita" del panel y "Agregar visita" del celular. Nace PROGRAMADA. */
 export async function crearVisita(datos: DatosVisita, creadaPor: number | null): Promise<Visita> {
-  const conMargen = await margenPara(datos);
-  const { id, folio, cargo } = await enTransaccion((ej) => crearVisitaEn(ej, datos, creadaPor, conMargen));
+  const { id, folio, cargo } = await enTransaccion((ej) => crearVisitaEn(ej, datos, creadaPor));
   return visitaCreada(id, folio, datos, cargo);
 }
 
@@ -1264,17 +1209,16 @@ async function visitaCreada(id: number, folio: string, datos: DatosVisita, cargo
 async function crearVisitaEn(
   ej: Ejecutor,
   datos: DatosVisita,
-  creadaPor: number | null,
-  conMargen: boolean
+  creadaPor: number | null
 ): Promise<{ id: number; folio: string; cargo: string | null }> {
   // El folio lo genera el DEFAULT de dmc.visita con la secuencia seq_folio_visita.
   const [fila] = await ej.consulta<{ id: number; folio: string }>(
     `INSERT INTO dmc.visita
        (cliente_id, sucursal_id, tecnico_id, tecnico_ayudante_id, motivo_codigo, fecha_programada,
         hora_programada, trabajo_solicitado, indicaciones_acceso, responsable_nombre, responsable_rut,
-        responsable_telefono, problema_origen_id, creada_en_terreno, creada_por${conMargen ? ", fecha_hasta" : ""})
+        responsable_telefono, problema_origen_id, creada_en_terreno, creada_por, fecha_hasta)
      VALUES (@cliente, @sucursal, @tecnico, @ayudante, @motivo, @fecha, @hora, @trabajo, @acceso,
-             @responsable, @rut, @telefono, @problema, @terreno, @creadaPor${conMargen ? ", @hasta" : ""});
+             @responsable, @rut, @telefono, @problema, @terreno, @creadaPor, @hasta);
 
      SELECT id, folio FROM dmc.visita WHERE id = SCOPE_IDENTITY();`,
     [
@@ -1330,10 +1274,9 @@ export async function crearEIniciarVisita(
   datos: DatosVisita,
   ctx: { tecnicoId: number; usuarioId: number }
 ): Promise<{ folio: string } | { error: string }> {
-  const conMargen = await margenPara(datos);
   try {
     const creada = await enTransaccion(async (ej) => {
-      const nueva = await crearVisitaEn(ej, datos, ctx.usuarioId, conMargen);
+      const nueva = await crearVisitaEn(ej, datos, ctx.usuarioId);
       const fallo = await iniciarVisitaEn(ej, nueva.folio, datos.responsableNombre, ctx);
       // Lanzar es lo que deshace la creación: devolver el error confirmaría.
       if (fallo) throw new NoSePudoIniciar(fallo.error);
@@ -1351,14 +1294,13 @@ class NoSePudoIniciar extends Error {}
 
 /**
  * Deja en la visita el cargo del responsable, si es uno del checklist (vacío lo
- * borra). Devuelve el que quedó. Sin la migración 022 no hace nada.
+ * borra). Devuelve el que quedó.
  */
 async function guardarCargoAgendado(
   ej: Ejecutor,
   visitaId: number,
   pedido: string | null | undefined
 ): Promise<string | null> {
-  if (!(await hayCargos())) return null;
   const cargo = await cargoDelChecklist(pedido);
   await ej.ejecutar(`UPDATE dmc.visita SET responsable_cargo = @cargo WHERE id = @id`, [
     ["cargo", sql.NVarChar(80), cargo],
@@ -1432,7 +1374,6 @@ export async function editarVisita(
   );
   if (!visita) return false;
   const id = num(visita.id);
-  const conMargen = await margenPara(datos);
 
   // Datos, motivos, cargo y estado van juntos: una visita con los datos nuevos
   // y los motivos viejos es peor que una sin corregir.
@@ -1443,7 +1384,7 @@ export async function editarVisita(
               tecnico_ayudante_id = @ayudante, motivo_codigo = @motivo, fecha_programada = @fecha, hora_programada = @hora,
               trabajo_solicitado = @trabajo, indicaciones_acceso = @acceso,
               responsable_nombre = @responsable, responsable_rut = @rut,
-              responsable_telefono = @telefono${conMargen ? ", fecha_hasta = @hasta" : ""}
+              responsable_telefono = @telefono, fecha_hasta = @hasta
         WHERE id = @id`,
       [
         ["hasta", sql.Date, datos.fechaHasta || null],
@@ -1506,7 +1447,6 @@ export async function reprogramarVisita(
   const id = num(visita.id);
 
   // Reprogramar deja un día fijo: el margen que tuviera se suelta.
-  const sinMargen = (await hayMargenDeDias()) ? "fecha_hasta = NULL," : "";
   await conTransaccion(ejAjeno, async (ej) => {
     await ej.ejecutar(
       `INSERT INTO dmc.reagendamiento
@@ -1526,7 +1466,7 @@ export async function reprogramarVisita(
     await ej.ejecutar(
       // Si el nuevo asignado era el ayudante, pasa a ir solo: no puede ser las dos cosas.
       `UPDATE dmc.visita
-          SET tecnico_id = @tecnico, fecha_programada = @fecha, hora_programada = @hora, ${sinMargen}
+          SET tecnico_id = @tecnico, fecha_programada = @fecha, hora_programada = @hora, fecha_hasta = NULL,
               tecnico_ayudante_id = CASE WHEN tecnico_ayudante_id = @tecnico THEN NULL
                                          ELSE tecnico_ayudante_id END
         WHERE id = @id`,
@@ -1768,8 +1708,7 @@ export async function guardarActa(
   if (!entrada.firma) return { ok: false, error: "Falta la firma de la tienda." };
 
   // Solo vale un cargo del checklist; uno suelto se descarta en vez de frenar el cierre.
-  const cargo = (await hayCargos()) ? await cargoDelChecklist(entrada.responsableCargo) : null;
-  const guardaCargo = await hayCargos();
+  const cargo = await cargoDelChecklist(entrada.responsableCargo);
 
   const firmaImagen = decodificarImagen(entrada.firma.dataUrl);
   if (!firmaImagen) return { ok: false, error: "La firma no se pudo leer. Vuelve a firmar." };
@@ -1833,7 +1772,7 @@ export async function guardarActa(
          ELSE DATEADD(second, DATEDIFF(second, SYSUTCDATETIME(), SYSDATETIME()), @capturada)
        END;
 
-       ${guardaCargo ? "UPDATE dmc.visita_ejecucion SET responsable_cargo = @cargo WHERE visita_id = @id;" : ""}
+       UPDATE dmc.visita_ejecucion SET responsable_cargo = @cargo WHERE visita_id = @id;
 
        UPDATE dmc.visita_ejecucion
           SET responsable_nombre   = @nombre,
@@ -1861,7 +1800,7 @@ export async function guardarActa(
         ["nombre", sql.NVarChar(120), entrada.responsableNombre.trim()],
         ["rut", sql.VarChar(12), entrada.responsableRut || null],
         ["telefono", sql.VarChar(30), entrada.responsableTelefono || null],
-        ...(guardaCargo ? [["cargo", sql.NVarChar(80), cargo] as Parametro] : []),
+        ["cargo", sql.NVarChar(80), cargo],
         ["motivo", sql.VarChar(40), principal],
         ["obs", sql.NVarChar(sql.MAX), entrada.observaciones || null],
         ["interno", sql.NVarChar(sql.MAX), entrada.comentarioInterno || null],

@@ -4,6 +4,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { describirDestinoSql } from "@/lib/db/config";
 import { getPool } from "@/lib/db/pool";
 import { env, enProduccion, exigirConexionSql } from "@/lib/env";
+import { SQL_VERSION_ESQUEMA, VERSION_ESQUEMA } from "@/lib/data/esquema";
 
 // Diagnóstico del despliegue: dice si la app llega a SQL Server sin exigir un
 // inicio de sesión (que es justo lo que falla cuando la base no responde).
@@ -49,13 +50,19 @@ export async function GET(req: NextRequest) {
     const pool = await getPool();
     // Además de responder, se comprueba que estén las listas sin las cuales no
     // se puede programar una visita: una base sin catálogo arranca pero no sirve.
-    const r = await pool.request().query<{ motivos: number; problemas: number; trabajos: number }>(
-      `SELECT (SELECT COUNT(*) FROM dmc.catalogo_motivo   WHERE activo = 1) AS motivos,
-              (SELECT COUNT(*) FROM dmc.catalogo_problema WHERE activo = 1) AS problemas,
-              (SELECT COUNT(*) FROM dmc.catalogo_trabajo  WHERE activo = 1) AS trabajos`
-    );
+    // Y la versión del esquema: la app no tiene caminos para una base atrasada.
+    const r = await pool
+      .request()
+      .query<{ motivos: number; problemas: number; trabajos: number; esquema: number | null }>(
+        `SELECT (SELECT COUNT(*) FROM dmc.catalogo_motivo   WHERE activo = 1) AS motivos,
+                (SELECT COUNT(*) FROM dmc.catalogo_problema WHERE activo = 1) AS problemas,
+                (SELECT COUNT(*) FROM dmc.catalogo_trabajo  WHERE activo = 1) AS trabajos,
+                ${SQL_VERSION_ESQUEMA} AS esquema`
+      );
     const catalogo = r.recordset[0];
     const catalogoListo = Number(catalogo.motivos) > 0 && Number(catalogo.trabajos) > 0;
+    const version = Number(catalogo.esquema ?? 0);
+    const esquemaAlDia = version >= VERSION_ESQUEMA;
 
     return NextResponse.json({
       ok: true,
@@ -63,6 +70,14 @@ export async function GET(req: NextRequest) {
       destino: describirDestinoSql(),
       latenciaMs: Date.now() - inicio,
       sesionFirmada: Boolean(env("SESSION_SECRET")),
+      esquema: {
+        version,
+        requerida: VERSION_ESQUEMA,
+        alDia: esquemaAlDia,
+        ...(esquemaAlDia
+          ? {}
+          : { aviso: `La base está en la versión ${version} y esta app necesita la ${VERSION_ESQUEMA}: aplica las migraciones que faltan.` }),
+      },
       catalogo: {
         motivos: Number(catalogo.motivos),
         problemas: Number(catalogo.problemas),

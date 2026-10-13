@@ -36,7 +36,7 @@ export default function RolesView({
   tecnicos,
   pestanas,
 }: {
-  roles: Rol[] | null;
+  roles: Rol[];
   /** Lo que pueden hacer los técnicos desde el celular. */
   permisosCelular: string[];
   /** Cuántos técnicos hay: son quienes heredan los permisos del celular. */
@@ -135,28 +135,19 @@ export default function RolesView({
   return (
     <>
       <AdminHeader kicker="Maestros · quién puede hacer qué" title="Usuarios" pestanas={pestanas}>
-        {roles ? (
-          <button
-            onClick={() => setDialogo({ id: null, form: { nombre: "", descripcion: "" }, permisos: [] })}
-            className="btn btn-primary"
-          >
-            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4">
-              <path d="M12 5v14M5 12h14" />
-            </svg>
-            <span>Nuevo rol</span>
-          </button>
-        ) : null}
+        <button
+          onClick={() => setDialogo({ id: null, form: { nombre: "", descripcion: "" }, permisos: [] })}
+          className="btn btn-primary"
+        >
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4">
+            <path d="M12 5v14M5 12h14" />
+          </svg>
+          <span>Nuevo rol</span>
+        </button>
       </AdminHeader>
 
       <div className="px-4 md:px-7 pt-6 pb-10 animate-fade-in">
-        {roles === null ? (
-          <div className="px-4 py-3.5 bg-[var(--color-accent-200)] border-l-4 border-[var(--color-accent)] text-[13px] text-[var(--color-accent-800)] max-w-[80ch]">
-            La base de datos todavía no tiene las tablas de roles. Hay que correr{" "}
-            <b>sql/migracion-008-roles-y-permisos.sql</b>; hasta entonces el panel sigue como antes: el
-            administrador puede todo y los coordinadores todo menos cancelar por admin y eliminar visitas.
-          </div>
-        ) : (
-          <>
+        <>
             <p className="m-0 mb-4 text-[13px] opacity-66 max-w-[80ch]">
               Cada usuario del panel tiene un rol y puede hacer lo que su rol tenga marcado. El rol se le asigna en
               la pestaña Cuentas.
@@ -275,8 +266,7 @@ export default function RolesView({
               </tbody>
             </table>
             </div>
-          </>
-        )}
+        </>
       </div>
 
       {dialogo ? (

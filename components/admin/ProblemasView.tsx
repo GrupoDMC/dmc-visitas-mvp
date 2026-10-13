@@ -68,7 +68,7 @@ export default function ProblemasView({ datos }: { datos: DatosProblemas }) {
   const router = useRouter();
   const ref = useReferencias();
   const { clientes, problemas: catalogoProblema } = ref;
-  const { grupos, pasos, conGestion, hoy } = datos;
+  const { grupos, pasos, hoy } = datos;
   const OPC_TIPOS = useMemo(() => catalogoProblema.map((t) => ({ v: t.codigo, t: t.nombre })), [catalogoProblema]);
   const nombreTipo = (codigo: string) => catalogoProblema.find((t) => t.codigo === codigo)?.nombre ?? codigo;
   // Los estados salen de la Lista 7 del Checklist. Para elegir, solo los
@@ -100,7 +100,7 @@ export default function ProblemasView({ datos }: { datos: DatosProblemas }) {
   useEffect(() => setMarcas(marcasIniciales(grupos)), [grupos]);
 
   const puedeEditar = puede(ref, "problemas.editar");
-  const puedeGestionar = conGestion && puedeEditar;
+  const puedeGestionar = puedeEditar;
 
   // ── Recorte común a los gráficos y a la lista: cliente, tipo y búsqueda ──
   const q = sinTildes(busqueda.trim());
@@ -386,9 +386,8 @@ export default function ProblemasView({ datos }: { datos: DatosProblemas }) {
         <div ref={lista} className="px-4 md:px-7 scroll-mt-28">
           {pasos.length === 0 && puedeEditar ? (
             <div className="mt-6 px-3.5 py-3 border border-dashed border-black/[.4] text-[13px] opacity-75 max-w-[90ch]">
-              {conGestion
-                ? "Todavía no hay checklist de gestión. Agrega los pasos en Maestros › Checklist › Lista 6 «Gestión de problemas» y aparecen en cada problema para ir marcándolos."
-                : "El checklist de gestión de problemas necesita la migración 015 en la base."}
+              Todavía no hay checklist de gestión. Agrega los pasos en Maestros › Checklist › Lista 6 «Gestión de
+              problemas» y aparecen en cada problema para ir marcándolos.
             </div>
           ) : null}
 

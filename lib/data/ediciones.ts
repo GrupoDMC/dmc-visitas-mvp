@@ -5,7 +5,6 @@ import {
   DIAS_PARA_EDITAR,
   escribirInternos,
   escribirTrabajos,
-  faltaMigracionEdicion,
   getVisitaCompletaPorFolio,
   insertarFoto,
   insertarItemsDeProblema,
@@ -16,7 +15,7 @@ import {
   type SubtrabajoActa,
   type TrabajoActa,
 } from "@/lib/data/visitas";
-import { cargoDelChecklist, hayCargos, listarInternos, listarMotivos, listarProblemas, listarTrabajos } from "@/lib/data/catalogos";
+import { cargoDelChecklist, listarInternos, listarMotivos, listarProblemas, listarTrabajos } from "@/lib/data/catalogos";
 import { rutLimpio } from "@/lib/ui/formato";
 import type { EstadoVisita, OrigenRegistro, Visita } from "@/lib/types";
 
@@ -99,7 +98,6 @@ const SECCION = {
 
 const PLAZO_VENCIDO = `Ya pasó el plazo de ${DIAS_PARA_EDITAR === 1 ? "un día" : `${DIAS_PARA_EDITAR} días`} para editar esta acta desde el celular. Pídele el cambio a coordinación.`;
 const EDITADA_POR_OTRO = "Esta acta se editó mientras la tenías abierta. Vuelve a abrirla para ver cómo quedó.";
-const FALTA_MIGRACION = "Falta aplicar la migración 013 en la base de datos. Avísale al administrador.";
 
 /** Un rechazo a mitad de la transacción: deshace lo escrito y llega como mensaje. */
 class EdicionRechazada extends Error {}
@@ -424,9 +422,8 @@ export async function editarActa(entrada: EdicionActaEntrada, ctx: ContextoEdici
 
   // Un cargo que no cambió se deja como está aunque ya no figure en el checklist;
   // uno nuevo solo vale si es del checklist.
-  const conCargos = await hayCargos();
   let cargo: string | null | undefined = undefined;
-  if (conCargos && entrada.responsableCargo !== undefined) {
+  if (entrada.responsableCargo !== undefined) {
     cargo =
       txt(entrada.responsableCargo) === txt(antes.ejecucion.responsableCargo)
         ? txt(antes.ejecucion.responsableCargo) || null
@@ -619,7 +616,6 @@ export async function editarActa(entrada: EdicionActaEntrada, ctx: ContextoEdici
     });
   } catch (err) {
     if (err instanceof EdicionRechazada) return { ok: false, error: err.message };
-    if (faltaMigracionEdicion(err)) return { ok: false, error: FALTA_MIGRACION };
     throw err;
   }
 }

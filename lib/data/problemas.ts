@@ -1,6 +1,6 @@
 import "server-only";
 import { agrupar, consulta, consultaCon, ejecutar, num, sql, F_FECHA, F_TS, type Parametro } from "@/lib/data/sql";
-import { hayGestionProblemas, listarGestionProblemas } from "@/lib/data/catalogos";
+import { listarGestionProblemas } from "@/lib/data/catalogos";
 import type { GestionMarca } from "@/lib/data/pendientes";
 import { hoyISO } from "@/lib/ui/fecha";
 import type { CatalogoGestionProblema, EstadoProblema, EstadoVisita } from "@/lib/types";
@@ -73,8 +73,6 @@ export interface DatosProblemas {
   grupos: GrupoProblemas[];
   /** La Lista 6 del checklist, en su orden. */
   pasos: CatalogoGestionProblema[];
-  /** false = falta la migración 015: no hay checklist que marcar. */
-  conGestion: boolean;
   /** "Hoy" en Chile: la referencia de las antigüedades y de los gráficos. */
   hoy: string;
 }
@@ -114,7 +112,6 @@ export async function getPanelProblemas(): Promise<DatosProblemas> {
     agenda_estado: EstadoVisita | null;
   }
 
-  const conGestion = await hayGestionProblemas();
   const [filas, items, cambios, marcas, visitas, pasos] = await Promise.all([
     consulta<Fila>(
       `SELECT p.id, p.tipo_codigo, p.estado, p.descripcion, p.solucion,
@@ -164,17 +161,15 @@ export async function getPanelProblemas(): Promise<DatosProblemas> {
         WHERE h.problema_id IN (${DE_VISITA_ACTIVA})
         ORDER BY h.ocurrido_en, h.id`
     ),
-    conGestion
-      ? consulta<{ problema_id: number; codigo: string; en: string; por: string | null }>(
-          `SELECT g.problema_id, g.gestion_codigo AS codigo, ${F_TS("g.marcado_en")} AS en,
-                  COALESCE(tu.nombre_completo, u.email) AS por
-             FROM dmc.problema_gestion g
-             LEFT JOIN dmc.usuario u  ON u.id  = g.usuario_id
-             LEFT JOIN dmc.tecnico tu ON tu.id = u.tecnico_id
-            WHERE g.problema_id IN (${DE_VISITA_ACTIVA})
-            ORDER BY g.marcado_en, g.id`
-        )
-      : [],
+    consulta<{ problema_id: number; codigo: string; en: string; por: string | null }>(
+      `SELECT g.problema_id, g.gestion_codigo AS codigo, ${F_TS("g.marcado_en")} AS en,
+              COALESCE(tu.nombre_completo, u.email) AS por
+         FROM dmc.problema_gestion g
+         LEFT JOIN dmc.usuario u  ON u.id  = g.usuario_id
+         LEFT JOIN dmc.tecnico tu ON tu.id = u.tecnico_id
+        WHERE g.problema_id IN (${DE_VISITA_ACTIVA})
+        ORDER BY g.marcado_en, g.id`
+    ),
     // Las visitas de los locales que alguna vez tuvieron un problema.
     consulta<{
       sucursal_id: number;
@@ -284,7 +279,6 @@ export async function getPanelProblemas(): Promise<DatosProblemas> {
   return {
     grupos: [...grupos.values()].sort((a, b) => b.abiertos - a.abiertos || b.total - a.total),
     pasos,
-    conGestion,
     hoy,
   };
 }
@@ -301,10 +295,6 @@ export async function marcarGestionProblema(input: {
   marcado: boolean;
   usuarioId: number;
 }): Promise<{ error: string } | null> {
-  if (!(await hayGestionProblemas())) {
-    return { error: "Para marcar la gestión falta correr la migración 015 en la base." };
-  }
-
   const [problema] = await consultaCon<{ estado: EstadoProblema }>(
     `SELECT p.estado FROM dmc.problema p JOIN dmc.visita v ON v.id = p.visita_id
       WHERE p.id = @id AND v.activo = 1`,

@@ -23,7 +23,7 @@ export default async function UsuariosPage({
     tiene(sesion.permisos, "usuarios.ver") ? listarUsuarios() : [],
     tiene(sesion.permisos, "tecnicos.ver") ? listarTecnicos() : [],
     tiene(sesion.permisos, "usuarios.contrasenas") ? listarSolicitudesPassword(sesion) : [],
-    tiene(sesion.permisos, "usuarios.ver") || verRoles ? listarRoles() : null,
+    tiene(sesion.permisos, "usuarios.ver") || verRoles ? listarRoles() : [],
     verRoles ? permisosCelular() : [],
   ]);
 

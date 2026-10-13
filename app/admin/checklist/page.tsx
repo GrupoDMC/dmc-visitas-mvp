@@ -1,12 +1,6 @@
 import ChecklistEditor from "@/components/admin/ChecklistEditor";
 import {
   getPlantilla,
-  hayCargos,
-  hayEstadosProblema,
-  hayGestionPendientes,
-  hayGestionProblemas,
-  haySecciones,
-  hayTrabajosPorMotivo,
   listarCargos,
   listarEstadosProblema,
   listarGestionProblemas,
@@ -31,15 +25,9 @@ export default async function ChecklistPage() {
     trabajos,
     internos,
     pendientes,
-    gestionDisponible,
     cargos,
-    cargosDisponible,
     gestionProblemas,
-    gestionProblemasDisponible,
     estadosProblema,
-    estadosProblemaDisponible,
-    trabajosPorMotivoDisponible,
-    seccionesDisponible,
     seccionesMotivo,
     seccionesTrabajo,
     plantilla,
@@ -49,15 +37,9 @@ export default async function ChecklistPage() {
     listarTrabajos(),
     listarInternos(),
     listarPendientes(),
-    hayGestionPendientes(),
     listarCargos(),
-    hayCargos(),
     listarGestionProblemas(),
-    hayGestionProblemas(),
     listarEstadosProblema(),
-    hayEstadosProblema(),
-    hayTrabajosPorMotivo(),
-    haySecciones(),
     listarSecciones("MOTIVO"),
     listarSecciones("TRABAJO"),
     getPlantilla(PLANTILLA_PROPIA),
@@ -70,15 +52,9 @@ export default async function ChecklistPage() {
       trabajosIniciales={trabajos}
       internosIniciales={internos}
       pendientesIniciales={pendientes}
-      gestionDisponible={gestionDisponible}
       cargosIniciales={cargos}
-      cargosDisponible={cargosDisponible}
       gestionProblemasIniciales={gestionProblemas}
-      gestionProblemasDisponible={gestionProblemasDisponible}
       estadosProblemaIniciales={estadosProblema.filter((e) => e.activo)}
-      estadosProblemaDisponible={estadosProblemaDisponible}
-      trabajosPorMotivoDisponible={trabajosPorMotivoDisponible}
-      seccionesDisponible={seccionesDisponible}
       seccionesMotivoIniciales={seccionesMotivo}
       seccionesTrabajoIniciales={seccionesTrabajo}
       plantillaInicial={plantilla}

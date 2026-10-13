@@ -13,7 +13,7 @@ import {
   type Ejecutor,
   type Parametro,
 } from "@/lib/data/sql";
-import { ESTADO_PROBLEMA_CIERRE, ESTADO_PROBLEMA_INICIAL, ESTADOS_PROBLEMA_BASE } from "@/lib/ui/estado";
+import { ESTADO_PROBLEMA_CIERRE, ESTADO_PROBLEMA_INICIAL } from "@/lib/ui/estado";
 import { trabajosDelMotivo } from "@/lib/ui/motivos";
 import type {
   CatalogoEstadoProblema,
@@ -54,34 +54,8 @@ interface FilaMotivo {
   activo: boolean;
 }
 
-/** La Lista 1 y la Lista 3 necesitan la migración 020 para guardar secciones. */
-export class FaltaMigracionSecciones extends Error {
-  constructor() {
-    super("Falta la migración 020: dmc.catalogo_seccion");
-    this.name = "FaltaMigracionSecciones";
-  }
-}
-
-let conSecciones = false;
-
-/**
- * ¿Está la migración 020 (dmc.catalogo_seccion y seccion_id en motivos y
- * trabajos)? Sin ella todo sigue como antes: las listas salen planas.
- */
-export async function haySecciones(): Promise<boolean> {
-  if (conSecciones) return true;
-  const [fila] = await consulta<{ tabla: number | null; motivo: number | null; trabajo: number | null }>(
-    `SELECT OBJECT_ID('dmc.catalogo_seccion', 'U')              AS tabla,
-            COL_LENGTH('dmc.catalogo_motivo', 'seccion_id')     AS motivo,
-            COL_LENGTH('dmc.catalogo_trabajo', 'seccion_id')    AS trabajo`
-  );
-  conSecciones = fila?.tabla != null && fila.motivo != null && fila.trabajo != null;
-  return conSecciones;
-}
-
 /** Las secciones activas de motivos o de trabajos, en su orden. */
 export async function listarSecciones(tipo: "MOTIVO" | "TRABAJO"): Promise<CatalogoSeccion[]> {
-  if (!(await haySecciones())) return [];
   const filas = await consultaCon<{ id: number; nombre: string; orden: number }>(
     `SELECT id, nombre, orden FROM dmc.catalogo_seccion
       WHERE tipo = @tipo AND activo = 1 ORDER BY orden, id`,
@@ -91,15 +65,11 @@ export async function listarSecciones(tipo: "MOTIVO" | "TRABAJO"): Promise<Catal
 }
 
 export async function listarMotivos(): Promise<CatalogoMotivo[]> {
-  const conSeccion = await haySecciones();
   const filas = await consulta<FilaMotivo & { seccion: string | null; seccion_orden: number | null }>(
-    conSeccion
-      ? `SELECT m.id, m.codigo, m.nombre, m.orden, m.activo, s.nombre AS seccion, s.orden AS seccion_orden
-           FROM dmc.catalogo_motivo m
-           LEFT JOIN dmc.catalogo_seccion s ON s.id = m.seccion_id AND s.activo = 1
-          WHERE m.activo = 1 ORDER BY m.orden, m.id`
-      : `SELECT id, codigo, nombre, orden, activo, CAST(NULL AS nvarchar(80)) AS seccion, CAST(NULL AS smallint) AS seccion_orden
-           FROM dmc.catalogo_motivo WHERE activo = 1 ORDER BY orden, id`
+    `SELECT m.id, m.codigo, m.nombre, m.orden, m.activo, s.nombre AS seccion, s.orden AS seccion_orden
+       FROM dmc.catalogo_motivo m
+       LEFT JOIN dmc.catalogo_seccion s ON s.id = m.seccion_id AND s.activo = 1
+      WHERE m.activo = 1 ORDER BY m.orden, m.id`
   );
   return filas.map((f) => ({
     id: num(f.id),
@@ -186,36 +156,14 @@ interface FilaSubtrabajo {
   activo: boolean;
 }
 
-let conOrdenPorMotivo = false;
-
-/**
- * ¿Está la migración 019 (dmc.catalogo_motivo_trabajo.orden)? Con ella cada
- * motivo ordena sus trabajos y un trabajo sin motivos no se ofrece en ninguno.
- * Sin ella sigue la regla de antes: sin motivos = en todos.
- */
-export async function hayTrabajosPorMotivo(): Promise<boolean> {
-  if (conOrdenPorMotivo) return true;
-  const [fila] = await consulta<{ largo: number | null }>(
-    `SELECT COL_LENGTH('dmc.catalogo_motivo_trabajo', 'orden') AS largo`
-  );
-  conOrdenPorMotivo = fila?.largo != null;
-  return conOrdenPorMotivo;
-}
-
 export async function listarTrabajos(): Promise<CatalogoTrabajo[]> {
-  const conOrden = await hayTrabajosPorMotivo();
-  const conSeccion = await haySecciones();
-  const [filas, subs, enlaces, motivos] = await Promise.all([
+  const [filas, subs, enlaces] = await Promise.all([
     consulta<FilaTrabajo & { seccion: string | null; seccion_orden: number | null }>(
-      conSeccion
-        ? `SELECT t.id, t.codigo, t.nombre, t.grupo_label, t.singular, t.orden, t.activo,
-                  s.nombre AS seccion, s.orden AS seccion_orden
-             FROM dmc.catalogo_trabajo t
-             LEFT JOIN dmc.catalogo_seccion s ON s.id = t.seccion_id AND s.activo = 1
-            WHERE t.activo = 1 ORDER BY t.orden, t.id`
-        : `SELECT id, codigo, nombre, grupo_label, singular, orden, activo,
-                  CAST(NULL AS nvarchar(80)) AS seccion, CAST(NULL AS smallint) AS seccion_orden
-             FROM dmc.catalogo_trabajo WHERE activo = 1 ORDER BY orden, id`
+      `SELECT t.id, t.codigo, t.nombre, t.grupo_label, t.singular, t.orden, t.activo,
+              s.nombre AS seccion, s.orden AS seccion_orden
+         FROM dmc.catalogo_trabajo t
+         LEFT JOIN dmc.catalogo_seccion s ON s.id = t.seccion_id AND s.activo = 1
+        WHERE t.activo = 1 ORDER BY t.orden, t.id`
     ),
     consulta<FilaSubtrabajo>(
       `SELECT id, trabajo_id, etiqueta, orden, permite_cantidad, activo
@@ -223,21 +171,17 @@ export async function listarTrabajos(): Promise<CatalogoTrabajo[]> {
     ),
     // Solo los motivos activos: los enlaces de uno dado de baja no cuentan.
     consulta<{ trabajo_id: number; codigo: string; orden: number }>(
-      `SELECT mt.trabajo_id, m.codigo, ${conOrden ? "mt.orden" : "CAST(0 AS smallint)"} AS orden
+      `SELECT mt.trabajo_id, m.codigo, mt.orden
          FROM dmc.catalogo_motivo_trabajo mt
          JOIN dmc.catalogo_motivo m ON m.id = mt.motivo_id AND m.activo = 1
         ORDER BY m.orden, m.id`
     ),
-    conOrden ? Promise.resolve([]) : listarMotivos(),
   ]);
 
   const porTrabajo = agrupar(subs, (s) => num(s.trabajo_id));
   const motivosPorTrabajo = agrupar(enlaces, (e) => num(e.trabajo_id));
   return filas.map((f) => {
-    // Sin la migración 019, un trabajo sin motivos se sigue ofreciendo en
-    // todos: se resuelve acá para que el resto de la app use una sola regla.
-    const suyos = motivosPorTrabajo.get(num(f.id)) ?? [];
-    const enlazados = suyos.length || conOrden ? suyos : motivos.map((m) => ({ codigo: m.codigo, orden: f.orden }));
+    const enlazados = motivosPorTrabajo.get(num(f.id)) ?? [];
     return {
       id: num(f.id),
       codigo: f.codigo,
@@ -257,8 +201,7 @@ export async function listarTrabajos(): Promise<CatalogoTrabajo[]> {
         })
       ),
       motivosCodigos: enlazados.map((e) => e.codigo),
-      // Sin la migración 019 la columna no existe y manda el orden global.
-      ordenEnMotivo: Object.fromEntries(enlazados.map((e) => [e.codigo, conOrden ? e.orden : f.orden])),
+      ordenEnMotivo: Object.fromEntries(enlazados.map((e) => [e.codigo, e.orden])),
       seccion: f.seccion,
       seccionOrden: f.seccion_orden ?? 0,
     };
@@ -279,29 +222,8 @@ export async function listarInternos(): Promise<CatalogoInterno[]> {
   }));
 }
 
-/** La Lista 5 necesita la migración 014. Sin ella el resto del checklist sigue andando. */
-export class FaltaMigracionPendientes extends Error {
-  constructor() {
-    super("Falta la migración 014: dmc.catalogo_pendiente");
-    this.name = "FaltaMigracionPendientes";
-  }
-}
-
-let conGestion = false;
-
-/** ¿Está la migración 014? Una vez que aparece no se vuelve a preguntar. */
-export async function hayGestionPendientes(): Promise<boolean> {
-  if (conGestion) return true;
-  const [fila] = await consulta<{ id: number | null }>(
-    `SELECT OBJECT_ID('dmc.visita_pendiente_gestion', 'U') AS id`
-  );
-  conGestion = fila?.id != null;
-  return conGestion;
-}
-
 /** Los pasos del checklist de gestión de reagendas y pendientes. */
 export async function listarPendientes(): Promise<CatalogoPendiente[]> {
-  if (!(await hayGestionPendientes())) return [];
   const filas = await consulta<FilaMotivo>(
     `SELECT id, codigo, nombre, orden, activo
        FROM dmc.catalogo_pendiente WHERE activo = 1 ORDER BY orden, id`
@@ -315,27 +237,8 @@ export async function listarPendientes(): Promise<CatalogoPendiente[]> {
   }));
 }
 
-/** La lista de cargos necesita la migración 022. Sin ella el resto del checklist sigue andando. */
-export class FaltaMigracionCargos extends Error {
-  constructor() {
-    super("Falta la migración 022: dmc.catalogo_cargo");
-    this.name = "FaltaMigracionCargos";
-  }
-}
-
-let conCargos = false;
-
-/** ¿Está la migración 022? Una vez que aparece no se vuelve a preguntar. */
-export async function hayCargos(): Promise<boolean> {
-  if (conCargos) return true;
-  const [fila] = await consulta<{ id: number | null }>(`SELECT OBJECT_ID('dmc.catalogo_cargo', 'U') AS id`);
-  conCargos = fila?.id != null;
-  return conCargos;
-}
-
 /** Los cargos que se ofrecen para el responsable de tienda. */
 export async function listarCargos(): Promise<CatalogoCargo[]> {
-  if (!(await hayCargos())) return [];
   const filas = await consulta<FilaMotivo>(
     `SELECT id, codigo, nombre, orden, activo
        FROM dmc.catalogo_cargo WHERE activo = 1 ORDER BY orden, id`
@@ -350,8 +253,8 @@ export async function listarCargos(): Promise<CatalogoCargo[]> {
 }
 
 /**
- * El cargo como está escrito en el checklist, o null si no es uno de la lista
- * (o no hay migración). Es lo único que se guarda en una visita: así un texto
+ * El cargo como está escrito en el checklist, o null si no es uno de la lista.
+ * Es lo único que se guarda en una visita: así un texto
  * suelto no se cuela y la mayúscula siempre es la del checklist.
  */
 export async function cargoDelChecklist(nombre: string | null | undefined): Promise<string | null> {
@@ -360,27 +263,8 @@ export async function cargoDelChecklist(nombre: string | null | undefined): Prom
   return (await listarCargos()).find((c) => c.nombre.trim().toLowerCase() === buscado)?.nombre ?? null;
 }
 
-/** La Lista 6 necesita la migración 015. Sin ella el resto del checklist sigue andando. */
-export class FaltaMigracionGestionProblemas extends Error {
-  constructor() {
-    super("Falta la migración 015: dmc.catalogo_problema_gestion");
-    this.name = "FaltaMigracionGestionProblemas";
-  }
-}
-
-let conGestionProblemas = false;
-
-/** ¿Está la migración 015? Una vez que aparece no se vuelve a preguntar. */
-export async function hayGestionProblemas(): Promise<boolean> {
-  if (conGestionProblemas) return true;
-  const [fila] = await consulta<{ id: number | null }>(`SELECT OBJECT_ID('dmc.problema_gestion', 'U') AS id`);
-  conGestionProblemas = fila?.id != null;
-  return conGestionProblemas;
-}
-
 /** Los pasos del checklist de gestión de problemas. */
 export async function listarGestionProblemas(): Promise<CatalogoGestionProblema[]> {
-  if (!(await hayGestionProblemas())) return [];
   const filas = await consulta<FilaMotivo>(
     `SELECT id, codigo, nombre, orden, activo
        FROM dmc.catalogo_problema_gestion WHERE activo = 1 ORDER BY orden, id`
@@ -394,33 +278,12 @@ export async function listarGestionProblemas(): Promise<CatalogoGestionProblema[
   }));
 }
 
-/** La Lista 7 necesita la migración 016. Sin ella siguen los tres estados de siempre. */
-export class FaltaMigracionEstadosProblema extends Error {
-  constructor() {
-    super("Falta la migración 016: dmc.catalogo_problema_estado");
-    this.name = "FaltaMigracionEstadosProblema";
-  }
-}
-
-let conEstadosProblema = false;
-
-/** ¿Está la migración 016? Una vez que aparece no se vuelve a preguntar. */
-export async function hayEstadosProblema(): Promise<boolean> {
-  if (conEstadosProblema) return true;
-  const [fila] = await consulta<{ id: number | null }>(
-    `SELECT OBJECT_ID('dmc.catalogo_problema_estado', 'U') AS id`
-  );
-  conEstadosProblema = fila?.id != null;
-  return conEstadosProblema;
-}
-
 /**
  * Los estados de un problema, en su orden. Vienen también los inactivos: un
  * problema que quedó en un estado ya quitado tiene que seguir mostrando su
  * nombre. Quien ofrece estados para elegir filtra por `activo`.
  */
 export async function listarEstadosProblema(): Promise<CatalogoEstadoProblema[]> {
-  if (!(await hayEstadosProblema())) return ESTADOS_PROBLEMA_BASE;
   const filas = await consulta<FilaMotivo>(
     `SELECT id, codigo, nombre, orden, activo
        FROM dmc.catalogo_problema_estado ORDER BY activo DESC, orden, id`
@@ -558,7 +421,7 @@ export interface TrabajoBorrador {
   /** Su sección, por nombre (debe estar en `seccionesTrabajo`). Null o ausente = sin sección. */
   seccion?: string | null;
   /**
-   * Solo plantillas guardadas antes de la migración 019: los motivos del
+   * Solo plantillas guardadas antes de los trabajos por motivo: los motivos del
    * trabajo, por nombre, con vacío = todos. Ahora la relación viaja en
    * `motivos[].trabajos`.
    */
@@ -617,15 +480,6 @@ export async function guardarChecklist(borrador: BorradorChecklist): Promise<Res
 
 async function guardarChecklistEn(ej: Ejecutor, borrador: BorradorChecklist): Promise<ResumenChecklist> {
   let desactivados = 0;
-
-  // Sin la migración 020 las secciones no tienen dónde vivir: se avisa antes de
-  // escribir nada, no a medio guardado.
-  const traeSecciones =
-    Boolean(borrador.seccionesMotivo?.some((s) => s.trim())) ||
-    Boolean(borrador.seccionesTrabajo?.some((s) => s.trim())) ||
-    borrador.motivos.some((m) => m.seccion?.trim()) ||
-    borrador.trabajos.some((t) => t.seccion?.trim());
-  if (traeSecciones && !(await haySecciones())) throw new FaltaMigracionSecciones();
 
   // ── Motivos ──
   const motivos = await guardarListaSimple(ej, "dmc.catalogo_motivo", borrador.motivos, "MOTIVO");
@@ -725,7 +579,7 @@ async function guardarChecklistEn(ej: Ejecutor, borrador: BorradorChecklist): Pr
   // ── Qué trabajos van en cada motivo ──
   await guardarTrabajosPorMotivo(ej, borrador.motivos, motivos.idPorNombre, trabajoPorNombre);
 
-  // ── Secciones de motivos y de trabajos ── (migración 020)
+  // ── Secciones de motivos y de trabajos ──
   await guardarSecciones(ej, borrador, motivos.idPorNombre, trabajoPorNombre);
 
   // ── Checklist del comentario interno ──
@@ -741,66 +595,44 @@ async function guardarChecklistEn(ej: Ejecutor, borrador: BorradorChecklist): Pr
   }
 
   // ── Checklist de gestión de pendientes ──
-  // Igual que el interno: sin la lista en el borrador no se toca. Y sin la
-  // migración 014 solo se reclama si de verdad hay algo que guardar en ella.
-  let vivosPendiente = 0;
-  if (await hayGestionPendientes()) {
-    if (borrador.pendientes) {
-      const pendientes = await guardarListaSimple(ej, "dmc.catalogo_pendiente", borrador.pendientes, "PENDIENTE");
-      vivosPendiente = pendientes.vivos.length;
-      desactivados += pendientes.desactivados;
-    } else {
-      vivosPendiente = (await listarPendientes()).length;
-    }
-  } else if (borrador.pendientes?.some((x) => x.nombre.trim())) {
-    throw new FaltaMigracionPendientes();
+  // Igual que el interno: sin la lista en el borrador no se toca.
+  let vivosPendiente: number;
+  if (borrador.pendientes) {
+    const pendientes = await guardarListaSimple(ej, "dmc.catalogo_pendiente", borrador.pendientes, "PENDIENTE");
+    vivosPendiente = pendientes.vivos.length;
+    desactivados += pendientes.desactivados;
+  } else {
+    vivosPendiente = (await listarPendientes()).length;
   }
 
-  // ── Cargos del responsable ── (misma regla, con la migración 022)
-  let vivosCargo = 0;
-  if (await hayCargos()) {
-    if (borrador.cargos) {
-      const cargos = await guardarListaSimple(ej, "dmc.catalogo_cargo", borrador.cargos, "CARGO");
-      vivosCargo = cargos.vivos.length;
-      desactivados += cargos.desactivados;
-    } else {
-      vivosCargo = (await listarCargos()).length;
-    }
-  } else if (borrador.cargos?.some((x) => x.nombre.trim())) {
-    throw new FaltaMigracionCargos();
+  // ── Cargos del responsable ── (misma regla)
+  let vivosCargo: number;
+  if (borrador.cargos) {
+    const cargos = await guardarListaSimple(ej, "dmc.catalogo_cargo", borrador.cargos, "CARGO");
+    vivosCargo = cargos.vivos.length;
+    desactivados += cargos.desactivados;
+  } else {
+    vivosCargo = (await listarCargos()).length;
   }
 
-  // ── Checklist de gestión de problemas ── (misma regla, con la migración 015)
-  let vivosGestionProblema = 0;
-  if (await hayGestionProblemas()) {
-    if (borrador.gestionProblemas) {
-      const gestion = await guardarListaSimple(ej, "dmc.catalogo_problema_gestion", borrador.gestionProblemas, "GESTION");
-      vivosGestionProblema = gestion.vivos.length;
-      desactivados += gestion.desactivados;
-    } else {
-      vivosGestionProblema = (await listarGestionProblemas()).length;
-    }
-  } else if (borrador.gestionProblemas?.some((x) => x.nombre.trim())) {
-    throw new FaltaMigracionGestionProblemas();
+  // ── Checklist de gestión de problemas ── (misma regla)
+  let vivosGestionProblema: number;
+  if (borrador.gestionProblemas) {
+    const gestion = await guardarListaSimple(ej, "dmc.catalogo_problema_gestion", borrador.gestionProblemas, "GESTION");
+    vivosGestionProblema = gestion.vivos.length;
+    desactivados += gestion.desactivados;
+  } else {
+    vivosGestionProblema = (await listarGestionProblemas()).length;
   }
 
-  // ── Estados del problema ── (migración 016)
-  // Sin la migración solo se reclama si la lista dejó de ser la de siempre.
-  let vivosEstado = ESTADOS_PROBLEMA_BASE.length;
-  if (await hayEstadosProblema()) {
-    if (borrador.estadosProblema) {
-      const estados = await guardarEstadosProblema(ej, borrador.estadosProblema);
-      vivosEstado = estados.vivos;
-      desactivados += estados.desactivados;
-    } else {
-      vivosEstado = (await listarEstadosProblema()).filter((e) => e.activo).length;
-    }
-  } else if (borrador.estadosProblema) {
-    const nombres = borrador.estadosProblema.map((e) => e.nombre.trim()).filter(Boolean);
-    const deSiempre = ESTADOS_PROBLEMA_BASE.map((e) => e.nombre);
-    if (nombres.length !== deSiempre.length || nombres.some((n, i) => n !== deSiempre[i])) {
-      throw new FaltaMigracionEstadosProblema();
-    }
+  // ── Estados del problema ── (misma regla)
+  let vivosEstado: number;
+  if (borrador.estadosProblema) {
+    const estados = await guardarEstadosProblema(ej, borrador.estadosProblema);
+    vivosEstado = estados.vivos;
+    desactivados += estados.desactivados;
+  } else {
+    vivosEstado = (await listarEstadosProblema()).filter((e) => e.activo).length;
   }
 
   return {
@@ -827,7 +659,6 @@ async function guardarSecciones(
   motivoPorNombre: Map<string, number>,
   trabajoPorNombre: Map<string, number>
 ): Promise<void> {
-  if (!(await haySecciones())) return;
   await guardarSeccionesDe(ej, "MOTIVO", "dmc.catalogo_motivo", borrador.seccionesMotivo, borrador.motivos, motivoPorNombre);
   await guardarSeccionesDe(
     ej,
@@ -941,14 +772,13 @@ async function guardarTrabajosPorMotivo(
   }
   if (!tocados.length) return;
 
-  const conOrden = await hayTrabajosPorMotivo();
   await ej.ejecutar(`DELETE FROM dmc.catalogo_motivo_trabajo WHERE motivo_id IN ${subIds("tocados")}`, [
     paramIds("tocados", tocados),
   ]);
   if (!enlaces.length) return;
   await ej.ejecutar(
-    `INSERT INTO dmc.catalogo_motivo_trabajo (motivo_id, trabajo_id${conOrden ? ", orden" : ""})
-     SELECT m, t${conOrden ? ", o" : ""}
+    `INSERT INTO dmc.catalogo_motivo_trabajo (motivo_id, trabajo_id, orden)
+     SELECT m, t, o
        FROM OPENJSON(@enlaces) WITH (m bigint '$.m', t bigint '$.t', o smallint '$.o')`,
     [["enlaces", sql.NVarChar(sql.MAX), JSON.stringify(enlaces)]]
   );
@@ -1198,7 +1028,7 @@ async function leerPlantilla(nombre: string): Promise<{ fila: FilaPlantilla; dat
         motivos: datos.motivos ?? [],
         problemas: datos.problemas ?? [],
         trabajos: datos.trabajos ?? [],
-        // Plantillas guardadas antes de la migración 020: sin secciones.
+        // Plantillas guardadas antes de que existieran las secciones: sin ellas.
         seccionesMotivo: datos.seccionesMotivo,
         seccionesTrabajo: datos.seccionesTrabajo,
         // Plantillas guardadas antes de que existieran: sin estas listas.
@@ -1255,7 +1085,7 @@ export async function aplicarPlantilla(nombre: string): Promise<ResumenChecklist
   const idPorNombre = <T extends { id: number; nombre: string }>(lista: T[], buscado: string) =>
     lista.find((x) => x.nombre.trim().toLowerCase() === buscado.trim().toLowerCase())?.id ?? null;
 
-  // Una plantilla fijada antes de la migración 019 trae la relación al revés:
+  // Una plantilla fijada antes de los trabajos por motivo trae la relación al revés:
   // cada trabajo con sus motivos, y sin motivos quería decir «en todos».
   const deTrabajos = !leida.datos.motivos.some((m) => m.trabajos);
   const trabajosDe = (motivo: string) =>
@@ -1267,7 +1097,7 @@ export async function aplicarPlantilla(nombre: string): Promise<ResumenChecklist
       .map((t) => t.nombre);
 
   const borrador: BorradorChecklist = {
-    // Una plantilla sin secciones (anterior a la migración 020) las deja como están.
+    // Una plantilla sin secciones (anterior a ellas) las deja como están.
     seccionesMotivo: leida.datos.seccionesMotivo,
     seccionesTrabajo: leida.datos.seccionesTrabajo,
     motivos: leida.datos.motivos.map((m) => ({

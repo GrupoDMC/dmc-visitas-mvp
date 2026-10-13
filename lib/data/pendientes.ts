@@ -1,6 +1,6 @@
 import "server-only";
 import { agrupar, consulta, consultaCon, ejecutar, num, sql, F_TS, type Parametro } from "@/lib/data/sql";
-import { hayGestionPendientes, listarPendientes } from "@/lib/data/catalogos";
+import { listarPendientes } from "@/lib/data/catalogos";
 import { getVisitasCompletas } from "@/lib/data/visitas";
 import { hoyISO } from "@/lib/ui/fecha";
 import type { CatalogoPendiente, EstadoProblema, EstadoVisita, OrigenRegistro, Visita } from "@/lib/types";
@@ -64,15 +64,12 @@ export interface DatosPendientes {
   historial: Record<number, HistorialLocal>;
   /** La Lista 5 del checklist, en su orden. */
   pasos: CatalogoPendiente[];
-  /** false = falta la migración 014: no hay checklist que marcar. */
-  conGestion: boolean;
 }
 
 const diasEntre = (desde: string, hasta: string) =>
   Math.max(0, Math.round((Date.parse(`${hasta}T00:00:00Z`) - Date.parse(`${desde}T00:00:00Z`)) / 86_400_000));
 
 export async function getPendientes(): Promise<DatosPendientes> {
-  const conGestion = await hayGestionPendientes();
   const [todas, pasos, desde, marcas] = await Promise.all([
     getVisitasCompletas(),
     listarPendientes(),
@@ -89,18 +86,16 @@ export async function getPendientes(): Promise<DatosPendientes> {
          LEFT JOIN dmc.tecnico th ON th.id = h.tecnico_id
         WHERE v.estado IN ('REAGENDADA', 'PENDIENTE') AND v.activo = 1`
     ),
-    conGestion
-      ? consulta<{ visita_id: number; codigo: string; en: string; por: string | null }>(
-          `SELECT g.visita_id, g.pendiente_codigo AS codigo, ${F_TS("g.marcado_en")} AS en,
-                  COALESCE(tu.nombre_completo, u.email) AS por
-             FROM dmc.visita_pendiente_gestion g
-             JOIN dmc.visita v ON v.id = g.visita_id
-             LEFT JOIN dmc.usuario u  ON u.id  = g.usuario_id
-             LEFT JOIN dmc.tecnico tu ON tu.id = u.tecnico_id
-            WHERE v.estado IN ('REAGENDADA', 'PENDIENTE') AND v.activo = 1
-            ORDER BY g.marcado_en, g.id`
-        )
-      : [],
+    consulta<{ visita_id: number; codigo: string; en: string; por: string | null }>(
+      `SELECT g.visita_id, g.pendiente_codigo AS codigo, ${F_TS("g.marcado_en")} AS en,
+              COALESCE(tu.nombre_completo, u.email) AS por
+         FROM dmc.visita_pendiente_gestion g
+         JOIN dmc.visita v ON v.id = g.visita_id
+         LEFT JOIN dmc.usuario u  ON u.id  = g.usuario_id
+         LEFT JOIN dmc.tecnico tu ON tu.id = u.tecnico_id
+        WHERE v.estado IN ('REAGENDADA', 'PENDIENTE') AND v.activo = 1
+        ORDER BY g.marcado_en, g.id`
+    ),
   ]);
 
   const hoy = hoyISO();
@@ -165,7 +160,7 @@ export async function getPendientes(): Promise<DatosPendientes> {
     }
   }
 
-  return { pendientes, historial, pasos, conGestion };
+  return { pendientes, historial, pasos };
 }
 
 /**
@@ -181,10 +176,6 @@ export async function marcarGestionPendiente(input: {
   marcado: boolean;
   usuarioId: number;
 }): Promise<{ error: string } | null> {
-  if (!(await hayGestionPendientes())) {
-    return { error: "Para marcar la gestión falta correr la migración 014 en la base." };
-  }
-
   const [visita] = await consultaCon<{ id: number; estado: EstadoVisita }>(
     `SELECT id, estado FROM dmc.visita WHERE folio = @folio AND activo = 1`,
     [["folio", sql.VarChar(16), input.folio]]

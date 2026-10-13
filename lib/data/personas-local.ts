@@ -3,9 +3,9 @@ import { log } from "@/lib/log";
 import { consultaCon, ejecutar, num, sql, F_TS } from "@/lib/data/sql";
 import type { PersonaLocal } from "@/lib/types";
 
-// Quienes han recibido o firmado en cada tienda (dmc.persona_local, migración
-// 021). Es una ayuda para no reescribir datos: si la tabla no existe todavía o
-// la escritura falla, la visita se agenda y el acta se cierra igual.
+// Quienes han recibido o firmado en cada tienda (dmc.persona_local). Es una
+// ayuda para no reescribir datos: si la lectura o la escritura falla, la visita
+// se agenda y el acta se cierra igual.
 
 export interface DatosPersona {
   nombre: string | null | undefined;
@@ -28,7 +28,7 @@ export async function tecnicoTieneVisitaEn(tecnicoId: number, sucursalId: number
   return Boolean(fila);
 }
 
-/** Las personas de una tienda, la más reciente primero. Vacío si falta la migración. */
+/** Las personas de una tienda, la más reciente primero. Vacío si la lectura falla. */
 export async function listarPersonasLocal(sucursalId: number): Promise<PersonaLocal[]> {
   try {
     const filas = await consultaCon<{

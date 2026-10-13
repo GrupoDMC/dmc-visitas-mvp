@@ -1036,6 +1036,16 @@ GO
 CREATE INDEX ix_auditoria_usuario ON dmc.auditoria (usuario_id, creado_en DESC) WHERE usuario_id IS NOT NULL;
 GO
 
+-- Versión del esquema (migración 025): una fila por migración aplicada; la
+-- versión es la mayor. La app la compara con la que necesita en /api/salud.
+CREATE TABLE dmc.schema_version (
+    version      smallint       NOT NULL,
+    descripcion  nvarchar(200)  NOT NULL,
+    aplicada_en  datetime2(0)   NOT NULL CONSTRAINT df_schema_version_aplicada DEFAULT (SYSDATETIME()),
+    CONSTRAINT pk_schema_version PRIMARY KEY (version)
+);
+GO
+
 /* =====================================================================
    9. TRIGGERS
    ===================================================================== */
@@ -1267,6 +1277,14 @@ FROM (VALUES
         ('malls.ver'), ('malls.crear'), ('malls.editar'),
         ('checklist.ver'), ('checklist.editar')
 ) AS x(permiso);
+GO
+
+/* =====================================================================
+   12. VERSIÓN DEL ESQUEMA
+   ===================================================================== */
+/* Este archivo ya trae todo hasta la migración 025. */
+INSERT INTO dmc.schema_version (version, descripcion)
+VALUES (25, N'Esquema base (incluye las migraciones 002 a 025)');
 GO
 
 

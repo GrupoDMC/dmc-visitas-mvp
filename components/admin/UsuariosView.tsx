@@ -36,8 +36,7 @@ export default function UsuariosView({
   usuarios: Usuario[];
   tecnicos: Tecnico[];
   solicitudes: SolicitudPassword[];
-  /** null si la base todavía no tiene la migración 008. */
-  roles: Rol[] | null;
+  roles: Rol[];
   /** Lo que pueden hacer los técnicos desde el celular. */
   permisosCelular: string[];
   vistaInicial?: Vista;
@@ -66,13 +65,13 @@ export default function UsuariosView({
         ...(verContrasenas
           ? [{ clave: "contrasenas", label: "Contraseñas pedidas", n: pendientes, urgente: true }]
           : []),
-        ...(verRoles ? [{ clave: "roles", label: "Roles y permisos", n: roles?.length }] : []),
+        ...(verRoles ? [{ clave: "roles", label: "Roles y permisos", n: roles.length }] : []),
       ]}
     />
   );
 
   return vista === "cuentas" ? (
-    <UsuariosTable usuarios={usuarios} tecnicos={tecnicos} roles={roles ?? []} pestanas={pestanas} />
+    <UsuariosTable usuarios={usuarios} tecnicos={tecnicos} roles={roles} pestanas={pestanas} />
   ) : vista === "tecnicos" ? (
     <TecnicosTable tecnicos={tecnicos} pestanas={pestanas} />
   ) : vista === "roles" ? (
