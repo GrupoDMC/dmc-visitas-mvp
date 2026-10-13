@@ -54,9 +54,8 @@ interface Filtro {
 
 // Una visita eliminada (activo = 0) no es "otro estado": es como si no
 // existiera para el panel, el celular y los gráficos. Por eso el filtro va
-// acá, en la base que comparten todas las lecturas, y no repetido en cada
+// acá, en cada filtro que comparten todas las lecturas, y no repetido en cada
 // pantalla.
-const TODAS: Filtro = { where: "v.activo = 1", params: [] };
 
 /** Las del técnico asignado y también en las que va de ayudante. */
 function porTecnico(tecnicoId: number): Filtro {
@@ -66,30 +65,12 @@ function porTecnico(tecnicoId: number): Filtro {
   };
 }
 
-function porSucursal(sucursalId: number): Filtro {
-  return { where: "v.sucursal_id = @f_sucursal AND v.activo = 1", params: [["f_sucursal", sql.BigInt, sucursalId]] };
-}
-
-function porCliente(clienteId: number): Filtro {
-  return { where: "v.cliente_id = @f_cliente AND v.activo = 1", params: [["f_cliente", sql.BigInt, clienteId]] };
-}
-
-/** Por la tienda: es el mall donde está hoy la tienda, no donde estaba el día de la visita. */
-function porMall(mallId: number): Filtro {
-  return {
-    where: "v.sucursal_id IN (SELECT s.id FROM dmc.sucursal s WHERE s.mall_id = @f_mall) AND v.activo = 1",
-    params: [["f_mall", sql.BigInt, mallId]],
-  };
-}
-
 function porFolio(folio: string): Filtro {
   return { where: "v.folio = @f_folio AND v.activo = 1", params: [["f_folio", sql.VarChar(16), folio]] };
 }
 
-// Las eliminadas: solo las lee el administrador, y siempre por estas dos
-// puertas aparte para que ninguna otra lectura las traiga por descuido.
-const ELIMINADAS: Filtro = { where: "v.activo = 0", params: [] };
-
+// Las eliminadas: solo las lee el administrador, y siempre por puertas aparte
+// para que ninguna otra lectura las traiga por descuido.
 function eliminadaPorFolio(folio: string): Filtro {
   return { where: "v.folio = @f_folio AND v.activo = 0", params: [["f_folio", sql.VarChar(16), folio]] };
 }
@@ -97,6 +78,19 @@ function eliminadaPorFolio(folio: string): Filtro {
 function porId(id: number): Filtro {
   return { where: "v.id = @f_id AND v.activo = 1", params: [["f_id", sql.BigInt, id]] };
 }
+
+/** Una página ya elegida por id (ver visitas-lista.ts). Vigentes o eliminadas, nunca mezcladas. */
+function porIds(ids: number[], eliminadas: boolean): Filtro {
+  return { where: `v.id IN ${subIds("f_ids")} AND v.activo = ${eliminadas ? 0 : 1}`, params: [paramIds("f_ids", ids)] };
+}
+
+/** Todas las de los locales que hoy tienen una visita reagendada o pendiente. */
+const DE_LOCALES_CON_PENDIENTES: Filtro = {
+  where: `v.activo = 1 AND v.sucursal_id IN
+            (SELECT p.sucursal_id FROM dmc.visita p
+              WHERE p.estado IN ('REAGENDADA', 'PENDIENTE') AND p.activo = 1)`,
+  params: [],
+};
 
 /** `WHERE <hija>.visita_id IN (…)` con el mismo criterio que la consulta madre. */
 function subconsultaIds(filtro: Filtro): string {
@@ -730,25 +724,26 @@ function mapearProblema(x: FilaProblema, itemsPorProblema: Map<number, FilaItem[
 
 // ── Lectura ─────────────────────────────────────────────────────────────────
 
-export function getVisitasCompletas(): Promise<Visita[]> {
-  return cargar(TODAS);
+/**
+ * Las visitas de esos ids, completas y en el orden de la lista. Las eliminadas
+ * solo con `eliminadas`, que pide el administrador (quien llama comprueba el
+ * rol), y vienen con quién las eliminó.
+ */
+export async function getVisitasPorIds(ids: number[], opciones: { eliminadas?: boolean } = {}): Promise<Visita[]> {
+  if (ids.length === 0) return [];
+  const visitas = await cargar(porIds(ids, Boolean(opciones.eliminadas)));
+  return opciones.eliminadas ? conEliminacion(visitas) : visitas;
+}
+
+/** Las visitas de los locales con algo reagendado o pendiente: lo que necesita esa vista. */
+export function getVisitasDeLocalesConPendientes(): Promise<Visita[]> {
+  return cargar(DE_LOCALES_CON_PENDIENTES);
 }
 
 export function getVisitasPorTecnico(tecnicoId: number): Promise<Visita[]> {
   return cargar(porTecnico(tecnicoId));
 }
 
-export function getVisitasPorSucursal(sucursalId: number): Promise<Visita[]> {
-  return cargar(porSucursal(sucursalId));
-}
-
-export function getVisitasPorCliente(clienteId: number): Promise<Visita[]> {
-  return cargar(porCliente(clienteId));
-}
-
-export function getVisitasPorMall(mallId: number): Promise<Visita[]> {
-  return cargar(porMall(mallId));
-}
 
 export async function getVisitaCompletaPorFolio(folio: string): Promise<Visita | undefined> {
   const [visita] = await cargar(porFolio(folio));
@@ -758,14 +753,6 @@ export async function getVisitaCompletaPorFolio(folio: string): Promise<Visita |
 export async function getVisitaCompleta(id: number): Promise<Visita | undefined> {
   const [visita] = await cargar(porId(id));
   return visita;
-}
-
-/**
- * Las visitas eliminadas, con quién las eliminó y cuándo. Solo para el
- * administrador: quien llama comprueba el rol antes.
- */
-export async function getVisitasEliminadas(): Promise<Visita[]> {
-  return conEliminacion(await cargar(ELIMINADAS));
 }
 
 /** Una visita eliminada, para que el administrador la abra. Mismo cuidado con el rol. */
@@ -780,8 +767,9 @@ async function conEliminacion(visitas: Visita[]): Promise<Visita[]> {
     `SELECT e.visita_id, u.email AS por, ${F_TS("e.eliminado_en")} AS en
        FROM dmc.visita_eliminacion e
        LEFT JOIN dmc.usuario u ON u.id = e.usuario_id
+      WHERE e.visita_id IN ${subIds("ids")}
       ORDER BY e.id`,
-    []
+    [paramIds("ids", visitas.map((v) => v.id))]
   );
   // Ordenadas por id: si una visita tiene más de un registro, queda el último.
   const porVisita = new Map(filas.map((f) => [num(f.visita_id), { por: f.por ?? "—", en: f.en }]));

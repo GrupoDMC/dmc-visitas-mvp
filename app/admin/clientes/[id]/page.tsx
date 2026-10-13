@@ -1,9 +1,9 @@
 import { notFound } from "next/navigation";
 import SinAcceso from "@/components/admin/SinAcceso";
 import FichaVisitas from "@/components/admin/maestros/FichaVisitas";
-import { aFilas, type DatoFicha } from "@/components/admin/maestros/FichaPartes";
-import { listarClientes, listarMalls, listarSucursales } from "@/lib/data/maestros";
-import { getVisitasPorCliente } from "@/lib/data/visitas";
+import type { DatoFicha } from "@/components/admin/maestros/FichaPartes";
+import { getCliente, listarMalls, listarSucursales } from "@/lib/data/maestros";
+import { getFilasFicha } from "@/lib/data/visitas-lista";
 import { sesionCon } from "@/lib/auth";
 import { hoyISO } from "@/lib/ui/fecha";
 
@@ -17,15 +17,14 @@ export default async function ClienteFichaPage({ params }: { params: Promise<{ i
 
   const verVisitas = Boolean(await sesionCon("visitas.ver"));
   const verTiendas = Boolean(await sesionCon("sucursales.ver"));
-  const [clientes, sucursales, malls, visitas] = await Promise.all([
-    listarClientes(),
-    listarSucursales(),
-    listarMalls(),
-    verVisitas ? getVisitasPorCliente(clienteId) : Promise.resolve([]),
+  const [c, tiendas, filas] = await Promise.all([
+    getCliente(clienteId),
+    listarSucursales({ clienteId }),
+    verVisitas ? getFilasFicha({ clienteId }) : Promise.resolve([]),
   ]);
-  const c = clientes.find((x) => x.id === clienteId);
   if (!c) notFound();
-  const tiendas = sucursales.filter((s) => s.clienteId === c.id);
+  // Solo los malls de sus tiendas: para nombrarlos en la lista.
+  const malls = await listarMalls({ ids: [...new Set(tiendas.map((s) => s.mallId).filter((x): x is number => x !== null))] });
   const activas = tiendas.filter((s) => s.activo);
   const nMalls = new Set(activas.map((s) => s.mallId).filter(Boolean)).size;
   const enGarantia = activas.filter((s) => s.enGarantia === true).length;
@@ -51,7 +50,7 @@ export default async function ClienteFichaPage({ params }: { params: Promise<{ i
       acciones={verTiendas ? [{ href: `/admin/sucursales?cliente=${c.id}`, label: "Editar sus locales" }] : undefined}
       datos={datos}
       notas={c.notas ?? null}
-      filas={aFilas(visitas, malls, sucursales)}
+      filas={filas}
       tiendas={
         verTiendas
           ? tiendas.map((s) => ({

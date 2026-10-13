@@ -487,3 +487,30 @@ export interface ChecklistPlantilla {
   cargos?: number;
   gestionProblemas: number;
 }
+
+/**
+ * Lo que la ficha de una tienda o de un cliente necesita de cada visita. Se
+ * arma en el servidor: la visita completa (fotos, firmas, trabajos…) no viaja
+ * al navegador solo para contar y listar.
+ */
+export interface FilaFicha {
+  id: number;
+  folio: string;
+  fecha: string;
+  fechaHasta: string | null;
+  hora: string | null;
+  estado: EstadoVisita;
+  motivos: string;
+  /** Cada motivo por separado, para el gráfico de los más frecuentes. */
+  motivosLista: string[];
+  tecnico: string;
+  ayudante: string | null;
+  tiendaId: number;
+  tienda: string;
+  cliente: string;
+  mall: string | null;
+  problemas: number;
+  problemasAbiertos: number;
+  /** Minutos en sitio según el acta; null si no hay acta cerrada. */
+  minutos: number | null;
+}

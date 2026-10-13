@@ -1,7 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { sinTildes } from "@/lib/ui/formato";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import type { FormValores } from "@/components/admin/Dialogo";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -14,47 +13,30 @@ import VisitasLoteDialogo, { type AccionLote } from "@/components/admin/VisitasL
 import { Toast, useToast } from "@/components/ui/Toast";
 import { ESTADO_VISITA_LABEL, ESTADO_VISITA_TAG, textoMotivos } from "@/lib/ui/estado";
 import { textoFechaVisita } from "@/lib/ui/fecha";
+import {
+  ELIMINADAS,
+  ESTADOS_FILTRO,
+  SIN_FILTROS,
+  urlFiltrosVisitas,
+  type FiltrosVisitas,
+  type OpcionesFiltroVisitas,
+  type PaginaVisitas,
+} from "@/lib/ui/filtros-visitas";
 import { armarZip, type ArchivoZip } from "@/lib/ui/zip";
 import { puede, useReferencias } from "@/lib/ui/referencias";
 import type { Visita, EstadoVisita } from "@/lib/types";
 
-const ESTADOS: EstadoVisita[] = [
-  "PROGRAMADA",
-  "EN_CURSO",
-  "COMPLETADA",
-  "PENDIENTE",
-  "REAGENDADA",
-  "CANCELADA",
-  "CANCELADA_ADMIN",
-];
-
-interface Filtros {
-  estado: string;
-  desde: string;
-  hasta: string;
-  clienteId: string;
-  sucursalId: string;
-  tecnicoId: string;
-  tipo: string;
-}
-
 /**
- * No es un estado: es la opción del filtro que le muestra al administrador las
- * visitas eliminadas. Nadie más la tiene, y sin elegirla no aparecen.
+ * La lista de Visitas del panel. Filtrar y paginar lo hace el servidor: los
+ * filtros viven en la URL y cambiarlos es navegar (ver lib/ui/filtros-visitas).
  */
-const ELIMINADAS = "ELIMINADAS";
-
-const SIN_FILTROS: Filtros = { estado: "TODAS", desde: "", hasta: "", clienteId: "", sucursalId: "", tecnicoId: "", tipo: "" };
-
 export default function VisitasTable({
   kicker,
   title,
-  visitas,
+  filtros: f,
+  pagina,
+  opciones,
   eliminadas,
-  estadoInicial,
-  fechaInicial,
-  tecnicoInicial,
-  tipoInicial,
   /** Reagendas y pendientes: siempre muestra la columna con el motivo del técnico. */
   conMotivoTecnico = false,
   /** La vista de reagendas no crea visitas nuevas. */
@@ -62,13 +44,12 @@ export default function VisitasTable({
 }: {
   kicker: string;
   title: string;
-  visitas: Visita[];
-  /** Las eliminadas. Solo le llegan al administrador; para el resto, undefined. */
-  eliminadas?: Visita[];
-  estadoInicial?: string;
-  fechaInicial?: string;
-  tecnicoInicial?: string;
-  tipoInicial?: string;
+  /** Los filtros de la URL, ya validados por el servidor. */
+  filtros: FiltrosVisitas;
+  pagina: PaginaVisitas;
+  opciones: OpcionesFiltroVisitas;
+  /** Cuántas eliminadas hay. Solo le llega al administrador; para el resto, undefined. */
+  eliminadas?: number;
   conMotivoTecnico?: boolean;
   permiteCrear?: boolean;
 }) {
@@ -76,26 +57,35 @@ export default function VisitasTable({
   const ref = useReferencias();
   const { tecnicos, problemas: catalogoProblema } = ref;
   const { toast, aviso } = useToast();
-  const [busqueda, setBusqueda] = useState("");
-  const [f, setF] = useState<Filtros>({
-    estado: estadoInicial ?? "TODAS",
-    // Un día suelto (los enlaces del panel) es un rango de ese día a ese día.
-    desde: fechaInicial ?? "",
-    hasta: fechaInicial ?? "",
-    clienteId: "",
-    sucursalId: "",
-    tecnicoId: tecnicoInicial ?? "",
-    tipo: tipoInicial ?? "",
-  });
+  const [cargando, iniciar] = useTransition();
+  const visitas = pagina.visitas;
+
+  /** Cambia filtros: es navegar a la URL nueva. Cualquier cambio vuelve a la primera página. */
+  function ir(cambios: Partial<FiltrosVisitas>) {
+    const destino = urlFiltrosVisitas({ ...f, pagina: 1, ...cambios });
+    iniciar(() => router.replace(destino, { scroll: false }));
+  }
+  const setF = (fn: (p: FiltrosVisitas) => Partial<FiltrosVisitas>) => ir(fn(f));
+
+  // La búsqueda se escribe aquí y viaja a la URL cuando se deja de teclear.
+  const [busqueda, setBusqueda] = useState(f.q);
+  useEffect(() => {
+    if (busqueda.trim() === f.q) return;
+    const espera = setTimeout(() => {
+      iniciar(() => router.replace(urlFiltrosVisitas({ ...f, q: busqueda, pagina: 1 }), { scroll: false }));
+    }, 350);
+    return () => clearTimeout(espera);
+  }, [busqueda, f, router]);
+
   const [nueva, setNueva] = useState(false);
   // Con `porMall` el diálogo de la ruta abre eligiendo tiendas de un mall, y
   // con `inicial` trae lo que ya se había escrito en "Nueva visita".
   const [masivas, setMasivas] = useState<{ porMall: boolean; inicial?: FormValores } | null>(null);
   // "Acciones múltiples": con el modo prendido, el clic en una fila la marca en
-  // vez de abrir su acta. Lo marcado se guarda por folio y sobrevive a los
-  // filtros, para poder juntar visitas de varias búsquedas.
+  // vez de abrir su acta. Lo marcado se guarda entero y sobrevive a los
+  // filtros y a las páginas, para poder juntar visitas de varias búsquedas.
   const [seleccionando, setSeleccionando] = useState(false);
-  const [marcadas, setMarcadas] = useState<string[]>([]);
+  const [marcadas, setMarcadas] = useState<Visita[]>([]);
   const [lote, setLote] = useState<AccionLote | null>(null);
 
   // El permiso abre la selección; cada acción pide además el suyo.
@@ -109,7 +99,12 @@ export default function VisitasTable({
   // Las eliminadas solo se miran: sobre ellas no hay nada que marcar.
   const verEliminadas = f.estado === ELIMINADAS;
   const conCasillas = seleccionando && !verEliminadas;
-  const seleccionadas = useMemo(() => visitas.filter((v) => marcadas.includes(v.folio)), [visitas, marcadas]);
+  const esMarcada = (folio: string) => marcadas.some((m) => m.folio === folio);
+  // Las de la página a la vista van con lo que acaba de traer el servidor.
+  const seleccionadas = useMemo(
+    () => marcadas.map((m) => visitas.find((v) => v.folio === m.folio) ?? m),
+    [visitas, marcadas]
+  );
 
   // Solo las actas cerradas tienen PDF.
   const cerradasMarcadas = seleccionadas.filter((v) => v.estado === "COMPLETADA");
@@ -164,8 +159,8 @@ export default function VisitasTable({
     }
   }
 
-  function alternar(folio: string) {
-    setMarcadas((prev) => (prev.includes(folio) ? prev.filter((x) => x !== folio) : [...prev, folio]));
+  function alternar(v: Visita) {
+    setMarcadas((prev) => (prev.some((m) => m.folio === v.folio) ? prev.filter((m) => m.folio !== v.folio) : [...prev, v]));
   }
 
   function salirDeSeleccion() {
@@ -173,80 +168,52 @@ export default function VisitasTable({
     setMarcadas([]);
   }
 
-  const clientes = useMemo(() => {
-    const porId = new Map<number, string>();
-    for (const v of visitas) if (v.cliente) porId.set(v.clienteId, v.cliente.nombreFantasia);
-    return [...porId].sort((a, b) => a[1].localeCompare(b[1], "es"));
-  }, [visitas]);
+  const { clientes, tiendas, malls } = opciones;
 
-  // Las tiendas del cliente elegido (solo con un cliente aparece el filtro).
-  const tiendas = useMemo(() => {
-    if (!f.clienteId) return [];
-    const porId = new Map<number, string>();
-    for (const v of visitas) {
-      if (String(v.clienteId) === f.clienteId && v.sucursal) porId.set(v.sucursalId, v.sucursal.nombre);
-    }
-    return [...porId].sort((a, b) => a[1].localeCompare(b[1], "es"));
-  }, [visitas, f.clienteId]);
-
-  const filtradas = useMemo(() => {
-    const q = sinTildes(busqueda.trim());
-    // Las eliminadas van en su propia lista: nunca se mezclan con las vigentes.
-    return (verEliminadas ? eliminadas ?? [] : visitas).filter((v) => {
-      if (!verEliminadas && f.estado !== "TODAS" && v.estado !== f.estado) return false;
-      if (f.desde && v.fechaProgramada < f.desde) return false;
-      if (f.hasta && v.fechaProgramada > f.hasta) return false;
-      if (f.clienteId && String(v.clienteId) !== f.clienteId) return false;
-      if (f.clienteId && f.sucursalId && String(v.sucursalId) !== f.sucursalId) return false;
-      // Filtrar por técnico trae también las visitas en las que va de ayudante.
-      if (f.tecnicoId && String(v.tecnicoId) !== f.tecnicoId && String(v.tecnicoAyudanteId) !== f.tecnicoId) {
-        return false;
-      }
-      if (!f.clienteId && f.tipo && !(v.problemas ?? []).some((p) => p.tipoCodigo === f.tipo)) return false;
-      if (!q) return true;
-      const hay = `${v.folio} ${v.sucursal?.nombre ?? ""} ${v.cliente?.nombreFantasia ?? ""} ${v.tecnico?.nombreCompleto ?? ""} ${v.tecnicoAyudante?.nombreCompleto ?? ""} ${v.motivosNombres.join(" ")}`;
-      return sinTildes(hay).includes(q);
-    });
-  }, [visitas, eliminadas, busqueda, f, verEliminadas]);
-
-  const todasMarcadas = filtradas.length > 0 && filtradas.every((v) => marcadas.includes(v.folio));
+  const todasMarcadas = visitas.length > 0 && visitas.every((v) => esMarcada(v.folio));
 
   /** La casilla del encabezado: marca o desmarca lo que se está viendo. */
   function alternarVisibles() {
-    const visibles = filtradas.map((v) => v.folio);
+    const visibles = new Set(visitas.map((v) => v.folio));
     setMarcadas((prev) =>
-      todasMarcadas ? prev.filter((x) => !visibles.includes(x)) : [...new Set([...prev, ...visibles])]
+      todasMarcadas
+        ? prev.filter((m) => !visibles.has(m.folio))
+        : [...prev, ...visitas.filter((v) => !prev.some((m) => m.folio === v.folio))]
     );
   }
 
   // La fecha con margen de días ("desde → hasta") necesita el doble de ancho.
-  const hayMargen = filtradas.some((v) => v.fechaHasta);
+  const hayMargen = visitas.some((v) => v.fechaHasta);
   const mostrarMotivo = conMotivoTecnico || f.estado === "REAGENDADA" || f.estado === "PENDIENTE";
 
   const chips: ChipFiltro[] = [];
   if (f.estado !== "TODAS") {
     chips.push({
       label: f.estado === ELIMINADAS ? "Eliminadas" : `Estado: ${ESTADO_VISITA_LABEL[f.estado as EstadoVisita]}`,
-      onQuitar: () => setF((p) => ({ ...p, estado: "TODAS" })),
+      onQuitar: () => setF(() => ({ estado: "TODAS" })),
     });
   }
   if (f.clienteId) {
     const c = clientes.find(([id]) => String(id) === f.clienteId);
-    chips.push({ label: `Cliente: ${c?.[1] ?? ""}`, onQuitar: () => setF((p) => ({ ...p, clienteId: "", sucursalId: "" })) });
+    chips.push({ label: `Cliente: ${c?.[1] ?? ""}`, onQuitar: () => setF(() => ({ clienteId: "", sucursalId: "" })) });
   }
   if (f.clienteId && f.sucursalId) {
     const t = tiendas.find(([id]) => String(id) === f.sucursalId);
-    chips.push({ label: `Tienda: ${t?.[1] ?? ""}`, onQuitar: () => setF((p) => ({ ...p, sucursalId: "" })) });
+    chips.push({ label: `Tienda: ${t?.[1] ?? ""}`, onQuitar: () => setF(() => ({ sucursalId: "" })) });
   }
-  if (f.desde) chips.push({ label: `Desde: ${f.desde}`, onQuitar: () => setF((p) => ({ ...p, desde: "" })) });
-  if (f.hasta) chips.push({ label: `Hasta: ${f.hasta}`, onQuitar: () => setF((p) => ({ ...p, hasta: "" })) });
+  if (f.mallId) {
+    const m = malls.find(([id]) => String(id) === f.mallId);
+    chips.push({ label: `Mall: ${m?.[1] ?? ""}`, onQuitar: () => setF(() => ({ mallId: "" })) });
+  }
+  if (f.desde) chips.push({ label: `Desde: ${f.desde}`, onQuitar: () => setF(() => ({ desde: "" })) });
+  if (f.hasta) chips.push({ label: `Hasta: ${f.hasta}`, onQuitar: () => setF(() => ({ hasta: "" })) });
   if (f.tecnicoId) {
     const t = tecnicos.find((x) => String(x.id) === f.tecnicoId);
-    chips.push({ label: `Técnico: ${t?.nombreCompleto ?? ""}`, onQuitar: () => setF((p) => ({ ...p, tecnicoId: "" })) });
+    chips.push({ label: `Técnico: ${t?.nombreCompleto ?? ""}`, onQuitar: () => setF(() => ({ tecnicoId: "" })) });
   }
   if (f.tipo && !f.clienteId) {
     const t = catalogoProblema.find((x) => x.codigo === f.tipo);
-    chips.push({ label: `Falla: ${t?.nombre ?? f.tipo}`, onQuitar: () => setF((p) => ({ ...p, tipo: "" })) });
+    chips.push({ label: `Falla: ${t?.nombre ?? f.tipo}`, onQuitar: () => setF(() => ({ tipo: "" })) });
   }
 
   return (
@@ -298,9 +265,12 @@ export default function VisitasTable({
             conMotivoTecnico ? "Buscar folio, cliente, sucursal reagendada…" : "Buscar folio, cliente, sucursal…"
           }
           onBusqueda={setBusqueda}
-          conteo={`${filtradas.length} ${filtradas.length === 1 ? "registro" : "registros"}`}
+          conteo={`${pagina.total} ${pagina.total === 1 ? "registro" : "registros"}`}
           chips={chips}
-          onLimpiar={() => setF(SIN_FILTROS)}
+          onLimpiar={() => {
+            setBusqueda("");
+            ir(SIN_FILTROS);
+          }}
           campos={[
             {
               id: "fv-estado",
@@ -308,10 +278,10 @@ export default function VisitasTable({
               valor: f.estado,
               opciones: [
                 { v: "TODAS", t: "Todos los estados" },
-                ...ESTADOS.map((e) => ({ v: e, t: ESTADO_VISITA_LABEL[e] })),
-                ...(eliminadas ? [{ v: ELIMINADAS, t: `Eliminadas (${eliminadas.length})` }] : []),
+                ...ESTADOS_FILTRO.map((e) => ({ v: e, t: ESTADO_VISITA_LABEL[e] })),
+                ...(eliminadas !== undefined ? [{ v: ELIMINADAS, t: `Eliminadas (${eliminadas})` }] : []),
               ],
-              onChange: (v) => setF((p) => ({ ...p, estado: v })),
+              onChange: (v) => setF(() => ({ estado: v })),
             },
             {
               id: "fv-cliente",
@@ -319,7 +289,7 @@ export default function VisitasTable({
               valor: f.clienteId,
               opciones: [{ v: "", t: "Todos los clientes" }, ...clientes.map(([id, n]) => ({ v: String(id), t: n }))],
               // Con un cliente elegido el tipo de falla deja de aplicar: se limpia.
-              onChange: (v) => setF((p) => ({ ...p, clienteId: v, sucursalId: "", tipo: v ? "" : p.tipo })),
+              onChange: (v) => setF((p) => ({ clienteId: v, sucursalId: "", tipo: v ? "" : p.tipo })),
             },
             ...(f.clienteId
               ? [
@@ -328,17 +298,24 @@ export default function VisitasTable({
                     label: "Tienda",
                     valor: f.sucursalId,
                     opciones: [{ v: "", t: "Todas las tiendas" }, ...tiendas.map(([id, n]) => ({ v: String(id), t: n }))],
-                    onChange: (v: string) => setF((p) => ({ ...p, sucursalId: v })),
+                    onChange: (v: string) => setF(() => ({ sucursalId: v })),
                   },
                 ]
               : []),
+            {
+              id: "fv-mall",
+              label: "Mall",
+              valor: f.mallId,
+              opciones: [{ v: "", t: "Todos los malls" }, ...malls.map(([id, n]) => ({ v: String(id), t: n }))],
+              onChange: (v) => setF(() => ({ mallId: v })),
+            },
             {
               id: "fv-desde",
               label: "Desde",
               tipo: "fecha",
               valor: f.desde,
               opciones: [],
-              onChange: (v) => setF((p) => ({ ...p, desde: v })),
+              onChange: (v) => setF(() => ({ desde: v })),
             },
             {
               id: "fv-hasta",
@@ -346,7 +323,7 @@ export default function VisitasTable({
               tipo: "fecha",
               valor: f.hasta,
               opciones: [],
-              onChange: (v) => setF((p) => ({ ...p, hasta: v })),
+              onChange: (v) => setF(() => ({ hasta: v })),
             },
             {
               id: "fv-tecnico",
@@ -356,7 +333,7 @@ export default function VisitasTable({
                 { v: "", t: "Todos los técnicos" },
                 ...tecnicos.map((t) => ({ v: String(t.id), t: t.nombreCompleto })),
               ],
-              onChange: (v) => setF((p) => ({ ...p, tecnicoId: v })),
+              onChange: (v) => setF(() => ({ tecnicoId: v })),
             },
             ...(f.clienteId
               ? []
@@ -369,7 +346,7 @@ export default function VisitasTable({
                 { v: "", t: "Todas las fallas" },
                 ...catalogoProblema.map((t) => ({ v: t.codigo, t: t.nombre })),
               ],
-              onChange: (v: string) => setF((p) => ({ ...p, tipo: v })),
+              onChange: (v: string) => setF(() => ({ tipo: v })),
             },
               ]),
           ]}
@@ -377,7 +354,10 @@ export default function VisitasTable({
 
         {/* Anchos fijos: las columnas de texto se reparten lo que sobra y se
             cortan con "…", así el botón de ver nunca se sale de la pantalla. */}
-        <div className="px-4 md:px-7 overflow-x-auto">
+        <div
+          className={`px-4 md:px-7 overflow-x-auto transition-opacity ${cargando ? "opacity-50" : ""}`}
+          aria-busy={cargando}
+        >
           <table className="table table-fixed min-w-[980px]">
             <colgroup>
               {conCasillas ? <col style={{ width: 44 }} /> : null}
@@ -416,17 +396,17 @@ export default function VisitasTable({
               </tr>
             </thead>
             <tbody>
-              {filtradas.map((v) => (
+              {visitas.map((v) => (
                 <tr
                   key={v.id}
-                  onClick={() => (conCasillas ? alternar(v.folio) : router.push(`/admin/visitas/${v.folio}`))}
-                  className={`cursor-pointer hover:bg-black/5 ${conCasillas && marcadas.includes(v.folio) ? "bg-black/[.07]" : ""}`}
+                  onClick={() => (conCasillas ? alternar(v) : router.push(`/admin/visitas/${v.folio}`))}
+                  className={`cursor-pointer hover:bg-black/5 ${conCasillas && esMarcada(v.folio) ? "bg-black/[.07]" : ""}`}
                 >
                   {conCasillas ? (
                     <td>
                       <Casilla
-                        marcada={marcadas.includes(v.folio)}
-                        onAlternar={() => alternar(v.folio)}
+                        marcada={esMarcada(v.folio)}
+                        onAlternar={() => alternar(v)}
                         label={`Marcar ${v.folio}`}
                       />
                     </td>
@@ -497,13 +477,25 @@ export default function VisitasTable({
             </tbody>
           </table>
 
-          {filtradas.length === 0 ? (
+          {visitas.length === 0 ? (
             <div className="py-14 text-center">
               <div className="font-extrabold text-[17px] mb-1.5">Nada que mostrar</div>
               <div className="text-[13px] opacity-66">Ajusta la búsqueda o los filtros.</div>
             </div>
           ) : null}
         </div>
+
+        {pagina.paginas > 1 ? (
+          <Paginas
+            pagina={pagina.pagina}
+            paginas={pagina.paginas}
+            ocupado={cargando}
+            onIr={(n) => {
+              ir({ pagina: n });
+              window.scrollTo({ top: 0 });
+            }}
+          />
+        ) : null}
 
         {/* La barra de las acciones: pegada abajo mientras se va marcando. */}
         {conCasillas ? (
@@ -564,7 +556,7 @@ export default function VisitasTable({
             aviso(mensaje);
             if (hechas.length === 0) return;
             // Las que ya quedaron salen de la selección; las que fallaron siguen marcadas.
-            setMarcadas((prev) => prev.filter((x) => !hechas.includes(x)));
+            setMarcadas((prev) => prev.filter((m) => !hechas.includes(m.folio)));
             router.refresh();
           }}
         />
@@ -598,6 +590,43 @@ export default function VisitasTable({
 
       <Toast texto={toast} variante="panel" />
     </>
+  );
+}
+
+/** Anterior, «Página n de m» y siguiente, bajo la tabla. */
+function Paginas({
+  pagina,
+  paginas,
+  ocupado,
+  onIr,
+}: {
+  pagina: number;
+  paginas: number;
+  ocupado: boolean;
+  onIr: (pagina: number) => void;
+}) {
+  return (
+    <nav aria-label="Páginas" className="flex items-center justify-center gap-3 px-4 md:px-7 pt-5">
+      <button
+        type="button"
+        disabled={pagina <= 1 || ocupado}
+        onClick={() => onIr(pagina - 1)}
+        className="btn btn-secondary min-h-10 px-3.5"
+      >
+        Anterior
+      </button>
+      <span className="text-[11px] tracking-[.08em] uppercase opacity-62 tabular-nums">
+        Página {pagina} de {paginas}
+      </span>
+      <button
+        type="button"
+        disabled={pagina >= paginas || ocupado}
+        onClick={() => onIr(pagina + 1)}
+        className="btn btn-secondary min-h-10 px-3.5"
+      >
+        Siguiente
+      </button>
+    </nav>
   );
 }
 

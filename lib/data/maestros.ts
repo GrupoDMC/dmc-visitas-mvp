@@ -1,5 +1,5 @@
 import "server-only";
-import { consulta, consultaCon, ejecutar, enTransaccion, num, numONull, sql, F_FECHA, F_TS } from "@/lib/data/sql";
+import { consulta, consultaCon, ejecutar, enTransaccion, num, numONull, paramIds, sql, subIds, F_FECHA, F_TS } from "@/lib/data/sql";
 import { hashearPassword } from "@/lib/password";
 import { leerCuenta, leerRol, permisosDelPanel, type Cuenta } from "@/lib/data/roles";
 import { fmtRut, rutLimpio } from "@/lib/ui/formato";
@@ -57,10 +57,14 @@ interface FilaCliente {
   plan_calibracion: boolean | null;
 }
 
-export async function listarClientes(): Promise<Cliente[]> {
-  const filas = await consulta<FilaCliente>(
+/** Todos los clientes, o solo los de `ids`. */
+export async function listarClientes(filtro: { ids?: number[] } = {}): Promise<Cliente[]> {
+  const filas = await consultaCon<FilaCliente>(
     `SELECT id, rut, razon_social, nombre_fantasia, activo, motivo_inactivo, notas, plan_calibracion
-       FROM dmc.cliente ORDER BY nombre_fantasia`
+       FROM dmc.cliente
+      ${filtro.ids ? `WHERE id IN ${subIds("ids")}` : ""}
+      ORDER BY nombre_fantasia`,
+    filtro.ids ? [paramIds("ids", filtro.ids)] : []
   );
   return filas.map((f) => ({
     id: num(f.id),
@@ -72,6 +76,11 @@ export async function listarClientes(): Promise<Cliente[]> {
     notas: f.notas,
     planCalibracion: bitONull(f.plan_calibracion),
   }));
+}
+
+export async function getCliente(id: number): Promise<Cliente | undefined> {
+  const [cliente] = await listarClientes({ ids: [id] });
+  return cliente;
 }
 
 export interface DatosCliente {
@@ -130,8 +139,14 @@ interface FilaMall {
   activo: boolean;
 }
 
-export async function listarMalls(): Promise<Mall[]> {
-  const filas = await consulta<FilaMall>(`SELECT id, nombre, direccion, comuna, region, activo FROM dmc.mall ORDER BY nombre`);
+/** Todos los malls, o solo los de `ids`. */
+export async function listarMalls(filtro: { ids?: number[] } = {}): Promise<Mall[]> {
+  const filas = await consultaCon<FilaMall>(
+    `SELECT id, nombre, direccion, comuna, region, activo FROM dmc.mall
+      ${filtro.ids ? `WHERE id IN ${subIds("ids")}` : ""}
+      ORDER BY nombre`,
+    filtro.ids ? [paramIds("ids", filtro.ids)] : []
+  );
   return filas.map((f) => ({
     id: num(f.id),
     nombre: f.nombre,
@@ -140,6 +155,11 @@ export async function listarMalls(): Promise<Mall[]> {
     region: f.region ?? "",
     activo: Boolean(f.activo),
   }));
+}
+
+export async function getMall(id: number): Promise<Mall | undefined> {
+  const [mall] = await listarMalls({ ids: [id] });
+  return mall;
 }
 
 export interface DatosMall {
@@ -237,12 +257,32 @@ interface FilaSucursal {
   plan_calibracion: boolean | null;
 }
 
-export async function listarSucursales(): Promise<Sucursal[]> {
-  const filas = await consulta<FilaSucursal>(
+/** Todas las sucursales, o solo la de `id`, las de un cliente o las de un mall. */
+export async function listarSucursales(
+  filtro: { id?: number; clienteId?: number; mallId?: number } = {}
+): Promise<Sucursal[]> {
+  const donde: string[] = [];
+  const params: Parametros = [];
+  if (filtro.id !== undefined) {
+    donde.push("id = @id");
+    params.push(["id", sql.BigInt, filtro.id]);
+  }
+  if (filtro.clienteId !== undefined) {
+    donde.push("cliente_id = @cliente");
+    params.push(["cliente", sql.BigInt, filtro.clienteId]);
+  }
+  if (filtro.mallId !== undefined) {
+    donde.push("mall_id = @mall");
+    params.push(["mall", sql.BigInt, filtro.mallId]);
+  }
+  const filas = await consultaCon<FilaSucursal>(
     `SELECT id, cliente_id, mall_id, nombre, codigo, direccion, comuna, region, telefono, activo,
             motivo_inactivo, notas, ${F_FECHA("fecha_instalacion")} AS fecha_instalacion, remota, en_garantia,
             plan_calibracion
-       FROM dmc.sucursal ORDER BY nombre`
+       FROM dmc.sucursal
+      ${donde.length ? `WHERE ${donde.join(" AND ")}` : ""}
+      ORDER BY nombre`,
+    params
   );
   return filas.map((f) => ({
     id: num(f.id),
@@ -262,6 +302,11 @@ export async function listarSucursales(): Promise<Sucursal[]> {
     enGarantia: bitONull(f.en_garantia),
     planCalibracion: bitONull(f.plan_calibracion),
   }));
+}
+
+export async function getSucursal(id: number): Promise<Sucursal | undefined> {
+  const [sucursal] = await listarSucursales({ id });
+  return sucursal;
 }
 
 export interface DatosSucursal {

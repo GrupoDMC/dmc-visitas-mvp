@@ -61,18 +61,33 @@ export async function getVisitasRango(rango: Rango, hoy: string): Promise<Visita
   }));
 }
 
-export async function contarVisitas(): Promise<number> {
-  await cancelarVisitasVencidas();
-  const [f] = await consulta<{ n: number }>(`SELECT COUNT(*) AS n FROM dmc.visita WHERE activo = 1`);
-  return num(f?.n ?? 0);
+/** Los números del menú lateral del panel. */
+export interface ConteosMenu {
+  visitas: number;
+  reagendas: number;
+  problemasAbiertos: number;
+  usuarios: number;
+  solicitudesPassword: number;
 }
 
-export async function contarReagendasPendientes(): Promise<number> {
+/** Todos los números del menú en una sola ida a la base: se piden en cada navegación. */
+export async function contarMenu(): Promise<ConteosMenu> {
   await cancelarVisitasVencidas();
-  const [f] = await consulta<{ n: number }>(
-    `SELECT COUNT(*) AS n FROM dmc.visita WHERE estado IN ('REAGENDADA', 'PENDIENTE') AND activo = 1`
+  const [f] = await consulta<{ visitas: number; reagendas: number; problemas: number; usuarios: number; solicitudes: number }>(
+    `SELECT (SELECT COUNT(*) FROM dmc.visita WHERE activo = 1) AS visitas,
+            (SELECT COUNT(*) FROM dmc.visita WHERE estado IN ('REAGENDADA', 'PENDIENTE') AND activo = 1) AS reagendas,
+            (SELECT COUNT(*) FROM dmc.problema p JOIN dmc.visita v ON v.id = p.visita_id
+              WHERE p.estado <> 'RESUELTO' AND v.activo = 1) AS problemas,
+            (SELECT COUNT(*) FROM dmc.usuario) AS usuarios,
+            (SELECT COUNT(*) FROM dmc.solicitud_password WHERE estado = 'PENDIENTE') AS solicitudes`
   );
-  return num(f?.n ?? 0);
+  return {
+    visitas: num(f?.visitas ?? 0),
+    reagendas: num(f?.reagendas ?? 0),
+    problemasAbiertos: num(f?.problemas ?? 0),
+    usuarios: num(f?.usuarios ?? 0),
+    solicitudesPassword: num(f?.solicitudes ?? 0),
+  };
 }
 
 export async function contarProblemasAbiertos(): Promise<number> {

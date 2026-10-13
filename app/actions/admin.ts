@@ -23,7 +23,7 @@ import {
   getPlantilla,
   guardarChecklist,
   guardarPlantilla,
-  listarEstadosProblema,
+  esEstadoProblemaVigente,
   listarMotivos,
   PLANTILLA_PROPIA,
   type BorradorChecklist,
@@ -534,7 +534,7 @@ export async function actualizarProblemaAction(pedido: {
   const input = entrada.datos;
 
   // El estado tiene que ser uno de la Lista 7 del checklist.
-  if (!(await listarEstadosProblema()).some((e) => e.codigo === input.estado)) {
+  if (!(await esEstadoProblemaVigente(input.estado))) {
     return { ok: false, error: "Ese estado ya no existe en el checklist. Recarga la página y elige otro." };
   }
 

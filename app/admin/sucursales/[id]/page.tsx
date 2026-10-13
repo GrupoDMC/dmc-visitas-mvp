@@ -1,9 +1,9 @@
 import { notFound } from "next/navigation";
 import SinAcceso from "@/components/admin/SinAcceso";
 import FichaVisitas from "@/components/admin/maestros/FichaVisitas";
-import { aFilas, type DatoFicha } from "@/components/admin/maestros/FichaPartes";
-import { listarClientes, listarMalls, listarSucursales } from "@/lib/data/maestros";
-import { getVisitasPorSucursal } from "@/lib/data/visitas";
+import type { DatoFicha } from "@/components/admin/maestros/FichaPartes";
+import { getCliente, getMall, getSucursal } from "@/lib/data/maestros";
+import { getFilasFicha } from "@/lib/data/visitas-lista";
 import { sesionCon } from "@/lib/auth";
 import { hoyISO } from "@/lib/ui/fecha";
 import { calibracionDeSucursal } from "@/lib/ui/sino";
@@ -20,16 +20,12 @@ export default async function SucursalFichaPage({ params }: { params: Promise<{ 
 
   const verVisitas = Boolean(await sesionCon("visitas.ver"));
   const verClientes = Boolean(await sesionCon("clientes.ver"));
-  const [sucursales, clientes, malls, visitas] = await Promise.all([
-    listarSucursales(),
-    listarClientes(),
-    listarMalls(),
-    verVisitas ? getVisitasPorSucursal(sucursalId) : Promise.resolve([]),
+  const [s, filas] = await Promise.all([
+    getSucursal(sucursalId),
+    verVisitas ? getFilasFicha({ sucursalId }) : Promise.resolve([]),
   ]);
-  const s = sucursales.find((x) => x.id === sucursalId);
   if (!s) notFound();
-  const cliente = clientes.find((c) => c.id === s.clienteId);
-  const mall = malls.find((m) => m.id === s.mallId);
+  const [cliente, mall] = await Promise.all([getCliente(s.clienteId), s.mallId ? getMall(s.mallId) : undefined]);
   const cal = calibracionDeSucursal(s, cliente);
 
   const datos: DatoFicha[] = [
@@ -59,7 +55,7 @@ export default async function SucursalFichaPage({ params }: { params: Promise<{ 
       volver={{ href: "/admin/sucursales", label: "Sucursales" }}
       datos={datos}
       notas={s.notas ?? null}
-      filas={aFilas(visitas, malls, sucursales)}
+      filas={filas}
       verVisitas={verVisitas}
       hoy={hoyISO()}
     />

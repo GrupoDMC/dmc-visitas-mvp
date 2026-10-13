@@ -1,5 +1,5 @@
 /* =====================================================================
-   DMC Contingencia · migración 025 — versión del esquema
+   DMC Contingencia · migración 025 — versión del esquema e índice por cliente
    Microsoft SQL Server 2022 · esquema dmc
 
    Qué agrega, y para qué:
@@ -9,6 +9,10 @@
                               cada petición si existe tal tabla o tal columna:
                               da por hecho que la base está al día y
                               /api/salud avisa si no lo está.
+
+     2. ix_visita_cliente ..... la lista de Visitas filtra y pagina en el
+                              servidor, y la ficha del cliente lee sus visitas:
+                              las dos buscan por cliente y ordenan por fecha.
 
    Desde esta migración, cada migración nueva termina registrando su número
    en dmc.schema_version.
@@ -35,6 +39,10 @@ IF OBJECT_ID('dmc.schema_version', 'U') IS NULL
         aplicada_en  datetime2(0)   NOT NULL CONSTRAINT df_schema_version_aplicada DEFAULT (SYSDATETIME()),
         CONSTRAINT pk_schema_version PRIMARY KEY (version)
     );
+GO
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'ix_visita_cliente' AND object_id = OBJECT_ID('dmc.visita'))
+    CREATE INDEX ix_visita_cliente ON dmc.visita (cliente_id, fecha_programada DESC);
 GO
 
 IF NOT EXISTS (SELECT 1 FROM dmc.schema_version WHERE version = 25)

@@ -447,6 +447,7 @@ CREATE INDEX ix_visita_tecnico  ON dmc.visita (tecnico_id, fecha_programada DESC
 CREATE INDEX ix_visita_ayudante ON dmc.visita (tecnico_ayudante_id, fecha_programada DESC)
     WHERE tecnico_ayudante_id IS NOT NULL;
 CREATE INDEX ix_visita_sucursal ON dmc.visita (sucursal_id, fecha_programada DESC);
+CREATE INDEX ix_visita_cliente  ON dmc.visita (cliente_id, fecha_programada DESC);
 CREATE INDEX ix_visita_estado   ON dmc.visita (estado, fecha_programada DESC);
 CREATE INDEX ix_visita_activo   ON dmc.visita (activo) INCLUDE (fecha_programada, estado);
 GO

@@ -1,9 +1,7 @@
 import { redirect } from "next/navigation";
 import { getSesion, rutaSinSesion } from "@/lib/auth";
 import { cargarReferencias } from "@/lib/data/referencias";
-import { contarProblemasAbiertos, contarReagendasPendientes, contarVisitas } from "@/lib/data/queries";
-import { contarSolicitudesPendientes } from "@/lib/data/solicitudes-password";
-import { listarUsuarios } from "@/lib/data/maestros";
+import { contarMenu } from "@/lib/data/queries";
 import { UsuarioLocalProvider } from "@/lib/ui/usuario-local";
 import { ReferenciasProvider } from "@/lib/ui/referencias";
 import AdminSidebar from "@/components/admin/AdminSidebar";
@@ -17,13 +15,9 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   if (!sesion) redirect(await rutaSinSesion());
   if (sesion.usuario.rol === "TECNICO") redirect("/tecnico");
 
-  const [referencias, visitas, reagendas, problemasAbiertos, usuarios, accesos] = await Promise.all([
+  const [referencias, conteos] = await Promise.all([
     cargarReferencias(sesion.usuario.rol, sesion.permisos),
-    contarVisitas(),
-    contarReagendasPendientes(),
-    contarProblemasAbiertos(),
-    listarUsuarios(),
-    contarSolicitudesPendientes(),
+    contarMenu(),
   ]);
 
   const nombreCoordinador = sesion.usuario.email
@@ -51,9 +45,9 @@ export default async function AdminLayout({ children }: { children: React.ReactN
           rol={sesion.rolNombre}
           operacion={[
             { href: "/admin", label: "Panel", n: "" },
-            { href: "/admin/visitas", label: "Visitas", n: visitas },
-            { href: "/admin/reagendas", label: "Reagendas y pendientes", n: reagendas },
-            { href: "/admin/problemas", label: "Problemas", n: problemasAbiertos },
+            { href: "/admin/visitas", label: "Visitas", n: conteos.visitas },
+            { href: "/admin/reagendas", label: "Reagendas y pendientes", n: conteos.reagendas },
+            { href: "/admin/problemas", label: "Problemas", n: conteos.problemasAbiertos },
           ].filter(visible)}
           maestros={[
             // "Técnicos" y "Contraseñas pedidas" viven dentro de Usuarios: el
@@ -61,8 +55,8 @@ export default async function AdminLayout({ children }: { children: React.ReactN
             {
               href: "/admin/usuarios",
               label: "Usuarios",
-              n: usuarios.length,
-              pendientes: tiene(sesion.permisos, "usuarios.contrasenas") ? accesos : 0,
+              n: conteos.usuarios,
+              pendientes: tiene(sesion.permisos, "usuarios.contrasenas") ? conteos.solicitudesPassword : 0,
             },
             { href: "/admin/clientes", label: "Clientes", n: referencias.clientes.length },
             { href: "/admin/malls", label: "Malls", n: referencias.malls.length },

@@ -258,9 +258,16 @@ export async function listarCargos(): Promise<CatalogoCargo[]> {
  * suelto no se cuela y la mayúscula siempre es la del checklist.
  */
 export async function cargoDelChecklist(nombre: string | null | undefined): Promise<string | null> {
-  const buscado = nombre?.trim().toLowerCase();
+  const buscado = nombre?.trim();
   if (!buscado) return null;
-  return (await listarCargos()).find((c) => c.nombre.trim().toLowerCase() === buscado)?.nombre ?? null;
+  // nombre es nvarchar con intercalación sin mayúsculas: «jefe» encuentra «Jefe».
+  const [fila] = await consultaCon<{ nombre: string }>(
+    `SELECT TOP 1 nombre FROM dmc.catalogo_cargo
+      WHERE activo = 1 AND LTRIM(RTRIM(nombre)) = @nombre COLLATE Latin1_General_CI_AS
+      ORDER BY orden, id`,
+    [["nombre", sql.NVarChar(80), buscado]]
+  );
+  return fila?.nombre ?? null;
 }
 
 /** Los pasos del checklist de gestión de problemas. */
@@ -276,6 +283,15 @@ export async function listarGestionProblemas(): Promise<CatalogoGestionProblema[
     orden: f.orden,
     activo: Boolean(f.activo),
   }));
+}
+
+/** ¿Ese código es un estado vigente de la Lista 7? */
+export async function esEstadoProblemaVigente(codigo: string): Promise<boolean> {
+  const [fila] = await consultaCon<{ n: number }>(
+    `SELECT TOP 1 1 AS n FROM dmc.catalogo_problema_estado WHERE codigo = @codigo`,
+    [["codigo", sql.VarChar(10), codigo]]
+  );
+  return Boolean(fila);
 }
 
 /**

@@ -1,7 +1,7 @@
 import "server-only";
 import { agrupar, consulta, consultaCon, ejecutar, num, sql, F_TS, type Parametro } from "@/lib/data/sql";
 import { listarPendientes } from "@/lib/data/catalogos";
-import { getVisitasCompletas } from "@/lib/data/visitas";
+import { getVisitasDeLocalesConPendientes } from "@/lib/data/visitas";
 import { hoyISO } from "@/lib/ui/fecha";
 import type { CatalogoPendiente, EstadoProblema, EstadoVisita, OrigenRegistro, Visita } from "@/lib/types";
 
@@ -71,7 +71,8 @@ const diasEntre = (desde: string, hasta: string) =>
 
 export async function getPendientes(): Promise<DatosPendientes> {
   const [todas, pasos, desde, marcas] = await Promise.all([
-    getVisitasCompletas(),
+    // Las de los locales con algo pendiente: las pendientes y su historial.
+    getVisitasDeLocalesConPendientes(),
     listarPendientes(),
     consulta<{ visita_id: number; en: string; origen: OrigenRegistro; por: string | null }>(
       `SELECT v.id AS visita_id, ${F_TS("h.ocurrido_en")} AS en, h.origen,

@@ -13,7 +13,7 @@ import {
   type ActaEntrada,
 } from "@/lib/data/visitas";
 import { registrarPersonaLocal } from "@/lib/data/personas-local";
-import { listarSucursales } from "@/lib/data/maestros";
+import { getSucursal } from "@/lib/data/maestros";
 import { cargoDelChecklist, listarMotivos } from "@/lib/data/catalogos";
 import { algunoPideHora } from "@/lib/ui/motivos";
 import { participaEnVisita, tomadaPorOtro } from "@/lib/ui/estado";
@@ -215,7 +215,7 @@ export async function crearVisitaTecnicoAction(pedido: {
   if (!entrada.ok) return { ok: false, error: entrada.error };
   const input = entrada.datos;
 
-  const sucursal = (await listarSucursales()).find((s) => s.id === input.sucursalId);
+  const sucursal = await getSucursal(input.sucursalId);
   if (!sucursal) return { ok: false, error: "Elige la sucursal donde estás." };
   if (!input.motivoCodigo) return { ok: false, error: "Marca al menos un motivo de la visita." };
   if (!input.fecha) return { ok: false, error: "Elige la fecha de la visita." };

@@ -1,9 +1,9 @@
 import { notFound } from "next/navigation";
 import SinAcceso from "@/components/admin/SinAcceso";
 import FichaVisitas from "@/components/admin/maestros/FichaVisitas";
-import { aFilas, type DatoFicha } from "@/components/admin/maestros/FichaPartes";
-import { listarClientes, listarMalls, listarSucursales } from "@/lib/data/maestros";
-import { getVisitasPorMall } from "@/lib/data/visitas";
+import type { DatoFicha } from "@/components/admin/maestros/FichaPartes";
+import { getMall, listarClientes, listarSucursales } from "@/lib/data/maestros";
+import { getFilasFicha } from "@/lib/data/visitas-lista";
 import { sesionCon } from "@/lib/auth";
 import { hoyISO } from "@/lib/ui/fecha";
 
@@ -17,15 +17,14 @@ export default async function MallFichaPage({ params }: { params: Promise<{ id: 
 
   const verVisitas = Boolean(await sesionCon("visitas.ver"));
   const verTiendas = Boolean(await sesionCon("sucursales.ver"));
-  const [malls, sucursales, clientes, visitas] = await Promise.all([
-    listarMalls(),
-    listarSucursales(),
-    listarClientes(),
-    verVisitas ? getVisitasPorMall(mallId) : Promise.resolve([]),
+  const [m, tiendas, filas] = await Promise.all([
+    getMall(mallId),
+    listarSucursales({ mallId }),
+    verVisitas ? getFilasFicha({ mallId }) : Promise.resolve([]),
   ]);
-  const m = malls.find((x) => x.id === mallId);
   if (!m) notFound();
-  const tiendas = sucursales.filter((s) => s.mallId === m.id);
+  // Solo los clientes de sus tiendas: para nombrarlos en la lista.
+  const clientes = await listarClientes({ ids: [...new Set(tiendas.map((s) => s.clienteId))] });
   const activas = tiendas.filter((s) => s.activo);
   const nClientes = new Set(activas.map((s) => s.clienteId)).size;
   const nombreCliente = (id: number) => clientes.find((c) => c.id === id)?.nombreFantasia ?? "—";
@@ -47,7 +46,7 @@ export default async function MallFichaPage({ params }: { params: Promise<{ id: 
       volver={{ href: "/admin/malls", label: "Malls" }}
       datos={datos}
       notas={null}
-      filas={aFilas(visitas, malls, sucursales)}
+      filas={filas}
       tiendas={
         verTiendas
           ? tiendas.map((s) => ({

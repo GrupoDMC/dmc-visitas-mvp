@@ -120,13 +120,6 @@ export async function listarSolicitudesPassword(actor: ActorSolicitud): Promise<
   });
 }
 
-export async function contarSolicitudesPendientes(): Promise<number> {
-  const [fila] = await consulta<{ n: number }>(
-    `SELECT COUNT(*) AS n FROM dmc.solicitud_password WHERE estado = 'PENDIENTE'`
-  );
-  return num(fila?.n ?? 0);
-}
-
 /**
  * Le pone la clave temporal al usuario de la solicitud y la marca atendida, en
  * una transacción y con la solicitud y la cuenta tomadas. La cuenta queda con
