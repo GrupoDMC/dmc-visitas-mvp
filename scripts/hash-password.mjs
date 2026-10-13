@@ -2,7 +2,9 @@
 // Genera el bcrypt de una contraseña y el UPDATE para dmc.usuario.
 //
 //   node scripts/hash-password.mjs                       # pide la contraseña sin mostrarla
-//   node scripts/hash-password.mjs usuario@grupodmc.cl   # además arma el UPDATE
+//   node scripts/hash-password.mjs usuario@example.com   # además arma el UPDATE
+//   node scripts/hash-password.mjs usuario@example.com --admin
+//                                                        # arma el INSERT del primer administrador
 //
 // La contraseña se pide por stdin a propósito: pasarla como argumento la
 // dejaría en el historial del shell y en la lista de procesos.
@@ -12,7 +14,8 @@ import { createInterface } from "node:readline";
 import { stdin, stdout, argv, exit } from "node:process";
 
 const COSTO = 12;
-const email = argv[2] ?? null;
+const email = argv[2] && !argv[2].startsWith("--") ? argv[2] : null;
+const crearAdmin = argv.includes("--admin");
 
 function preguntarOculto(prompt) {
   return new Promise((resolve) => {
@@ -50,6 +53,12 @@ console.log(`\nHash bcrypt (costo ${COSTO}):\n${hash}\n`);
 if (email) {
   const seguro = email.replace(/'/g, "''");
   console.log("SQL para aplicarlo:\n");
-  console.log(`UPDATE dmc.usuario SET password_hash = N'${hash}' WHERE email = N'${seguro}';`);
+  if (crearAdmin) {
+    console.log(
+      `INSERT INTO dmc.usuario (email, password_hash, rol, activo) VALUES (N'${seguro}', N'${hash}', 'ADMIN', 1);`
+    );
+  } else {
+    console.log(`UPDATE dmc.usuario SET password_hash = N'${hash}' WHERE email = N'${seguro}';`);
+  }
   console.log("");
 }

@@ -24,7 +24,9 @@ import {
   type DatosTecnico,
   type DatosUsuario,
 } from "@/lib/data/maestros";
-import { eliminarRol, guardarPermisosCelular, guardarRol, leerRol, type DatosRol } from "@/lib/data/roles";
+import { auditar, diferencia } from "@/lib/data/auditoria";
+import { log } from "@/lib/log";
+import { eliminarRol, guardarPermisosCelular, guardarRol, leerRol, type Cuenta, type DatosRol } from "@/lib/data/roles";
 import { motivoCuentaAjena, normalizarPermisos, puedeAdministrarCuenta, tiene } from "@/lib/permisos";
 import { validarPasswordNueva } from "@/lib/password";
 import { mensajeRut, rutCompleto } from "@/lib/ui/formato";
@@ -93,7 +95,7 @@ function mensajeDeError(err: unknown, contexto: string): string {
   if (/uq_rol_nombre/i.test(texto)) return "Ya existe un rol con ese nombre.";
   if (/fk_usuario_rol/i.test(texto)) return "Ese rol ya no existe. Recarga la página y elige otro.";
   if (/duplicate|unique/i.test(texto)) return "Ya existe un registro con esos datos.";
-  console.error(`[dmc] ${contexto}:`, err);
+  log.error(contexto, { err });
   return "No se pudo guardar. Revisa los datos e inténtalo otra vez.";
 }
 
@@ -246,6 +248,7 @@ export async function guardarUsuarioAction(
     if (fallo) return { ok: false, error: fallo };
   }
 
+  let previa: Cuenta | null = null;
   try {
     const guardado = await guardarUsuario(id, datos, {
       actorId: sesion.usuario.id,
@@ -253,6 +256,7 @@ export async function guardarUsuarioAction(
       // tiene: ni tocar cuentas que pueden más que él, ni cambiarse el rol, ni
       // dar un rol que pueda más que él.
       autorizar: (actual, nueva) => {
+        previa = actual;
         if (actual && !puedeAdministrarCuenta(sesion, actual)) return motivoCuentaAjena(actual);
         if (!puedeAdministrarCuenta(sesion, nueva)) {
           return nueva.rol === "ADMIN"
@@ -269,11 +273,39 @@ export async function guardarUsuarioAction(
     // Si se cambió la clave propia, la versión de sesión subió: esta sesión
     // sigue con un token nuevo y las demás quedan cerradas.
     if (guardado.id === sesion.usuario.id) await crearSesion(guardado.id, guardado.sesionVersion);
+    await auditarUsuario(sesion, guardado.id, previa as Cuenta | null, datos);
   } catch (err) {
     return { ok: false, error: mensajeDeError(err, "guardarUsuario") };
   }
   revalidar();
   return { ok: true };
+}
+
+/** Anota lo sensible de haber guardado una cuenta: alta, baja, rol y clave. */
+async function auditarUsuario(
+  sesion: { usuario: { id: number; email: string } },
+  id: number,
+  previa: Cuenta | null,
+  datos: DatosUsuario & { rol: RolUsuario }
+) {
+  const base = { entidad: "usuario", entidadId: id } as const;
+  if (!previa) {
+    await auditar(sesion, { ...base, accion: "usuario.alta", detalle: { rol: datos.rol, rolId: datos.rolId ?? null } });
+    return;
+  }
+  if (previa.activo && !datos.activo) await auditar(sesion, { ...base, accion: "usuario.desactivar" });
+  if (!previa.activo && datos.activo) await auditar(sesion, { ...base, accion: "usuario.reactivar" });
+  const rolId = datos.rol === "COORDINADOR" ? datos.rolId ?? null : null;
+  if (previa.rol !== datos.rol || previa.rolId !== rolId) {
+    await auditar(sesion, {
+      ...base,
+      accion: "usuario.rol",
+      detalle: { de: { rol: previa.rol, rolId: previa.rolId }, a: { rol: datos.rol, rolId } },
+    });
+  }
+  if (datos.password !== "") {
+    await auditar(sesion, { ...base, accion: id === sesion.usuario.id ? "password.cambio" : "password.reseteo" });
+  }
 }
 
 // ── Roles y permisos ────────────────────────────────────────────────────────
@@ -308,7 +340,14 @@ export async function guardarRolAction(idPedido: number | null, datosPedidos: Da
         return { ok: false, error: "Solo puedes dar o quitar permisos que tú también tienes." };
       }
     }
-    await guardarRol(id, { nombre, descripcion: datos.descripcion, permisos });
+    const antes = id === null ? null : await leerRol(id);
+    const guardadoId = await guardarRol(id, { nombre, descripcion: datos.descripcion, permisos });
+    await auditar(sesion, {
+      accion: id === null ? "rol.alta" : "rol.editar",
+      entidad: "rol",
+      entidadId: id ?? guardadoId,
+      detalle: { nombre, ...diferencia(antes?.permisos ?? [], permisos) },
+    });
   } catch (err) {
     return { ok: false, error: mensajeDeError(err, "guardarRol") };
   }
@@ -331,6 +370,7 @@ export async function eliminarRolAction(idPedido: number): Promise<ResultadoMaes
     }
     const fallo = await eliminarRol(id);
     if (fallo) return { ok: false, error: fallo };
+    await auditar(sesion, { accion: "rol.eliminar", entidad: "rol", entidadId: id, detalle: { nombre: rol?.nombre } });
   } catch (err) {
     return { ok: false, error: mensajeDeError(err, "eliminarRol") };
   }
@@ -340,12 +380,14 @@ export async function eliminarRolAction(idPedido: number): Promise<ResultadoMaes
 
 /** Los permisos de celular de todos los técnicos (apartado «Permisos del celular»). */
 export async function guardarPermisosCelularAction(permisosPedidos: string[]): Promise<ResultadoMaestro> {
-  if (!(await sesionCon("usuarios.roles"))) return { ok: false, error: "No tienes permiso para administrar roles." };
+  const sesion = await sesionCon("usuarios.roles");
+  if (!sesion) return { ok: false, error: "No tienes permiso para administrar roles." };
   const entrada = validar(entradaPermisosCelular, permisosPedidos, "guardarPermisosCelular");
   if (!entrada.ok) return { ok: false, error: entrada.error };
   const permisos = entrada.datos;
   try {
     await guardarPermisosCelular(permisos);
+    await auditar(sesion, { accion: "permisos_celular.editar", entidad: "permisos_celular", detalle: { permisos } });
   } catch (err) {
     return { ok: false, error: mensajeDeError(err, "guardarPermisosCelular") };
   }

@@ -1,6 +1,7 @@
 "use server";
 
 import { getSesion } from "@/lib/auth";
+import { log } from "@/lib/log";
 import {
   abrirVideo,
   cerrarVideo,
@@ -93,7 +94,7 @@ export async function abrirVideoAction(folioPedido: string, datosPedidos: DatosV
   try {
     return { ok: true, videoId: await abrirVideo(visita.id, datos), recibidos: 0 };
   } catch (err) {
-    console.error("[dmc] abrirVideo:", err);
+    log.error("abrirVideo", { err });
     return { ok: false, error: "No se pudo empezar a subir el video." };
   }
 }
@@ -152,7 +153,7 @@ export async function subirTrozoVideoAction(envio: TrozoVideo): Promise<Resultad
       ? { ok: true, videoId, recibidos: res.recibidos }
       : { ok: false, error: res.error, recibidos: res.recibidos };
   } catch (err) {
-    console.error("[dmc] subirTrozoVideo:", err);
+    log.error("subirTrozoVideo", { err });
     return { ok: false, error: "Se cortó la subida del video." };
   }
 }
@@ -173,7 +174,7 @@ export async function cerrarVideoAction(folioPedido: string, videoIdPedido: numb
     // al guardarse. Si el técnico abandona la edición, el acta no cambió.
     if (visita.enEdicion) await desactivarVideo(videoId, visita.id);
   } catch (err) {
-    console.error("[dmc] cerrarVideo:", err);
+    log.error("cerrarVideo", { err });
     return { ok: false, error: "No se pudo terminar de guardar el video." };
   }
   return { ok: true, videoId, archivoUrl: `/api/visita/video/${videoId}` };
@@ -191,7 +192,7 @@ export async function borrarVideoAction(folioPedido: string, videoIdPedido: numb
   try {
     await desactivarVideo(videoId, visita.id);
   } catch (err) {
-    console.error("[dmc] borrarVideo:", err);
+    log.error("borrarVideo", { err });
     return { ok: false, error: "No se pudo quitar el video." };
   }
   return { ok: true, videoId };

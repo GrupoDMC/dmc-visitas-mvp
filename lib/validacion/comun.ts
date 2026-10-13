@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { log } from "@/lib/log";
 
 // Validación en runtime de lo que llega a las Server Actions.
 //
@@ -32,7 +33,7 @@ export function validar<S extends z.ZodType>(esquema: S, valor: unknown, context
   const r = esquema.safeParse(valor);
   if (r.success) return { ok: true, datos: r.data };
   const primera = r.error.issues[0];
-  console.warn(`[dmc] ${contexto}: entrada rechazada en «${(primera?.path ?? []).join(".") || "(raíz)"}»`);
+  log.warn(contexto, { rechazo: "entrada rechazada", campo: (primera?.path ?? []).join(".") || "(raíz)" });
   return { ok: false, error: primera?.message ?? "Los datos enviados no son válidos." };
 }
 

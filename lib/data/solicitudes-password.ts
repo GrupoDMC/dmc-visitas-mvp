@@ -142,7 +142,7 @@ export async function atenderSolicitudPassword(
   id: number,
   passwordTemporal: string,
   actor: ActorSolicitud
-): Promise<string | null> {
+): Promise<{ error: string } | { usuarioId: number }> {
   // bcrypt tarda: va antes de abrir la transacción, no con las filas tomadas.
   const hash = await hashearPassword(passwordTemporal);
 
@@ -151,18 +151,18 @@ export async function atenderSolicitudPassword(
       `SELECT usuario_id, estado FROM dmc.solicitud_password WITH (UPDLOCK, HOLDLOCK) WHERE id = @id`,
       [["id", sql.BigInt, id]]
     );
-    if (!solicitud) return "Esa solicitud ya no existe. Recarga la página.";
-    if (solicitud.estado !== "PENDIENTE") return "Esa solicitud ya estaba cerrada.";
+    if (!solicitud) return { error: "Esa solicitud ya no existe. Recarga la página." };
+    if (solicitud.estado !== "PENDIENTE") return { error: "Esa solicitud ya estaba cerrada." };
     if (solicitud.usuario_id === null) {
-      return "Ese correo no tiene ninguna cuenta. Créala en Maestros › Usuarios antes de asignarle una clave.";
+      return { error: "Ese correo no tiene ninguna cuenta. Créala en Maestros › Usuarios antes de asignarle una clave." };
     }
 
     const cuenta = await leerCuenta(num(solicitud.usuario_id), ej, true);
-    if (!cuenta) return "Esa cuenta ya no existe.";
-    if (cuenta.id === actor.usuario.id) return "Tu propia contraseña no se cambia desde acá.";
-    if (!puedeAdministrarCuenta(actor, cuenta)) return motivoCuentaAjena(cuenta);
+    if (!cuenta) return { error: "Esa cuenta ya no existe." };
+    if (cuenta.id === actor.usuario.id) return { error: "Tu propia contraseña no se cambia desde acá." };
+    if (!puedeAdministrarCuenta(actor, cuenta)) return { error: motivoCuentaAjena(cuenta) };
     const fallo = validarPasswordNueva(passwordTemporal, cuenta.email);
-    if (fallo) return fallo;
+    if (fallo) return { error: fallo };
 
     await ej.ejecutar(
       `UPDATE dmc.usuario
@@ -182,7 +182,7 @@ export async function atenderSolicitudPassword(
         ["id", sql.BigInt, id],
       ]
     );
-    return null;
+    return { usuarioId: cuenta.id };
   });
 }
 

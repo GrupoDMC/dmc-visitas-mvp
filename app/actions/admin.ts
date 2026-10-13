@@ -1,5 +1,7 @@
 "use server";
 
+import { auditar } from "@/lib/data/auditoria";
+import { log } from "@/lib/log";
 import { revalidatePath } from "next/cache";
 import { sesionCon } from "@/lib/auth";
 import {
@@ -94,7 +96,7 @@ function comoError(err: unknown, contexto: string): ResultadoAdmin {
   if (/ck_problema_otro_desc/i.test(texto)) {
     return { ok: false, error: "Un problema del tipo «Otro» necesita una descripción escrita." };
   }
-  console.error(`[dmc] ${contexto}:`, err);
+  log.error(contexto, { err });
   return { ok: false, error: "No se pudo guardar en el servidor. Inténtalo otra vez." };
 }
 
@@ -379,6 +381,7 @@ export async function eliminarVisitaAction(pedido: {
   } catch (err) {
     return comoError(err, "eliminarVisita");
   }
+  await auditar(sesion, { accion: "visita.eliminar", entidad: "visita", entidadId: input.folio });
   revalidarPanel();
   return { ok: true, folio: input.folio };
 }
@@ -524,9 +527,11 @@ export async function eliminarVisitasAction(pedido: {
     return loteRechazado(`La confirmación no coincide. Escribe «ELIMINAR ${input.total}» tal cual.`);
   }
 
-  return aplicarEnLote(input.folios, "eliminarVisitas", (folio) =>
-    eliminarVisita({ folio, confirmacionFolio: folio, usuarioId: sesion.usuario.id })
-  );
+  return aplicarEnLote(input.folios, "eliminarVisitas", async (folio) => {
+    const fallo = await eliminarVisita({ folio, confirmacionFolio: folio, usuarioId: sesion.usuario.id });
+    if (!fallo) await auditar(sesion, { accion: "visita.eliminar", entidad: "visita", entidadId: folio, detalle: { lote: true } });
+    return fallo;
+  });
 }
 
 export async function actualizarProblemaAction(pedido: {
@@ -686,7 +691,7 @@ function errorChecklist(err: unknown, contexto: string): ResultadoChecklist {
   if (/uq_\w*opcion|uq_\w*subtrabajo/i.test(texto)) {
     return { ok: false, error: "Hay dos subdetalles con la misma etiqueta dentro de la misma entrada." };
   }
-  console.error(`[dmc] ${contexto}:`, err);
+  log.error(contexto, { err });
   return { ok: false, error: "No se pudo guardar el checklist. Inténtalo otra vez." };
 }
 
@@ -733,6 +738,7 @@ export async function guardarChecklistAction(borradorPedido: BorradorChecklist):
 
   try {
     const resumen = await guardarChecklist(borrador);
+    await auditar(sesion, { accion: "checklist.editar", entidad: "checklist", detalle: { ...resumen } });
     revalidarChecklist();
     return { ok: true, resumen };
   } catch (err) {
@@ -746,6 +752,7 @@ export async function guardarPlantillaChecklistAction(): Promise<ResultadoCheckl
   if (!sesion) return { ok: false, error: "No tienes permiso para editar el checklist." };
   try {
     const plantilla = await guardarPlantilla(PLANTILLA_PROPIA, sesion.usuario.id);
+    await auditar(sesion, { accion: "checklist.plantilla_guardar", entidad: "checklist" });
     return { ok: true, plantilla };
   } catch (err) {
     return errorChecklist(err, "guardarPlantilla");
@@ -758,6 +765,7 @@ export async function reiniciarChecklistAction(): Promise<ResultadoChecklist> {
   if (!sesion) return { ok: false, error: "No tienes permiso para editar el checklist." };
   try {
     const resumen = await aplicarPlantilla(PLANTILLA_PROPIA);
+    await auditar(sesion, { accion: "checklist.plantilla_aplicar", entidad: "checklist", detalle: { ...resumen } });
     revalidarChecklist();
     return { ok: true, resumen, plantilla: await getPlantilla(PLANTILLA_PROPIA) };
   } catch (err) {
@@ -782,8 +790,14 @@ export async function atenderSolicitudPasswordAction(
   try {
     // La clave no se recorta: se guarda tal como se va a entregar. La política
     // (validarPasswordNueva) se mira adentro, contra el correo de la cuenta.
-    const motivo = await atenderSolicitudPassword(id, passwordTemporal, sesion);
-    if (motivo) return { ok: false, error: motivo };
+    const atendida = await atenderSolicitudPassword(id, passwordTemporal, sesion);
+    if ("error" in atendida) return { ok: false, error: atendida.error };
+    await auditar(sesion, {
+      accion: "password.reseteo",
+      entidad: "usuario",
+      entidadId: atendida.usuarioId,
+      detalle: { solicitudId: id },
+    });
   } catch (err) {
     return comoError(err, "atenderSolicitudPassword");
   }

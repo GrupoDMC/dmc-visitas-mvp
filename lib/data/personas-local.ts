@@ -1,4 +1,5 @@
 import "server-only";
+import { log } from "@/lib/log";
 import { consultaCon, ejecutar, num, sql, F_TS } from "@/lib/data/sql";
 import type { PersonaLocal } from "@/lib/types";
 
@@ -53,7 +54,7 @@ export async function listarPersonasLocal(sucursalId: number): Promise<PersonaLo
       ultimaVez: f.ultima_vez,
     }));
   } catch (err) {
-    console.error("[dmc] listarPersonasLocal:", err);
+    log.error("listarPersonasLocal", { err });
     return [];
   }
 }
@@ -94,6 +95,6 @@ export async function registrarPersonaLocal(sucursalId: number, persona: DatosPe
       ]
     );
   } catch (err) {
-    console.error("[dmc] registrarPersonaLocal:", err);
+    log.error("registrarPersonaLocal", { err });
   }
 }

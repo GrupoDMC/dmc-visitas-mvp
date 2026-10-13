@@ -1,4 +1,5 @@
 import "server-only";
+import { log } from "@/lib/log";
 import { consultaCon, ejecutar, num, sql } from "@/lib/data/sql";
 
 // Freno de intentos de entrar — dmc.intento_login (migración 023).
@@ -15,15 +16,20 @@ import { consultaCon, ejecutar, num, sql } from "@/lib/data/sql";
 // alta, la espera delataría cuáles existen. Los intentos que llegan durante la
 // espera no se anotan, así que la espera no se alarga sola.
 
-const VENTANA_MIN = 15;
-const MAX_FALLOS_CUENTA = 5;
-const MAX_FALLOS_IP = 30;
+export const VENTANA_MIN = 15;
+export const MAX_FALLOS_CUENTA = 5;
+export const MAX_FALLOS_IP = 30;
 /** Más viejo que esto ya no sirve para nada. */
 const RETENCION_DIAS = 30;
 
 /** Lo que entra a la tabla: el correo como se compara al entrar, y acotado. */
 export function correoDeIntento(email: string): string {
   return email.trim().toLowerCase().slice(0, 160);
+}
+
+/** Lo que decide el freno, a partir de lo que cuenta la consulta. */
+export function hayFreno(fila: { cuenta?: unknown; fallos_ip?: unknown } | undefined): boolean {
+  return num(fila?.cuenta ?? 0) === 1 || num(fila?.fallos_ip ?? 0) >= MAX_FALLOS_IP;
 }
 
 /** ¿Hay que frenar este intento antes de mirar siquiera la contraseña? */
@@ -51,7 +57,7 @@ export async function intentoBloqueado(email: string, ip: string | null): Promis
       ["ip", sql.VarChar(45), ip],
     ]
   );
-  return num(fila?.cuenta ?? 0) === 1 || num(fila?.fallos_ip ?? 0) >= MAX_FALLOS_IP;
+  return hayFreno(fila);
 }
 
 /** Anota el intento. De vez en cuando aprovecha de barrer los muy viejos. */
@@ -65,6 +71,6 @@ export async function registrarIntento(email: string, ip: string | null, exito: 
   if (Math.random() < 0.02) {
     await ejecutar(
       `DELETE TOP (1000) FROM dmc.intento_login WHERE creado_en < DATEADD(day, -${RETENCION_DIAS}, SYSDATETIME())`
-    ).catch((err) => console.error("[dmc] no se pudo barrer dmc.intento_login:", err));
+    ).catch((err) => log.error("intento_login.barrido", { err }));
   }
 }

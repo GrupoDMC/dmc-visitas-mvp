@@ -1,4 +1,5 @@
 import "server-only";
+import { log } from "@/lib/log";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { PDFDocument, StandardFonts, rgb, type Color, type PDFFont, type PDFImage, type PDFPage } from "pdf-lib";
@@ -341,7 +342,7 @@ async function incrustar(doc: PDFDocument, img: ImagenActa): Promise<PDFImage | 
     if (img.bytes[0] === 0x89 && img.bytes[1] === 0x50) return await doc.embedPng(img.bytes);
     if (img.bytes[0] === 0xff && img.bytes[1] === 0xd8) return await doc.embedJpg(img.bytes);
   } catch (err) {
-    console.error("[dmc] no se pudo incrustar una imagen en el PDF:", err);
+    log.error("no se pudo incrustar una imagen en el PDF", { err });
   }
   return null;
 }

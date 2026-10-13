@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { log } from "@/lib/log";
 import { getSesion } from "@/lib/auth";
 import { getFirmaBinaria, getFotoBinaria, getVisitaCompletaPorFolio } from "@/lib/data/visitas";
 import { listarMotivos, listarProblemas, listarTrabajos } from "@/lib/data/catalogos";
@@ -57,7 +58,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ folio: 
       },
     });
   } catch (err) {
-    console.error("[dmc] no se pudo generar el PDF del acta:", err);
+    log.error("no se pudo generar el PDF del acta", { err });
     return new NextResponse("No se pudo generar el PDF.", { status: 500 });
   }
 }

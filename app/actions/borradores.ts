@@ -1,6 +1,7 @@
 "use server";
 
 import { getSesion } from "@/lib/auth";
+import { log } from "@/lib/log";
 import { getVisitaCompletaPorFolio } from "@/lib/data/visitas";
 import { borrarBorrador, guardarBorrador, leerBorrador } from "@/lib/data/borradores";
 import { participaEnVisita } from "@/lib/ui/estado";
@@ -43,7 +44,7 @@ export async function guardarBorradorAction(folioPedido: string, payloadPedido: 
     const ok = await guardarBorrador(folio, contexto.sesion.usuario.id, payload);
     return { ok };
   } catch (err) {
-    console.error("[dmc] guardarBorrador:", err);
+    log.error("guardarBorrador", { err });
     return { ok: false };
   }
 }
@@ -59,7 +60,7 @@ export async function leerBorradorAction(folioPedido: string): Promise<Resultado
     const guardado = await leerBorrador(folio, contexto.sesion.usuario.id);
     return guardado ? { ok: true, payload: guardado.payload, guardadoEn: guardado.guardadoEn } : { ok: true };
   } catch (err) {
-    console.error("[dmc] leerBorrador:", err);
+    log.error("leerBorrador", { err });
     return { ok: false };
   }
 }
@@ -75,7 +76,7 @@ export async function descartarBorradorAction(folioPedido: string): Promise<Resu
     await borrarBorrador(folio, contexto.sesion.usuario.id);
     return { ok: true };
   } catch (err) {
-    console.error("[dmc] descartarBorrador:", err);
+    log.error("descartarBorrador", { err });
     return { ok: false };
   }
 }

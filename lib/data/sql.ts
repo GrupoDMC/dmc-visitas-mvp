@@ -1,4 +1,5 @@
 import "server-only";
+import { log } from "@/lib/log";
 import sql from "mssql";
 import { getPool } from "@/lib/db/pool";
 
@@ -119,7 +120,7 @@ export async function enTransaccion<T>(fn: (ej: Ejecutor) => Promise<T>): Promis
     return resultado;
   } catch (err) {
     // Un rollback fallido no debe tapar el error real que trajo hasta acá.
-    await tx.rollback().catch((e) => console.error("[dmc] rollback fallido:", e));
+    await tx.rollback().catch((e) => log.error("rollback fallido", { err: e }));
     throw err;
   }
 }

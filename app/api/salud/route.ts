@@ -1,4 +1,5 @@
 import { timingSafeEqual } from "node:crypto";
+import { log } from "@/lib/log";
 import { NextResponse, type NextRequest } from "next/server";
 import { describirDestinoSql } from "@/lib/db/config";
 import { getPool } from "@/lib/db/pool";
@@ -36,7 +37,7 @@ export async function GET(req: NextRequest) {
   try {
     exigirConexionSql();
   } catch (err) {
-    console.error("[dmc] /api/salud: configuración SQL incompleta:", err);
+    log.error("/api/salud: configuración SQL incompleta", { err });
     return NextResponse.json(
       { ok: false, entorno: enProduccion ? "produccion" : "desarrollo", error: "Configuración de SQL incompleta. Revisa el log del despliegue." },
       { status: 503 }
@@ -73,7 +74,7 @@ export async function GET(req: NextRequest) {
       },
     });
   } catch (err) {
-    console.error("[dmc] /api/salud: no se pudo consultar SQL Server:", err);
+    log.error("/api/salud: no se pudo consultar SQL Server", { err });
     return NextResponse.json(
       {
         ok: false,

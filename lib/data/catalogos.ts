@@ -1,4 +1,5 @@
 import "server-only";
+import { log } from "@/lib/log";
 import {
   agrupar,
   consulta,
@@ -1208,7 +1209,7 @@ async function leerPlantilla(nombre: string): Promise<{ fila: FilaPlantilla; dat
       },
     };
   } catch {
-    console.error("[dmc] la plantilla del checklist tiene un JSON ilegible:", nombre);
+    log.error("plantilla del checklist con JSON ilegible", { nombre });
     return null;
   }
 }

@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { log } from "@/lib/log";
 import { sesionCon } from "@/lib/auth";
 import { listarMotivos, listarTrabajos } from "@/lib/data/catalogos";
 import { consultaCon, num, paramIds, subIds } from "@/lib/data/sql";
@@ -130,7 +131,7 @@ export async function crearVisitasPapelAction(lotePedido: { informes: InformePap
         res.ok ? { ok: true, folio: res.folio } : { ok: false, error: res.error, repetida: Boolean(res.repetidaFolio) }
       );
     } catch (err) {
-      console.error("[crearVisitasPapel]", err);
+      log.error("crearVisitasPapel", { err });
       resultados.push({ ok: false, error: "No se pudo guardar. Inténtalo de nuevo." });
     }
   }
@@ -180,7 +181,7 @@ export async function firmantesDeSucursalesAction(lotePedido: {
     }
     return salida;
   } catch (err) {
-    console.error("[firmantesDeSucursales]", err);
+    log.error("firmantesDeSucursales", { err });
     return {};
   }
 }

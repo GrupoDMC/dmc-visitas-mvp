@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { log } from "@/lib/log";
 import { getSesion, sesionCon } from "@/lib/auth";
 import { tiene } from "@/lib/permisos";
 import { editarActa, type EdicionActaEntrada, type ResultadoEdicion } from "@/lib/data/ediciones";
@@ -26,7 +27,7 @@ function comoError(err: unknown, contexto: string): ResultadoEdicion {
       error: "El checklist cambió mientras editabas el acta. Vuelve a abrirla y revisa lo marcado.",
     };
   }
-  console.error(`[dmc] ${contexto}:`, err);
+  log.error(contexto, { err });
   return { ok: false, error: "No se pudo guardar en el servidor. Revisa la conexión e inténtalo otra vez." };
 }
 

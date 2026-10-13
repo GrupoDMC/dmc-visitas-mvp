@@ -1,7 +1,7 @@
 import "server-only";
+import { decodificarImagen } from "@/lib/imagen";
 import { enTransaccion, num, paramIds, sql, subIds } from "@/lib/data/sql";
 import {
-  decodificarImagen,
   DIAS_PARA_EDITAR,
   escribirInternos,
   escribirTrabajos,

@@ -1,4 +1,5 @@
 import "server-only";
+import { log } from "@/lib/log";
 import { cache } from "react";
 import { cookies, headers } from "next/headers";
 import { COOKIE_EXPIRA, COOKIE_SESION, VIGENCIA_SESION, firmarToken, opcionesCookie, verificarToken } from "@/lib/session";
@@ -122,7 +123,7 @@ const leerSesion = cache(async function leerSesion(): Promise<{ sesion: Sesion; 
   } catch (err) {
     // Base de datos caída: mejor tratar la sesión como ausente (el usuario cae
     // en /login) que reventar la página con un error sin explicación.
-    console.error("[dmc] no se pudo leer la sesión desde SQL Server:", err);
+    log.error("no se pudo leer la sesión desde SQL Server", { err });
     return null;
   }
 });

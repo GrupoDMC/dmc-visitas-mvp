@@ -9,6 +9,8 @@ import {
   ipDeLaPeticion,
 } from "@/lib/auth";
 import { crearSolicitudPassword } from "@/lib/data/solicitudes-password";
+import { auditar } from "@/lib/data/auditoria";
+import { log } from "@/lib/log";
 import { cambiarPasswordPropia } from "@/lib/data/usuarios";
 import { validarPasswordNueva } from "@/lib/password";
 import { validar } from "@/lib/validacion/comun";
@@ -50,7 +52,7 @@ export async function loginAction(_prev: LoginState, formData: FormData): Promis
     // Entorno mal configurado o base de datos inalcanzable. El detalle va al
     // log del servidor; al usuario solo se le dice que avise, sin filtrar
     // hosts, nombres de base de datos ni credenciales.
-    console.error("[dmc] fallo al autenticar:", err);
+    log.error("login", { err });
     return { error: "No se pudo validar el acceso. Avisa al administrador del sistema." };
   }
 
@@ -87,7 +89,7 @@ export async function solicitarPasswordAction(
   try {
     await crearSolicitudPassword(email, mensaje || null, await ipDeLaPeticion());
   } catch (err) {
-    console.error("[dmc] no se pudo registrar la solicitud de contraseña:", err);
+    log.error("solicitarPassword", { err });
     return { ok: false, error: "No se pudo registrar la solicitud. Inténtalo otra vez en un momento." };
   }
 
@@ -122,8 +124,9 @@ export async function cambiarPasswordAction(
     const version = await cambiarPasswordPropia(sesion.usuario.id, nueva);
     if (version === null) return { error: "La contraseña nueva tiene que ser distinta de la que te entregaron." };
     await crearSesion(sesion.usuario.id, version);
+    await auditar(sesion, { accion: "password.cambio", entidad: "usuario", entidadId: sesion.usuario.id });
   } catch (err) {
-    console.error("[dmc] no se pudo cambiar la contraseña:", err);
+    log.error("cambiarPassword", { err, usuarioId: sesion.usuario.id });
     return { error: "No se pudo guardar la contraseña. Inténtalo otra vez en un momento." };
   }
 

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { log } from "@/lib/log";
 
 // Receptor de los avisos de Content-Security-Policy-Report-Only. Solo deja
 // constancia en el log: no toca la base ni devuelve nada. Es público a
@@ -41,6 +42,6 @@ export async function POST(req: Request) {
   } catch {
     // Cuerpo que no es JSON: se registra recortado tal cual.
   }
-  console.warn("[csp]", resumen.slice(0, TOPE_LOG));
+  log.warn("csp", { resumen: resumen.slice(0, TOPE_LOG) });
   return vacia();
 }

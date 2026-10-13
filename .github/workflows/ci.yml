@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  calidad:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: npm
+
+      - run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Tests
+        run: npm test
+
+      - name: Auditoría de dependencias
+        run: npm audit --omit=dev --audit-level=high
+
+      - name: Build
+        run: npm run build
+        env:
+          # Valores falsos: el build no abre ninguna conexión. Ningún secreto real.
+          SESSION_SECRET: 0000000000000000000000000000000000000000000000000000000000000000
+          DB_SERVER: localhost
+          DB_PORT: "1433"
+          DB_NAME: ci
+          DB_USER: ci
+          DB_PASSWORD: ci
+          DB_ENCRYPT: "false"
+          DB_TRUST_SERVER_CERT: "true"
+          HEALTHCHECK_TOKEN: ci
+          NEXT_TELEMETRY_DISABLED: "1"

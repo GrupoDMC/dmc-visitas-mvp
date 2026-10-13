@@ -1,4 +1,5 @@
 import "server-only";
+import { log } from "@/lib/log";
 import { consulta, ejecutar, sql } from "@/lib/data/sql";
 import { hoyISO, sumarDias } from "@/lib/ui/fecha";
 
@@ -43,7 +44,7 @@ export function cancelarVisitasVencidas(): Promise<void> {
     .then(() => {
       ultima = Date.now();
     })
-    .catch((err) => console.error("[dmc] cancelarVisitasVencidas:", err))
+    .catch((err) => log.error("cancelarVisitasVencidas", { err }))
     .finally(() => {
       enCurso = null;
     });

@@ -16,8 +16,10 @@ dar seguimiento, y una vista móvil para que el técnico registre el trabajo y c
 - [Stack](#stack)
 - [Puesta en marcha](#puesta-en-marcha)
 - [Scripts](#scripts)
+- [Calidad: tests e integración continua](#calidad-tests-e-integración-continua)
 - [Configuración](#configuración)
 - [Base de datos](#base-de-datos)
+- [Base de datos de desarrollo](#base-de-datos-de-desarrollo)
 - [Estructura del proyecto](#estructura-del-proyecto)
 - [Convenciones](#convenciones)
 - [Seguridad](#seguridad)
@@ -49,6 +51,9 @@ npm run dev
 La aplicación no tiene modo de demostración: sin las variables de conexión no arranca. Abrir
 <http://localhost:3000>; la raíz redirige al login o a la vista que corresponda según el rol.
 
+Para desarrollo, apunta `.env.development` a **tu propia base** (ver
+[Base de datos de desarrollo](#base-de-datos-de-desarrollo)), nunca a la de producción.
+
 ---
 
 ## Scripts
@@ -60,8 +65,22 @@ La aplicación no tiene modo de demostración: sin las variables de conexión no
 | `npm start` | Sirve el build de producción |
 | `npm run lint` | ESLint |
 | `npm run typecheck` | Verificación de tipos (`tsc --noEmit`) |
+| `npm test` | Tests (Vitest) |
+| `npm run test:cobertura` | Tests con informe de cobertura |
 | `npm run secreto` | Genera un valor aleatorio apto para secretos |
 | `npm run hash-password` | Genera el hash de una contraseña por consola |
+
+---
+
+## Calidad: tests e integración continua
+
+Los tests (`tests/`) cubren la lógica pura y crítica —sesión firmada, permisos, validación de
+contraseñas y de entradas, imágenes, formatos— y usan la capa de datos simulada: **ninguno abre una
+conexión a la base**.
+
+En cada push y pull request a `main`, GitHub Actions (`.github/workflows/ci.yml`) corre: `npm ci`,
+typecheck, lint, tests, `npm audit --omit=dev --audit-level=high` y `npm run build` (este último con
+variables de entorno de relleno: el workflow no usa ningún secreto).
 
 ---
 
@@ -85,6 +104,38 @@ reales.
 - Las migraciones son idempotentes y se aplican **en orden** con una cuenta con permisos de DDL.
   La cuenta que usa la aplicación solo lee y escribe datos.
 - Cada migración nueva también se refleja en el script del esquema base.
+- `sql/dmc_contingencia_sqlserver.sql` contiene solo el esquema y lo mínimo que la aplicación necesita
+  (estados de problema y el rol «Coordinador»). Los datos de ejemplo, **ficticios**, están aparte en
+  `sql/semillas-demo.sql`.
+
+---
+
+## Base de datos de desarrollo
+
+Para trabajar sin tocar producción, levanta una instancia propia de SQL Server (local, en un
+contenedor o la edición Developer) y prepárala así:
+
+1. Crea la base y el esquema con una cuenta con permisos de DDL. El script ya incluye todas las
+   migraciones numeradas hasta su fecha: en una base nueva no se aplica ninguna aparte.
+
+   ```bash
+   sqlcmd -S <servidor> -U <usuario> -P <clave> -i sql/dmc_contingencia_sqlserver.sql
+   ```
+
+2. (Opcional) Carga los datos de demostración ficticios: `sql/semillas-demo.sql`. Sin ellos el
+   checklist arranca vacío y hay que cargar los motivos desde el panel antes de agendar visitas.
+
+3. Crea el primer administrador. La contraseña se pide por consola y no queda en ningún archivo:
+
+   ```bash
+   npm run hash-password -- admin@example.com --admin
+   ```
+
+   Ejecuta en tu base el `INSERT` que imprime.
+
+4. Crea un usuario SQL para la aplicación solo con lectura y escritura sobre el esquema `dmc`, y
+   déjalo en `.env.development` (`DB_SERVER`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`; y `SESSION_SECRET`
+   con `npm run secreto`).
 
 ---
 
@@ -106,10 +157,12 @@ lib/
   db/           Configuración y pool de conexión
   ui/           Utilidades de cliente (formato, fechas, estados)
   auth.ts       Autenticación y sesión
+  log.ts        Registro de eventos en JSON
   types.ts      Tipos del dominio
 middleware.ts   Control de acceso a las rutas
 scripts/        Utilidades de consola
-sql/            Esquema y migraciones
+sql/            Esquema, migraciones y datos de demostración
+tests/          Tests (Vitest)
 ```
 
 ---
@@ -120,7 +173,10 @@ sql/            Esquema y migraciones
 - Toda escritura pasa por Server Actions en `app/actions/*`; no hay API REST para el CRUD.
 - Los componentes de `components/mobile/*` están pensados para uso táctil en terreno; los de
   `components/admin/*`, para escritorio.
-- Antes de subir cambios: `npm run lint` y `npm run typecheck`.
+- Antes de subir cambios: `npm run lint`, `npm run typecheck` y `npm test`.
+- Lo que se pueda probar sin base de datos se escribe como función pura, fuera de las consultas SQL.
+- Los errores del servidor se registran con `lib/log.ts` (una línea JSON); las acciones sensibles se
+  anotan además en la tabla de auditoría (`lib/data/auditoria.ts`).
 
 ---
 

@@ -1,4 +1,5 @@
 import "server-only";
+import { log } from "@/lib/log";
 import sql from "mssql";
 import { getPool } from "@/lib/db/pool";
 import { hashearPassword, verificarPassword } from "@/lib/password";
@@ -144,6 +145,6 @@ export async function registrarAcceso(usuarioId: number): Promise<void> {
       .input("id", sql.BigInt, usuarioId)
       .query("UPDATE dmc.usuario SET ultimo_acceso_en = SYSDATETIME() WHERE id = @id");
   } catch (err) {
-    console.error("[dmc] no se pudo registrar el último acceso:", err);
+    log.error("no se pudo registrar el último acceso", { err });
   }
 }

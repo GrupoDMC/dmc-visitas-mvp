@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { log } from "@/lib/log";
 import { getSesion } from "@/lib/auth";
 import { tiene } from "@/lib/permisos";
 import {
@@ -49,7 +50,7 @@ function revalidar(folio: string) {
 }
 
 function comoError(err: unknown, contexto: string): ResultadoAccion {
-  console.error(`[dmc] ${contexto}:`, err);
+  log.error(contexto, { err });
   return { ok: false, error: "No se pudo guardar en el servidor. Revisa la conexión e inténtalo otra vez." };
 }
 
@@ -116,13 +117,13 @@ export async function guardarActaAction(entradaPedida: ActaEntrada): Promise<Res
         });
       }
     } catch (err) {
-      console.error("[dmc] registrarPersonaLocal tras guardar el acta:", err);
+      log.error("registrarPersonaLocal tras guardar el acta", { err });
     }
     // El acta ya está en sus tablas: el respaldo a medio llenar sobra, y si
     // quedara ahí la próxima visita a este folio lo ofrecería para recuperar.
     // Que falle no invalida el guardado.
     await borrarBorrador(entrada.folio, sesion.usuario.id).catch((err) =>
-      console.error("[dmc] borrarBorrador tras guardar el acta:", err)
+      log.error("borrarBorrador tras guardar el acta", { err })
     );
     revalidar(entrada.folio);
     revalidatePath(`/admin/visitas/${entrada.folio}`);

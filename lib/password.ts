@@ -1,4 +1,5 @@
 import "server-only";
+import { log } from "@/lib/log";
 import bcrypt from "bcryptjs";
 
 // Verificación de contraseñas contra dmc.usuario.password_hash.
@@ -24,7 +25,7 @@ export async function verificarPassword(password: string, hash: string): Promise
     return bcrypt.compare(password, hash);
   }
 
-  console.error("[dmc] password_hash con formato desconocido en dmc.usuario. Solo se acepta bcrypt.");
+  log.error("password_hash con formato desconocido en dmc.usuario: solo se acepta bcrypt");
   return false;
 }
 
