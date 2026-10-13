@@ -17,6 +17,8 @@ import { hoyISO } from "@/lib/ui/fecha";
 import { PRIMER_ANIO_PAPEL } from "@/lib/ui/papel";
 import type { InformePapel } from "@/lib/data/visitas-papel";
 import type { CatalogoTrabajo } from "@/lib/types";
+import { borrarBorradorPapel, escribirBorradorPapel, leerBorradorPapel } from "@/lib/ui/borrador-papel";
+import { useUsuarioLocal } from "@/lib/ui/usuario-local";
 
 /** Un técnico de la carga: todo lo que hay adentro lo hizo él. */
 interface Bloque {
@@ -76,7 +78,6 @@ interface Borrador {
   informes: Informe[];
 }
 
-const CLAVE_BORRADOR = "dmc.visitas-papel.borrador.v4";
 /** De a cuántos informes se manda al servidor: el avance se ve y nada se corta. */
 const TANDA = 40;
 
@@ -133,6 +134,7 @@ function faltante(inf: Informe, anio: number, hoy: string): string | null {
  * la lista; lo incompleto se queda marcado con lo que le falta.
  */
 export default function VisitasPapel() {
+  const uid = useUsuarioLocal();
   const router = useRouter();
   const ref = useReferencias();
   const { toast, aviso } = useToast();
@@ -158,7 +160,7 @@ export default function VisitasPapel() {
   // El borrador se lee recién en el navegador: en el servidor no existe.
   useEffect(() => {
     try {
-      const crudo = localStorage.getItem(CLAVE_BORRADOR);
+      const crudo = leerBorradorPapel(uid);
       if (crudo) {
         const b = JSON.parse(crudo) as Borrador;
         if (b.anio) setAnio(b.anio);
@@ -171,18 +173,18 @@ export default function VisitasPapel() {
       // Sin almacenamiento (ventana privada, bloqueado): se trabaja sin borrador.
     }
     setCargado(true);
-  }, []);
+  }, [uid]);
 
   useEffect(() => {
     if (!cargado) return;
     try {
       const b: Borrador = { anio, bloques, grupos, tiendas, informes };
-      if (bloques.length) localStorage.setItem(CLAVE_BORRADOR, JSON.stringify(b));
-      else localStorage.removeItem(CLAVE_BORRADOR);
+      if (bloques.length) escribirBorradorPapel(uid, JSON.stringify(b));
+      else borrarBorradorPapel(uid);
     } catch {
       // Igual que arriba: el borrador es una comodidad, no un requisito.
     }
-  }, [cargado, anio, bloques, grupos, tiendas, informes]);
+  }, [uid, cargado, anio, bloques, grupos, tiendas, informes]);
 
   // Al agregar una tienda se trae, una sola vez, quién ha firmado ahí antes.
   useEffect(() => {

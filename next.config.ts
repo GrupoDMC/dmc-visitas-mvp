@@ -16,8 +16,13 @@ const nextConfig: NextConfig = {
     // El acta del técnico viaja entera en una Server Action: fotos y firma
     // incluidas, en base64. El tope por defecto (1 MB) la rechaza en cuanto hay
     // dos fotos, y el error llega al celular como un fallo genérico de red.
-    // El cliente ya reduce cada foto antes de mandarla (ver comprimirFoto).
-    serverActions: { bodySizeLimit: "20mb" },
+    // El cliente reduce cada foto antes de mandarla (ver comprimirFoto: lado
+    // mayor 1600 px, JPEG al 72 %), y así una pesa unos 250-450 KB, o 0,3-0,6 MB
+    // en base64; la firma es un PNG de decenas de KB. Un acta normal queda en
+    // 1-3 MB. Vercel corta el cuerpo de una función en 4,5 MB sin importar lo
+    // que diga acá, así que el límite se deja justo por debajo: subirlo más no
+    // serviría de nada en producción. El video no cuenta: se sube aparte.
+    serverActions: { bodySizeLimit: "4mb" },
   },
 
   // Cabeceras de seguridad. La app se sirve por HTTPS en Vercel y maneja

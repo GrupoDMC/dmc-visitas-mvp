@@ -4,6 +4,7 @@ import { cargarReferencias } from "@/lib/data/referencias";
 import { contarProblemasAbiertos, contarReagendasPendientes, contarVisitas } from "@/lib/data/queries";
 import { contarSolicitudesPendientes } from "@/lib/data/solicitudes-password";
 import { listarUsuarios } from "@/lib/data/maestros";
+import { UsuarioLocalProvider } from "@/lib/ui/usuario-local";
 import { ReferenciasProvider } from "@/lib/ui/referencias";
 import AdminSidebar from "@/components/admin/AdminSidebar";
 import VigilanteSesion from "@/components/ui/VigilanteSesion";
@@ -39,6 +40,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
       : tiene(sesion.permisos, `${item.href === "/admin" ? "panel" : item.href.split("/")[2]}.ver`);
 
   return (
+    <UsuarioLocalProvider usuarioId={sesion.usuario.id}>
     <ReferenciasProvider valor={referencias}>
       <VigilanteSesion />
       {/* En el celular el menú es un cajón que se abre desde la barra de arriba
@@ -75,5 +77,6 @@ export default async function AdminLayout({ children }: { children: React.ReactN
         <div className="min-w-0 flex flex-col">{children}</div>
       </div>
     </ReferenciasProvider>
+    </UsuarioLocalProvider>
   );
 }

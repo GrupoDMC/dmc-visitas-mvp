@@ -68,3 +68,6 @@ $RECYCLE.BIN/
 # subidas en desarrollo (fotos y firmas de visitas)
 /public/uploads/
 /uploads/
+
+# Planillas de tiendas: datos internos, fuera del repo público
+sql/Tiendas/

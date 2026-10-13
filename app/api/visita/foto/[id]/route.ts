@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSesion } from "@/lib/auth";
+import { cabecerasEvidencia, mimeSeguro } from "@/lib/evidencia-http";
 import { esEvidenciaDeEliminada, getDuenosDeImagen, getFotoBinaria } from "@/lib/data/visitas";
 
 // Sirve la foto que el técnico tomó en terreno. Los bytes viven en
@@ -35,11 +36,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 
   return new NextResponse(new Uint8Array(imagen.bytes), {
     headers: {
-      "Content-Type": imagen.mime,
+      ...cabecerasEvidencia(mimeSeguro(imagen.mime, "imagen")),
       "Content-Length": String(imagen.bytes.length),
-      // Privada: la foto es de una visita concreta y no debe quedar en ninguna
-      // caché compartida. Inmutable porque una foto guardada no cambia nunca.
-      "Cache-Control": "private, max-age=31536000, immutable",
     },
   });
 }

@@ -10,6 +10,7 @@ import FirmaSheet, { type FirmaGuardada } from "./FirmaSheet";
 import { Toast, useToast } from "./toast";
 import { fmtRut, fmtTel, mensajeRut, rutCompleto, rutDvCorrecto, telCompleto } from "@/lib/ui/formato";
 import { comprimirFoto } from "@/lib/ui/imagen";
+import { useUsuarioLocal } from "@/lib/ui/usuario-local";
 import SelectBuscable from "@/components/ui/SelectBuscable";
 import { cargoVigente } from "@/lib/ui/cargos";
 import { etiquetaPersona, usePersonasLocal } from "@/lib/ui/personas-local";
@@ -30,6 +31,7 @@ import { agruparPorSeccion, hayAlgunaSeccion } from "@/lib/ui/secciones";
 import SeccionPlegable from "@/components/ui/SeccionPlegable";
 import {
   actasEnCola,
+  migrarClavesViejas,
   borradorConDatos,
   borrarBorrador,
   encolarActa,
@@ -100,6 +102,8 @@ export default function FormularioVisita({
   edicion?: boolean;
 }) {
   const router = useRouter();
+  // El borrador y la cola del equipo van a nombre del usuario (ver lib/ui/borrador).
+  const uid = useUsuarioLocal();
   const { toast, aviso } = useToast();
   // Sin el permiso de celular «video» el formulario no ofrece grabar.
   const puedeVideo = puede(useReferencias(), "celular.video");
@@ -327,7 +331,9 @@ export default function FormularioVisita({
       return;
     }
 
-    const local = leerBorrador(visita.folio);
+    // Lo guardado con el formato anterior (sin usuario) de esta visita pasa a este usuario.
+    migrarClavesViejas(uid, [visita.folio]);
+    const local = leerBorrador(uid, visita.folio);
     let remoto: BorradorActa | null = null;
     if (borradorServidor?.payload) {
       try {
@@ -347,12 +353,12 @@ export default function FormularioVisita({
       subidoRef.current = remoto === elegido ? elegido.guardadoEn : "";
     }
 
-    const enCola = leerActaEnCola(visita.folio);
+    const enCola = leerActaEnCola(uid, visita.folio);
     if (enCola) setPendiente({ capturadaEn: enCola.capturadaEn, intentos: enCola.intentos });
-    setOtrasPendientes(actasEnCola().filter((a) => a.folio !== visita.folio).length);
+    setOtrasPendientes(actasEnCola(uid).filter((a) => a.folio !== visita.folio).length);
     setConSenal(hayConexion());
     setListo(true);
-  }, [visita.folio, borradorServidor, aplicarBorrador, edicion]);
+  }, [uid, visita.folio, borradorServidor, aplicarBorrador, edicion]);
 
   // Guardado en el celular: al ritmo al que se escribe, no en cada tecla.
   useEffect(() => {
@@ -360,14 +366,14 @@ export default function FormularioVisita({
     const t = setTimeout(() => {
       const b = construirBorrador();
       if (!borradorConDatos(b)) return;
-      const ok = escribirBorrador(b);
+      const ok = escribirBorrador(uid, b);
       if (!ok) return;
-      const guardado = leerBorrador(visita.folio);
+      const guardado = leerBorrador(uid, visita.folio);
       borradorRef.current = guardado ?? b;
       setRespaldo({ guardadoEn: b.guardadoEn, sinFotos: Boolean(guardado?.sinFotos) });
     }, 800);
     return () => clearTimeout(t);
-  }, [edicion, listo, paso, construirBorrador, visita.folio]);
+  }, [uid, edicion, listo, paso, construirBorrador, visita.folio]);
 
   // Respaldo en el servidor: cada tanto y solo si hay señal. Las fotos no
   // suben acá —pesan demasiado para mandarlas cada medio minuto—, así que la
@@ -492,8 +498,8 @@ export default function FormularioVisita({
           // servidor contesta que la visita ya está cerrada. No es un fallo:
           // está guardada, solo hay que dejar de insistir.
           if (/ya (quedó|está) cerrada/i.test(res.error ?? "")) {
-            sacarDeCola(visita.folio);
-            borrarBorrador(visita.folio);
+            sacarDeCola(uid, visita.folio);
+            borrarBorrador(uid, visita.folio);
             borradorRef.current = null;
             setPendiente(null);
             setRespaldo(null);
@@ -504,7 +510,7 @@ export default function FormularioVisita({
           }
           // Cualquier otro rechazo: reintentar no lo va a arreglar. Se vuelve a
           // la revisión, que es donde se ve el motivo y el botón de guardar.
-          sacarDeCola(visita.folio);
+          sacarDeCola(uid, visita.folio);
           setPendiente(null);
           setErrorGuardado(res.error ?? "No se pudo guardar la visita.");
           setPaso("preview");
@@ -512,8 +518,8 @@ export default function FormularioVisita({
           return false;
         }
 
-        sacarDeCola(visita.folio);
-        borrarBorrador(visita.folio);
+        sacarDeCola(uid, visita.folio);
+        borrarBorrador(uid, visita.folio);
         borradorRef.current = null;
         setPendiente(null);
         setRespaldo(null);
@@ -524,9 +530,9 @@ export default function FormularioVisita({
         return true;
       } catch (err) {
         console.error("[dmc] no se pudo enviar el acta:", err);
-        const enCola = leerActaEnCola(visita.folio);
+        const enCola = leerActaEnCola(uid, visita.folio);
         const intentos = (enCola?.intentos ?? 0) + 1;
-        const guardada = encolarActa({
+        const guardada = encolarActa(uid, {
           folio: visita.folio,
           capturadaEn,
           intentos,
@@ -547,7 +553,7 @@ export default function FormularioVisita({
         setEnviando(false);
       }
     },
-    [visita.folio, aviso, router]
+    [uid, visita.folio, aviso, router]
   );
 
   /** La corrección del acta cerrada, tal como viaja al servidor. */
@@ -625,13 +631,13 @@ export default function FormularioVisita({
     const capturadaEn = new Date().toISOString();
     const salio = await enviarActa(entrada, capturadaEn, !hayConexion());
     setGuardando(false);
-    if (!salio && leerActaEnCola(visita.folio)) setPaso("encolada");
+    if (!salio && leerActaEnCola(uid, visita.folio)) setPaso("encolada");
   }
 
   /** "Enviar ahora" y el reintento automático: los dos pasan por acá. */
   const reintentarPendiente = useCallback(
     async (avisarSiFalla: boolean) => {
-      const enCola = leerActaEnCola(visita.folio);
+      const enCola = leerActaEnCola(uid, visita.folio);
       if (!enCola) {
         setPendiente(null);
         return;
@@ -640,7 +646,7 @@ export default function FormularioVisita({
       if (salio) aviso("Acta sincronizada");
       else if (avisarSiFalla) aviso("Todavía no hay señal. Sigue guardada en el celular.");
     },
-    [visita.folio, enviarActa, aviso]
+    [uid, visita.folio, enviarActa, aviso]
   );
 
   // Reintento solo: al volver la señal y, si no, cada tanto.
@@ -1165,7 +1171,7 @@ export default function FormularioVisita({
                 "Se borra lo que habías dejado a medias en este celular —trabajos, problemas, fotos y firma— y el formulario queda en blanco. Los videos ya subidos se quitan aparte, uno por uno.",
               cta: "Empezar de nuevo",
               accion: () => {
-                borrarBorrador(visita.folio);
+                borrarBorrador(uid, visita.folio);
                 borradorRef.current = null;
                 void descartarBorradorAction(visita.folio);
                 setRespaldo(null);

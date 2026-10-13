@@ -13,6 +13,20 @@ export interface DatosPersona {
   cargo?: string | null;
 }
 
+/** Si el técnico tiene (o tuvo) una visita en la sucursal, como titular o ayudante. */
+export async function tecnicoTieneVisitaEn(tecnicoId: number, sucursalId: number): Promise<boolean> {
+  const [fila] = await consultaCon<{ n: number }>(
+    `SELECT TOP 1 1 AS n FROM dmc.visita
+      WHERE sucursal_id = @sucursal AND activo = 1
+        AND (tecnico_id = @tecnico OR tecnico_ayudante_id = @tecnico)`,
+    [
+      ["sucursal", sql.BigInt, sucursalId],
+      ["tecnico", sql.BigInt, tecnicoId],
+    ]
+  );
+  return Boolean(fila);
+}
+
 /** Las personas de una tienda, la más reciente primero. Vacío si falta la migración. */
 export async function listarPersonasLocal(sucursalId: number): Promise<PersonaLocal[]> {
   try {

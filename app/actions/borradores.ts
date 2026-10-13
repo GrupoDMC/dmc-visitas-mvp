@@ -19,6 +19,11 @@ export interface ResultadoBorrador {
   guardadoEn?: string;
 }
 
+// Tope del respaldo, en caracteres. El borrador lleva fotos en base64 y el
+// cuerpo de una Server Action ya está acotado (ver next.config.ts); esto
+// protege además a la base de un payload gigante.
+const PAYLOAD_BORRADOR_MAX = 3_000_000;
+
 async function tecnicoDeLaVisita(folio: string) {
   const sesion = await getSesion();
   if (!sesion?.tecnico) return null;
@@ -29,6 +34,8 @@ async function tecnicoDeLaVisita(folio: string) {
 
 /** Sube lo que lleva escrito. Se llama cada tanto, no en cada tecla. */
 export async function guardarBorradorAction(folio: string, payload: string): Promise<ResultadoBorrador> {
+  // Un respaldo que no cabe en el cuerpo de la acción no se sube; sigue en el celular.
+  if (typeof payload !== "string" || payload.length > PAYLOAD_BORRADOR_MAX) return { ok: false };
   const contexto = await tecnicoDeLaVisita(folio);
   if (!contexto) return { ok: false };
   try {

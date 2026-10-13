@@ -5,6 +5,8 @@ import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { logoutAction } from "@/app/actions/auth";
+import { prepararSalida } from "@/lib/ui/salir";
+import { useUsuarioLocal } from "@/lib/ui/usuario-local";
 import { Toast, useToast } from "@/components/ui/Toast";
 
 interface NavItem {
@@ -29,6 +31,7 @@ export default function AdminSidebar({
   const pathname = usePathname();
   const { toast, aviso } = useToast();
   const [saliendo, setSaliendo] = useState(false);
+  const uid = useUsuarioLocal();
   // Solo cuenta en el celular: ahí el menú es un cajón que se abre y se cierra.
   const [abierto, setAbierto] = useState(false);
   const pendientes = [...operacion, ...maestros].reduce((n, item) => n + (item.pendientes ?? 0), 0);
@@ -156,6 +159,7 @@ export default function AdminSidebar({
           type="button"
           disabled={saliendo}
           onClick={() => {
+            prepararSalida(uid);
             // El aviso alcanza a leerse antes de que el redirect cambie de página.
             setSaliendo(true);
             aviso(`Sesión cerrada · ${nombre}`);

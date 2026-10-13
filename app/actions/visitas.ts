@@ -91,15 +91,21 @@ export async function guardarActaAction(entrada: ActaEntrada): Promise<Resultado
       tecnicoId: sesion.tecnico.id,
     });
     if (!res.ok) return { ok: false, error: res.error };
-    // Quien firmó queda en la lista de la tienda para la próxima visita.
-    const cerrada = await getVisitaCompletaPorFolio(entrada.folio).catch(() => null);
-    if (cerrada) {
-      await registrarPersonaLocal(cerrada.sucursalId, {
-        nombre: entrada.responsableNombre,
-        rut: entrada.responsableRut,
-        telefono: entrada.responsableTelefono,
-        cargo: await cargoDelChecklist(entrada.responsableCargo),
-      });
+    // Quien firmó queda en la lista de la tienda para la próxima visita. El
+    // acta ya está confirmada: si esto falla no puede devolverse "No se pudo
+    // guardar", porque el técnico reintentaría sobre una visita ya cerrada.
+    try {
+      const cerrada = await getVisitaCompletaPorFolio(entrada.folio);
+      if (cerrada) {
+        await registrarPersonaLocal(cerrada.sucursalId, {
+          nombre: entrada.responsableNombre,
+          rut: entrada.responsableRut,
+          telefono: entrada.responsableTelefono,
+          cargo: await cargoDelChecklist(entrada.responsableCargo),
+        });
+      }
+    } catch (err) {
+      console.error("[dmc] registrarPersonaLocal tras guardar el acta:", err);
     }
     // El acta ya está en sus tablas: el respaldo a medio llenar sobra, y si
     // quedara ahí la próxima visita a este folio lo ofrecería para recuperar.

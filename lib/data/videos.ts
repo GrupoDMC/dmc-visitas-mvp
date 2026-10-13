@@ -145,6 +145,12 @@ export async function abrirVideo(visitaId: number, d: DatosVideo): Promise<numbe
   return num(fila.id);
 }
 
+/** mp4/mov llevan 'ftyp' en el offset 4; webm empieza con la cabecera EBML 1A 45 DF A3. */
+export function firmaDeVideoValida(b: Buffer): boolean {
+  if (b.length >= 8 && b.toString("latin1", 4, 8) === "ftyp") return true;
+  return b.length >= 4 && b[0] === 0x1a && b[1] === 0x45 && b[2] === 0xdf && b[3] === 0xa3;
+}
+
 export type ResultadoTrozo =
   | { ok: true; recibidos: number }
   /** `recibidos` es la posición real en la base, para reanudar desde ahí. */
@@ -178,6 +184,11 @@ export async function pegarTrozo(
   if (fila.completa) return { ok: true, recibidos: num(fila.bytes) };
 
   const recibidos = num(fila.recibidos);
+  // El primer trozo trae la cabecera del contenedor: se comprueba que sea de
+  // verdad un mp4/mov o un webm y no otra cosa con el mime cambiado.
+  if (recibidos === 0 && desde === 0 && !firmaDeVideoValida(trozo)) {
+    return { ok: false, error: "El archivo no parece un video válido." };
+  }
   if (desde !== recibidos) {
     return { ok: false, error: "El video se descuadró al subirlo.", recibidos };
   }

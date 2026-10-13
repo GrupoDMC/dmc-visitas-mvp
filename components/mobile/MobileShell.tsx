@@ -6,6 +6,8 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { logoutAction } from "@/app/actions/auth";
 import { Toast, useToast } from "@/components/ui/Toast";
+import { prepararSalida } from "@/lib/ui/salir";
+import { useUsuarioLocal } from "@/lib/ui/usuario-local";
 
 const TABS = [
   { href: "/tecnico", label: "Inicio" },
@@ -26,6 +28,7 @@ export default function MobileShell({
   const pathname = usePathname();
   const router = useRouter();
   const { toast, aviso } = useToast();
+  const uid = useUsuarioLocal();
   const [saliendo, setSaliendo] = useState(false);
   const mostrarTabs = !volverHref;
 
@@ -53,6 +56,7 @@ export default function MobileShell({
                 disabled={saliendo}
                 aria-label="Cerrar sesión"
                 onClick={() => {
+                  if (!prepararSalida(uid)) return;
                   setSaliendo(true);
                   aviso("Sesión cerrada");
                   setTimeout(() => {

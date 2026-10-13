@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSesion } from "@/lib/auth";
+import { cabecerasEvidencia, mimeSeguro } from "@/lib/evidencia-http";
 import { esEvidenciaDeEliminada, getDuenosDeImagen, getFirmaBinaria } from "@/lib/data/visitas";
 
 // Sirve la firma capturada en el canvas del celular. Mismo criterio que la
@@ -32,9 +33,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 
   return new NextResponse(new Uint8Array(imagen.bytes), {
     headers: {
-      "Content-Type": imagen.mime,
+      ...cabecerasEvidencia(mimeSeguro(imagen.mime, "imagen")),
       "Content-Length": String(imagen.bytes.length),
-      "Cache-Control": "private, max-age=31536000, immutable",
     },
   });
 }

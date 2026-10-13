@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { getSesion, rutaSinSesion } from "@/lib/auth";
 import { cargarReferenciasTecnico } from "@/lib/data/referencias";
 import { ReferenciasProvider } from "@/lib/ui/referencias";
+import { UsuarioLocalProvider } from "@/lib/ui/usuario-local";
 import VigilanteSesion from "@/components/ui/VigilanteSesion";
 
 export const dynamic = "force-dynamic";
@@ -15,9 +16,11 @@ export default async function TecnicoLayout({ children }: { children: React.Reac
   const referencias = await cargarReferenciasTecnico(sesion.permisos);
 
   return (
-    <ReferenciasProvider valor={referencias}>
-      <VigilanteSesion />
-      {children}
-    </ReferenciasProvider>
+    <UsuarioLocalProvider usuarioId={sesion.usuario.id}>
+      <ReferenciasProvider valor={referencias}>
+        <VigilanteSesion />
+        {children}
+      </ReferenciasProvider>
+    </UsuarioLocalProvider>
   );
 }

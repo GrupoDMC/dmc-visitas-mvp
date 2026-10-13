@@ -141,9 +141,17 @@ export interface ActaEnCola {
 }
 
 // ── Claves y utilidades ─────────────────────────────────────────────────────
+//
+// Los equipos son compartidos, así que todo lo guardado lleva el id del usuario
+// en la clave: `dmc.borrador.u<id>.<folio>`. Otro usuario en el mismo equipo no
+// lo lee, no lo ve en la lista y no lo reenvía.
 
 const CLAVE_BORRADOR = "dmc.borrador.";
 const CLAVE_COLA = "dmc.acta-pendiente.";
+
+const claveBorrador = (uid: number, folio: string) => `${CLAVE_BORRADOR}u${uid}.${folio}`;
+const claveCola = (uid: number, folio: string) => `${CLAVE_COLA}u${uid}.${folio}`;
+const prefijoUsuario = (base: string, uid: number) => `${base}u${uid}.`;
 
 function almacen(): Storage | null {
   // En SSR no hay localStorage, y un navegador con el almacenamiento bloqueado
@@ -187,10 +195,60 @@ function borrar(clave: string): void {
   }
 }
 
+/** Las claves que empiezan con `prefijo`. Se juntan antes de tocar nada: borrar mientras se recorre salta claves. */
+function clavesCon(prefijo: string): string[] {
+  const ls = almacen();
+  if (!ls) return [];
+  const claves: string[] = [];
+  try {
+    for (let i = 0; i < ls.length; i++) {
+      const clave = ls.key(i);
+      if (clave?.startsWith(prefijo)) claves.push(clave);
+    }
+  } catch {
+    /* se devuelve lo que se alcanzó a juntar */
+  }
+  return claves;
+}
+
+/**
+ * Pasa a este usuario lo que quedó guardado con el formato anterior (sin id de
+ * usuario en la clave), sin perder nada.
+ *
+ * Esas copias no dicen de quién son, así que solo se adoptan las de folios que
+ * el servidor ya confirmó que son de este usuario (`folios`: las visitas que
+ * tiene asignadas o como ayudante). Las demás no se tocan: ni se muestran ni
+ * se borran, y las reclama quien tenga esa visita.
+ */
+export function migrarClavesViejas(uid: number, folios: readonly string[]): void {
+  const ls = almacen();
+  if (!ls) return;
+  for (const folio of folios) {
+    for (const [base, nueva] of [
+      [CLAVE_BORRADOR, claveBorrador],
+      [CLAVE_COLA, claveCola],
+    ] as const) {
+      try {
+        const vieja = base + folio;
+        const crudo = ls.getItem(vieja);
+        if (crudo === null) continue;
+        const destino = nueva(uid, folio);
+        // Si ya hay una copia nueva, es más reciente: la vieja se deja donde está.
+        if (ls.getItem(destino) === null) {
+          ls.setItem(destino, crudo);
+          ls.removeItem(vieja);
+        }
+      } catch {
+        /* sin cuota o sin acceso: la copia vieja queda intacta */
+      }
+    }
+  }
+}
+
 // ── Borrador ────────────────────────────────────────────────────────────────
 
-export function leerBorrador(folio: string): BorradorActa | null {
-  const b = leerJson<BorradorActa>(CLAVE_BORRADOR + folio);
+export function leerBorrador(uid: number, folio: string): BorradorActa | null {
+  const b = leerJson<BorradorActa>(claveBorrador(uid, folio));
   return b && b.folio === folio ? b : null;
 }
 
@@ -201,13 +259,19 @@ export function leerBorrador(folio: string): BorradorActa | null {
  * reintenta sin ellas antes de darse por vencido. Perder las fotos duele mucho
  * menos que perder el acta escrita.
  */
-export function escribirBorrador(borrador: BorradorActa): boolean {
-  if (escribirJson(CLAVE_BORRADOR + borrador.folio, borrador)) return true;
-  return escribirJson(CLAVE_BORRADOR + borrador.folio, { ...borrador, fotos: [], sinFotos: true });
+export function escribirBorrador(uid: number, borrador: BorradorActa): boolean {
+  const clave = claveBorrador(uid, borrador.folio);
+  if (escribirJson(clave, borrador)) return true;
+  return escribirJson(clave, { ...borrador, fotos: [], sinFotos: true });
 }
 
-export function borrarBorrador(folio: string): void {
-  borrar(CLAVE_BORRADOR + folio);
+export function borrarBorrador(uid: number, folio: string): void {
+  borrar(claveBorrador(uid, folio));
+}
+
+/** Borra todos los borradores de este usuario en el equipo. La cola de actas no se toca. */
+export function borrarBorradoresDelUsuario(uid: number): void {
+  for (const clave of clavesCon(prefijoUsuario(CLAVE_BORRADOR, uid))) borrar(clave);
 }
 
 /** ¿Tiene algo escrito, o es un borrador vacío que no vale la pena ofrecer? */
@@ -229,35 +293,35 @@ export function borradorConDatos(b: BorradorActa | null): boolean {
 
 // ── Cola de actas por enviar ────────────────────────────────────────────────
 
-export function encolarActa(acta: ActaEnCola): boolean {
-  return escribirJson(CLAVE_COLA + acta.folio, acta);
+export function encolarActa(uid: number, acta: ActaEnCola): boolean {
+  return escribirJson(claveCola(uid, acta.folio), acta);
 }
 
-export function leerActaEnCola(folio: string): ActaEnCola | null {
-  const a = leerJson<ActaEnCola>(CLAVE_COLA + folio);
+export function leerActaEnCola(uid: number, folio: string): ActaEnCola | null {
+  const a = leerJson<ActaEnCola>(claveCola(uid, folio));
   return a && a.folio === folio ? a : null;
 }
 
-export function sacarDeCola(folio: string): void {
-  borrar(CLAVE_COLA + folio);
+export function sacarDeCola(uid: number, folio: string): void {
+  borrar(claveCola(uid, folio));
 }
 
-/** Todas las actas pendientes, para el aviso del listado de visitas. */
-export function actasEnCola(): ActaEnCola[] {
-  const ls = almacen();
-  if (!ls) return [];
+/** Las actas pendientes de este usuario, para el aviso del listado de visitas. */
+export function actasEnCola(uid: number): ActaEnCola[] {
   const pendientes: ActaEnCola[] = [];
-  try {
-    for (let i = 0; i < ls.length; i++) {
-      const clave = ls.key(i);
-      if (!clave?.startsWith(CLAVE_COLA)) continue;
-      const acta = leerJson<ActaEnCola>(clave);
-      if (acta?.folio) pendientes.push(acta);
-    }
-  } catch {
-    return pendientes;
+  for (const clave of clavesCon(prefijoUsuario(CLAVE_COLA, uid))) {
+    const acta = leerJson<ActaEnCola>(clave);
+    if (acta?.folio) pendientes.push(acta);
   }
   return pendientes;
+}
+
+/**
+ * Cuántas actas de este usuario siguen sin enviarse. Esas no se pueden perder:
+ * quien cierre sesión tiene que saberlo y confirmar.
+ */
+export function pendientesAlSalir(uid: number): number {
+  return clavesCon(prefijoUsuario(CLAVE_COLA, uid)).length;
 }
 
 // ── Presentación ────────────────────────────────────────────────────────────

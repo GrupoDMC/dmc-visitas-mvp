@@ -6,7 +6,8 @@ import Tag from "@/components/Tag";
 import NuevaVisitaSheet from "@/components/mobile/NuevaVisitaSheet";
 import { Toast, useToast } from "@/components/ui/Toast";
 import { ESTADO_VISITA_BARRA, ESTADO_VISITA_LABEL, ESTADO_VISITA_TAG, textoMotivos } from "@/lib/ui/estado";
-import { actasEnCola, haceCuanto, sacarDeCola, type ActaEnCola } from "@/lib/ui/borrador";
+import { actasEnCola, haceCuanto, migrarClavesViejas, sacarDeCola, type ActaEnCola } from "@/lib/ui/borrador";
+import { useUsuarioLocal } from "@/lib/ui/usuario-local";
 import { estaCancelada } from "@/lib/ui/estado";
 import { diaDeVisita } from "@/lib/ui/fecha";
 import { puede, useReferencias } from "@/lib/ui/referencias";
@@ -48,6 +49,7 @@ export default function VisitasList({
   /** Los días que el técnico abrió o cerró a mano; el resto sigue la regla de `diaAbierto`. */
   const [diasTocados, setDiasTocados] = useState<Record<string, boolean>>({});
   /** Actas terminadas que quedaron esperando señal en este celular. */
+  const uid = useUsuarioLocal();
   const [pendientes, setPendientes] = useState<ActaEnCola[]>([]);
 
   // Solo en el navegador: la cola vive en el almacenamiento del equipo.
@@ -62,12 +64,18 @@ export default function VisitasList({
       // guardarla y el aviso quedaría pidiendo enviar algo que no se acepta.
       visitas.filter((v) => v.estado === "COMPLETADA" || estaCancelada(v.estado)).map((v) => v.folio)
     );
-    const cola = actasEnCola();
+    // Las actas en cola del formato anterior (sin usuario) que corresponden a
+    // las visitas de este técnico pasan a su nombre.
+    migrarClavesViejas(
+      uid,
+      visitas.map((v) => v.folio)
+    );
+    const cola = actasEnCola(uid);
     for (const acta of cola) {
-      if (cerradas.has(acta.folio)) sacarDeCola(acta.folio);
+      if (cerradas.has(acta.folio)) sacarDeCola(uid, acta.folio);
     }
     setPendientes(cola.filter((a) => !cerradas.has(a.folio)));
-  }, [visitas]);
+  }, [visitas, uid]);
 
   const filtradas = useMemo(() => (estado ? visitas.filter((v) => v.estado === estado) : visitas), [visitas, estado]);
 
