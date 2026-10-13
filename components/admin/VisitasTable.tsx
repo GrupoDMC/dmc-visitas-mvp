@@ -14,6 +14,7 @@ import VisitasLoteDialogo, { type AccionLote } from "@/components/admin/VisitasL
 import { Toast, useToast } from "@/components/ui/Toast";
 import { ESTADO_VISITA_LABEL, ESTADO_VISITA_TAG, textoMotivos } from "@/lib/ui/estado";
 import { textoFechaVisita } from "@/lib/ui/fecha";
+import { armarZip, type ArchivoZip } from "@/lib/ui/zip";
 import { puede, useReferencias } from "@/lib/ui/referencias";
 import type { Visita, EstadoVisita } from "@/lib/types";
 
@@ -32,6 +33,7 @@ interface Filtros {
   desde: string;
   hasta: string;
   clienteId: string;
+  sucursalId: string;
   tecnicoId: string;
   tipo: string;
 }
@@ -42,7 +44,7 @@ interface Filtros {
  */
 const ELIMINADAS = "ELIMINADAS";
 
-const SIN_FILTROS: Filtros = { estado: "TODAS", desde: "", hasta: "", clienteId: "", tecnicoId: "", tipo: "" };
+const SIN_FILTROS: Filtros = { estado: "TODAS", desde: "", hasta: "", clienteId: "", sucursalId: "", tecnicoId: "", tipo: "" };
 
 export default function VisitasTable({
   kicker,
@@ -81,6 +83,7 @@ export default function VisitasTable({
     desde: fechaInicial ?? "",
     hasta: fechaInicial ?? "",
     clienteId: "",
+    sucursalId: "",
     tecnicoId: tecnicoInicial ?? "",
     tipo: tipoInicial ?? "",
   });
@@ -108,6 +111,59 @@ export default function VisitasTable({
   const conCasillas = seleccionando && !verEliminadas;
   const seleccionadas = useMemo(() => visitas.filter((v) => marcadas.includes(v.folio)), [visitas, marcadas]);
 
+  // Solo las actas cerradas tienen PDF.
+  const cerradasMarcadas = seleccionadas.filter((v) => v.estado === "COMPLETADA");
+  const [descargando, setDescargando] = useState(false);
+
+  /** Baja el PDF de cada acta cerrada; si son varias, las junta en un .zip. */
+  async function descargarActas() {
+    if (cerradasMarcadas.length === 0) {
+      aviso("Ninguna de las visitas marcadas tiene el acta cerrada.");
+      return;
+    }
+    setDescargando(true);
+    try {
+      const archivos: ArchivoZip[] = [];
+      const fallidas: string[] = [];
+      const cola = [...cerradasMarcadas];
+      // Unas pocas a la vez: cada PDF lo arma el servidor con sus fotos.
+      await Promise.all(
+        Array.from({ length: Math.min(3, cola.length) }, async () => {
+          for (let v = cola.shift(); v; v = cola.shift()) {
+            try {
+              const r = await fetch(`/api/visita/acta/${encodeURIComponent(v.folio)}`);
+              if (!r.ok) throw new Error(String(r.status));
+              archivos.push({ nombre: `Acta ${v.folio}.pdf`, bytes: new Uint8Array(await r.arrayBuffer()) });
+            } catch {
+              fallidas.push(v.folio);
+            }
+          }
+        })
+      );
+      if (archivos.length === 0) {
+        aviso("No se pudo descargar ninguna acta.");
+        return;
+      }
+      archivos.sort((a, b) => a.nombre.localeCompare(b.nombre, "es"));
+      const unica = archivos.length === 1;
+      const blob = unica ? new Blob([archivos[0].bytes as BlobPart], { type: "application/pdf" }) : armarZip(archivos);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = unica ? archivos[0].nombre : `Actas ${new Date().toISOString().slice(0, 10)}.zip`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 10_000);
+      const omitidas = seleccionadas.length - cerradasMarcadas.length;
+      const notas = [
+        omitidas ? `${omitidas} sin acta cerrada` : "",
+        fallidas.length ? `no se pudo: ${fallidas.join(", ")}` : "",
+      ].filter(Boolean);
+      aviso(`${archivos.length} ${unica ? "acta descargada" : "actas descargadas"}${notas.length ? ` (${notas.join("; ")})` : ""}.`);
+    } finally {
+      setDescargando(false);
+    }
+  }
+
   function alternar(folio: string) {
     setMarcadas((prev) => (prev.includes(folio) ? prev.filter((x) => x !== folio) : [...prev, folio]));
   }
@@ -123,6 +179,16 @@ export default function VisitasTable({
     return [...porId].sort((a, b) => a[1].localeCompare(b[1], "es"));
   }, [visitas]);
 
+  // Las tiendas del cliente elegido (solo con un cliente aparece el filtro).
+  const tiendas = useMemo(() => {
+    if (!f.clienteId) return [];
+    const porId = new Map<number, string>();
+    for (const v of visitas) {
+      if (String(v.clienteId) === f.clienteId && v.sucursal) porId.set(v.sucursalId, v.sucursal.nombre);
+    }
+    return [...porId].sort((a, b) => a[1].localeCompare(b[1], "es"));
+  }, [visitas, f.clienteId]);
+
   const filtradas = useMemo(() => {
     const q = sinTildes(busqueda.trim());
     // Las eliminadas van en su propia lista: nunca se mezclan con las vigentes.
@@ -131,6 +197,7 @@ export default function VisitasTable({
       if (f.desde && v.fechaProgramada < f.desde) return false;
       if (f.hasta && v.fechaProgramada > f.hasta) return false;
       if (f.clienteId && String(v.clienteId) !== f.clienteId) return false;
+      if (f.clienteId && f.sucursalId && String(v.sucursalId) !== f.sucursalId) return false;
       // Filtrar por técnico trae también las visitas en las que va de ayudante.
       if (f.tecnicoId && String(v.tecnicoId) !== f.tecnicoId && String(v.tecnicoAyudanteId) !== f.tecnicoId) {
         return false;
@@ -165,7 +232,11 @@ export default function VisitasTable({
   }
   if (f.clienteId) {
     const c = clientes.find(([id]) => String(id) === f.clienteId);
-    chips.push({ label: `Cliente: ${c?.[1] ?? ""}`, onQuitar: () => setF((p) => ({ ...p, clienteId: "" })) });
+    chips.push({ label: `Cliente: ${c?.[1] ?? ""}`, onQuitar: () => setF((p) => ({ ...p, clienteId: "", sucursalId: "" })) });
+  }
+  if (f.clienteId && f.sucursalId) {
+    const t = tiendas.find(([id]) => String(id) === f.sucursalId);
+    chips.push({ label: `Tienda: ${t?.[1] ?? ""}`, onQuitar: () => setF((p) => ({ ...p, sucursalId: "" })) });
   }
   if (f.desde) chips.push({ label: `Desde: ${f.desde}`, onQuitar: () => setF((p) => ({ ...p, desde: "" })) });
   if (f.hasta) chips.push({ label: `Hasta: ${f.hasta}`, onQuitar: () => setF((p) => ({ ...p, hasta: "" })) });
@@ -248,8 +319,19 @@ export default function VisitasTable({
               valor: f.clienteId,
               opciones: [{ v: "", t: "Todos los clientes" }, ...clientes.map(([id, n]) => ({ v: String(id), t: n }))],
               // Con un cliente elegido el tipo de falla deja de aplicar: se limpia.
-              onChange: (v) => setF((p) => ({ ...p, clienteId: v, tipo: v ? "" : p.tipo })),
+              onChange: (v) => setF((p) => ({ ...p, clienteId: v, sucursalId: "", tipo: v ? "" : p.tipo })),
             },
+            ...(f.clienteId
+              ? [
+                  {
+                    id: "fv-tienda",
+                    label: "Tienda",
+                    valor: f.sucursalId,
+                    opciones: [{ v: "", t: "Todas las tiendas" }, ...tiendas.map(([id, n]) => ({ v: String(id), t: n }))],
+                    onChange: (v: string) => setF((p) => ({ ...p, sucursalId: v })),
+                  },
+                ]
+              : []),
             {
               id: "fv-desde",
               label: "Desde",
@@ -441,6 +523,22 @@ export default function VisitasTable({
               </button>
             ) : null}
             <div className="ml-auto flex gap-2 flex-wrap">
+              <button
+                type="button"
+                disabled={cerradasMarcadas.length === 0 || descargando}
+                onClick={descargarActas}
+                title={cerradasMarcadas.length === 0 ? "Solo las visitas con el acta cerrada tienen PDF" : undefined}
+                className="btn btn-secondary min-h-10 px-3.5"
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                  <path d="M12 4v11M7 11l5 5 5-5M4 20h16" />
+                </svg>
+                <span>
+                  {descargando
+                    ? "Descargando…"
+                    : `Descargar actas${cerradasMarcadas.length ? ` (${cerradasMarcadas.length})` : ""}`}
+                </span>
+              </button>
               {accionesLote.map((a) => (
                 <button
                   key={a.accion}
