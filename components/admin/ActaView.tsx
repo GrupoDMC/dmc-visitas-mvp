@@ -46,9 +46,12 @@ function minutosEntre(a: string, b: string | null): number | null {
 export default function ActaView({
   visita,
   enviada,
+  correoCoordinacion,
 }: {
   visita: Visita;
   enviada: { para: string; cc: string; adjuntos: number } | null;
+  /** Correo que va en copia al enviar el acta; sin él, el CC queda vacío. */
+  correoCoordinacion?: string;
 }) {
   const router = useRouter();
   const ref = useReferencias();
@@ -845,7 +848,7 @@ export default function ActaView({
       </div>
 
       {dialogo === "correo" ? (
-        <CorreoDialogo visita={visita} onCerrar={() => setDialogo(null)} onHecho={aviso} />
+        <CorreoDialogo visita={visita} correoCoordinacion={correoCoordinacion} onCerrar={() => setDialogo(null)} onHecho={aviso} />
       ) : null}
       {dialogo === "editar" ? (
         <VisitaDialogo
@@ -929,10 +932,12 @@ export default function ActaView({
 /** "Enviar por correo" — destinatarios, cuerpo editable y qué se adjunta. */
 function CorreoDialogo({
   visita,
+  correoCoordinacion,
   onCerrar,
   onHecho,
 }: {
   visita: Visita;
+  correoCoordinacion?: string;
   onCerrar: () => void;
   onHecho: (mensaje: string) => void;
 }) {
@@ -943,7 +948,7 @@ function CorreoDialogo({
 
   const [form, setForm] = useState<Record<string, string | boolean>>({
     para: "",
-    cc: "coordinacion@grupodmc.cl",
+    cc: correoCoordinacion ?? "",
     asunto: `${visita.sucursal?.nombre} · ${textoMotivos(visita)} · ${visita.fechaProgramada}`,
     cuerpo:
       `Estimados,\n\n` +
@@ -1003,7 +1008,7 @@ function CorreoDialogo({
       kicker="Acta · enviar al cliente"
       titulo={`Enviar acta ${visita.folio}`}
       cta="Enviar correo"
-      nota="Sale desde coordinacion@grupodmc.cl. Puedes editar destinatarios, asunto, cuerpo y qué se adjunta antes de enviar."
+      nota="Puedes editar destinatarios, asunto, cuerpo y qué se adjunta antes de enviar."
       campos={[
         { k: "para", label: "Para", tipo: "email", ph: "encargado@tienda.cl" },
         { k: "cc", label: "CC", ph: "separa varios correos con coma" },
