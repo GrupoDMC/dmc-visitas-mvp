@@ -1,81 +1,15 @@
 import "server-only";
 import { agrupar, consulta, consultaCon, ejecutar, num, sql, F_FECHA, F_TS, type Parametro } from "@/lib/data/sql";
 import { listarGestionProblemas } from "@/lib/data/catalogos";
-import type { GestionMarca } from "@/lib/data/pendientes";
+import type { DatosProblemas, GrupoProblemas } from "@/lib/contratos/panel";
 import { hoyISO } from "@/lib/ui/fecha";
-import type { CatalogoGestionProblema, EstadoProblema, EstadoVisita } from "@/lib/types";
+import type { EstadoProblema, EstadoVisita } from "@/lib/types";
 
 // El panel "Problemas": cada falla levantada en terreno, agrupada por tienda,
 // con lo que coordinación necesita para llevarla hasta el cierre — cuánto lleva
 // abierta, qué pasos de gestión tiene marcados (Lista 6 del Checklist), su
 // bitácora de cambios y qué más ha pasado en ese local. Los gráficos del panel
 // se calculan en el navegador a partir de estas mismas filas.
-
-/** Un cambio de estado o de tipo, tal como quedó en dmc.problema_historial. */
-export interface CambioProblema {
-  campo: "ESTADO" | "TIPO";
-  antes: string;
-  ahora: string;
-  /** Lo que se escribió al hacer el cambio, si se escribió algo. */
-  nota: string | null;
-  por: string | null;
-  en: string;
-}
-
-export interface ProblemaPanel {
-  id: number;
-  tipoCodigo: string;
-  estado: EstadoProblema;
-  descripcion: string | null;
-  solucion: string | null;
-  items: { id: number; etiqueta: string; cantidad: number }[];
-  /** Cuándo lo levantó el técnico (al guardar el acta). */
-  creadoEn: string;
-  resueltoEn: string | null;
-  /** Sin cerrar: días que lleva abierto. Resuelto: días que tardó en cerrarse. */
-  dias: number;
-  /** La visita donde se levantó. */
-  visita: { folio: string; fechaProgramada: string; tecnico: string; motivo: string | null };
-  /** La última visita agendada para resolverlo, si la hay. */
-  agenda: { folio: string; fecha: string; tecnico: string; estado: EstadoVisita } | null;
-  gestion: GestionMarca[];
-  /** Del más viejo al más nuevo. */
-  cambios: CambioProblema[];
-}
-
-/** Una visita del local, para leer qué más ha pasado ahí. */
-export interface VisitaDeLocal {
-  folio: string;
-  fecha: string;
-  estado: EstadoVisita;
-  tecnico: string;
-  motivo: string | null;
-  /** Los trabajos realizados, ya con nombre y separados por " · ". */
-  trabajos: string | null;
-  observaciones: string | null;
-}
-
-export interface GrupoProblemas {
-  sucursalId: number;
-  nombre: string;
-  cliente: string;
-  clienteId: number;
-  comuna: string;
-  total: number;
-  abiertos: number;
-  /** Del más nuevo al más viejo. */
-  items: ProblemaPanel[];
-  /** Todas las visitas del local, de la más nueva a la más vieja. */
-  visitas: VisitaDeLocal[];
-}
-
-export interface DatosProblemas {
-  grupos: GrupoProblemas[];
-  /** La Lista 6 del checklist, en su orden. */
-  pasos: CatalogoGestionProblema[];
-  /** "Hoy" en Chile: la referencia de las antigüedades y de los gráficos. */
-  hoy: string;
-}
 
 const diasEntre = (desde: string, hasta: string) =>
   Math.max(

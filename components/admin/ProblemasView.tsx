@@ -20,8 +20,7 @@ import {
 import { fechaHoraLegible } from "@/lib/ui/fecha";
 import { sinTildes } from "@/lib/ui/formato";
 import { puede, useReferencias } from "@/lib/ui/referencias";
-import type { GestionMarca } from "@/lib/data/pendientes";
-import type { DatosProblemas, GrupoProblemas, ProblemaPanel } from "@/lib/data/problemas";
+import type { DatosProblemas, GestionMarca, GrupoProblemas, ProblemaPanel } from "@/lib/contratos/panel";
 import type { CatalogoGestionProblema, EstadoProblema } from "@/lib/types";
 
 /**

@@ -21,6 +21,7 @@ import { decodificarImagen, mimeDeImagen } from "@/lib/imagen";
 import { cargoDelChecklist } from "@/lib/data/catalogos";
 import { registrarPersonaLocal } from "@/lib/data/personas-local";
 import { cancelarVisitasVencidas } from "@/lib/data/vencimiento";
+import { motivoParaNoCerrar, TOMADA_POR_OTRO, type EquipoVisita } from "@/lib/validacion/reglas-acta";
 import type {
   EstadoProblema,
   EstadoVisita,
@@ -37,6 +38,8 @@ import type {
   VisitaTrabajo,
   VisitaTrabajoSubtrabajo,
 } from "@/lib/types";
+import type { ActaEntrada, ProblemaActa, ResultadoActa, SubtrabajoActa, TrabajoActa } from "@/lib/contratos/acta";
+import type { DatosVisita } from "@/lib/contratos/visitas";
 
 // Visitas y todo lo que cuelga de ellas. Reemplaza a lib/mock/visitas.
 //
@@ -755,6 +758,27 @@ export async function getVisitaCompleta(id: number): Promise<Visita | undefined>
   return visita;
 }
 
+/** Estado y equipo de una visita: lo que la acción mira para autorizar. */
+export async function getEquipoDeVisita(folio: string): Promise<EquipoVisita | undefined> {
+  const [v] = await consultaCon<{
+    estado: EstadoVisita;
+    tecnico_id: number;
+    tecnico_ayudante_id: number | null;
+    tomada_por: number | null;
+  }>(
+    `SELECT v.estado, v.tecnico_id, v.tecnico_ayudante_id, ${TOMADA_POR} AS tomada_por
+       FROM dmc.visita v WHERE v.folio = @folio AND v.activo = 1`,
+    [["folio", sql.VarChar(16), folio]]
+  );
+  if (!v) return undefined;
+  return {
+    estado: v.estado,
+    tecnicoId: num(v.tecnico_id),
+    tecnicoAyudanteId: numONull(v.tecnico_ayudante_id),
+    tomadaPorTecnicoId: numONull(v.tomada_por),
+  };
+}
+
 /** Una visita eliminada, para que el administrador la abra. Mismo cuidado con el rol. */
 export async function getVisitaEliminadaPorFolio(folio: string): Promise<Visita | undefined> {
   const [visita] = await conEliminacion(await cargar(eliminadaPorFolio(folio)));
@@ -796,7 +820,6 @@ export async function getTodosLosProblemas(): Promise<Problema[]> {
 
 // ── Escritura ───────────────────────────────────────────────────────────────
 
-const TOMADA_POR_OTRO = "El otro técnico ya inició esta visita: solo él puede terminarla.";
 
 /**
  * "Iniciar visita": deja la visita EN_CURSO y abre su ejecución.
@@ -1145,31 +1168,6 @@ async function marcarEstado(
       ["usuario", sql.BigInt, usuarioId],
     ]
   );
-}
-
-export interface DatosVisita {
-  clienteId: number;
-  sucursalId: number;
-  tecnicoId: number;
-  /** El segundo técnico, si van dos. Nunca el mismo que `tecnicoId`. */
-  tecnicoAyudanteId?: number | null;
-  /** El motivo principal: el que queda en dmc.visita.motivo_codigo. */
-  motivoCodigo: string;
-  /** Todos los motivos marcados. Si va vacio se asume solo el principal. */
-  motivosCodigos?: string[];
-  fechaProgramada: string;
-  /** Margen de días: el último día para hacerla. Vacío = un solo día. */
-  fechaHasta?: string | null;
-  horaProgramada: string | null;
-  trabajoSolicitado: string;
-  indicacionesAcceso: string | null;
-  responsableNombre: string | null;
-  responsableRut: string | null;
-  responsableTelefono: string | null;
-  /** Opcional. No vive en la visita: queda en la lista de personas de la tienda. */
-  responsableCargo?: string | null;
-  problemaOrigenId?: number | null;
-  creadaEnTerreno?: boolean;
 }
 
 /** "Nueva visita" del panel y "Agregar visita" del celular. Nace PROGRAMADA. */
@@ -1588,89 +1586,6 @@ export async function getActaEnviada(folio: string): Promise<ActaEnviada | null>
 
 // ── Cierre del acta desde el celular ────────────────────────────────────────
 
-export interface SubtrabajoActa {
-  etiqueta: string;
-  cantidad: number;
-}
-
-export interface TrabajoActa {
-  codigo: string;
-  /** Bajo qué motivo lo agregó el técnico. */
-  motivoCodigo?: string | null;
-  detalle: string | null;
-  subtrabajos: SubtrabajoActa[];
-}
-
-export interface ProblemaActa {
-  tipoCodigo: string;
-  estado: EstadoProblema;
-  descripcion: string | null;
-  solucion: string | null;
-  items: SubtrabajoActa[];
-}
-
-export interface FotoActa {
-  /** data:image/jpeg;base64,… tal como sale del canvas de la cámara. */
-  dataUrl: string;
-  etiqueta: string | null;
-  /** Foto del comentario interno: no la ve el cliente. */
-  interno?: boolean;
-}
-
-export interface FirmaActa {
-  nombre: string;
-  rut: string | null;
-  dataUrl: string;
-}
-
-export interface ActaEntrada {
-  folio: string;
-  responsableNombre: string;
-  responsableRut: string | null;
-  responsableTelefono: string | null;
-  /** Opcional: el cargo de quien firma. Queda en la lista de personas de la tienda. */
-  responsableCargo?: string | null;
-  /** Los motivos que el técnico confirmó en terreno. El primero es el principal. */
-  motivosCodigos: string[];
-  observaciones: string | null;
-  comentarioInterno: string | null;
-  /** Lo marcado del checklist del comentario interno (códigos). */
-  internosCodigos?: string[];
-  trabajos: TrabajoActa[];
-  problemas: ProblemaActa[];
-  fotos: FotoActa[];
-  /**
-   * Los clips que quedaron en el acta, en el orden en que se ven.
-   *
-   * Van solo los ids: el video no viaja acá. Un minuto en 720p pesa unos 11 MB
-   * y el cuerpo de una Server Action se corta en 4,5 MB, así que el clip se
-   * sube aparte y por partes en cuanto se termina de grabar (ver
-   * lib/data/videos y app/actions/videos). Al cerrar el acta solo queda decir
-   * cuáles se conservan: los que no estén acá quedan inactivos.
-   */
-  videosIds?: number[];
-  /** De los de `videosIds`, los que son del comentario interno. */
-  videosInternosIds?: number[];
-  firma: FirmaActa | null;
-  dispositivo: string | null;
-  /**
-   * Cuándo el técnico apretó "Guardar visita" en el celular. Cuando el acta se
-   * llenó sin señal, esa hora es la del cierre real en terreno y puede ser muy
-   * anterior a la de esta escritura; se usa como hora de término si es
-   * coherente (posterior a la llegada y no futura).
-   */
-  capturadaEn?: string | null;
-  /** true si el acta esperó cobertura guardada en el celular. */
-  registradoOffline?: boolean;
-}
-
-export interface ResultadoActa {
-  ok: boolean;
-  /** Por qué no se guardó, en palabras que el técnico entienda. */
-  error?: string;
-  horaTermino?: string;
-}
-
 /** ISO del celular → Date, o null si no es una fecha que se pueda creer. */
 function fechaValida(iso: string | null | undefined): Date | null {
   if (!iso) return null;
@@ -1690,26 +1605,16 @@ export async function guardarActa(
   entrada: ActaEntrada,
   ctx: { usuarioId: number; tecnicoId: number }
 ): Promise<ResultadoActa> {
+  // Lo que falta en el acta (errorDeActa) y quién la puede cerrar ya lo vio la
+  // acción. Acá queda lo que solo se sabe al escribir.
   const principal = entrada.motivosCodigos.filter(Boolean)[0] ?? null;
-  if (!principal) return { ok: false, error: "Marca al menos un motivo de la visita." };
-  if (!entrada.responsableNombre.trim()) return { ok: false, error: "Falta el nombre del responsable de la tienda." };
-  if (!entrada.firma) return { ok: false, error: "Falta la firma de la tienda." };
+  if (!principal || !entrada.firma) return { ok: false, error: "El acta llegó incompleta." };
 
   // Solo vale un cargo del checklist; uno suelto se descarta en vez de frenar el cierre.
   const cargo = await cargoDelChecklist(entrada.responsableCargo);
 
   const firmaImagen = decodificarImagen(entrada.firma.dataUrl);
   if (!firmaImagen) return { ok: false, error: "La firma no se pudo leer. Vuelve a firmar." };
-
-  // ck_problema_otro_desc exige descripción escrita cuando el tipo es OTRO. Se
-  // valida acá y no dentro de la transacción: si se descubriera a mitad del
-  // guardado ya habría trabajos y ejecución escritos, y devolver el error sin
-  // lanzar dejaría el acta a medias.
-  for (const pr of entrada.problemas) {
-    if (pr.tipoCodigo === "OTRO" && !pr.descripcion?.trim()) {
-      return { ok: false, error: "El problema marcado como «Otro» necesita que escribas qué encontraste." };
-    }
-  }
 
   const fotos: FotoLista[] = [];
   for (const f of entrada.fotos) {
@@ -1731,18 +1636,18 @@ export async function guardarActa(
       [["folio", sql.VarChar(16), entrada.folio]]
     );
     if (!visita) return { ok: false, error: "No encontramos esa visita." };
-    if (num(visita.tecnico_id) !== ctx.tecnicoId && numONull(visita.tecnico_ayudante_id) !== ctx.tecnicoId) {
-      return { ok: false, error: "Esa visita no está asignada a ti." };
-    }
-    if (visita.estado === "EN_CURSO" && numONull(visita.tomada_por) !== ctx.tecnicoId) {
-      return { ok: false, error: TOMADA_POR_OTRO };
-    }
-    if (visita.estado === "COMPLETADA") {
-      return { ok: false, error: "Esta visita ya quedó cerrada." };
-    }
-    if (visita.estado !== "PROGRAMADA" && visita.estado !== "EN_CURSO") {
-      return { ok: false, error: "Esta visita ya no se puede cerrar desde el celular." };
-    }
+    // La acción ya autorizó; con la fila tomada se vuelve a aplicar la misma
+    // regla, porque entre medio la visita pudo cambiar de manos o de estado.
+    const rechazo = motivoParaNoCerrar(
+      {
+        estado: visita.estado,
+        tecnicoId: num(visita.tecnico_id),
+        tecnicoAyudanteId: numONull(visita.tecnico_ayudante_id),
+        tomadaPorTecnicoId: numONull(visita.tomada_por),
+      },
+      ctx.tecnicoId
+    );
+    if (rechazo) return { ok: false, error: rechazo };
     const id = num(visita.id);
 
     // 1 · Ejecución: hora de llegada si no estaba, y la de término ahora.

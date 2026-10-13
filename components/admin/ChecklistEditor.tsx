@@ -14,7 +14,7 @@ import {
   guardarPlantillaChecklistAction,
   reiniciarChecklistAction,
 } from "@/app/actions/admin";
-import type { BorradorChecklist } from "@/lib/data/catalogos";
+import type { BorradorChecklist } from "@/lib/contratos/checklist";
 import { ESTADO_PROBLEMA_CIERRE, ESTADO_PROBLEMA_INICIAL } from "@/lib/ui/estado";
 import type {
   CatalogoEstadoProblema,

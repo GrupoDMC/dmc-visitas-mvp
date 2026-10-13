@@ -7,11 +7,12 @@ import { tiene } from "@/lib/permisos";
 import {
   cambiarEstadoVisita,
   crearEIniciarVisita,
+  getEquipoDeVisita,
   getVisitaCompletaPorFolio,
   guardarActa,
   iniciarVisita,
-  type ActaEntrada,
 } from "@/lib/data/visitas";
+import type { ActaEntrada } from "@/lib/contratos/acta";
 import { registrarPersonaLocal } from "@/lib/data/personas-local";
 import { getSucursal } from "@/lib/data/maestros";
 import { cargoDelChecklist, listarMotivos } from "@/lib/data/catalogos";
@@ -21,6 +22,7 @@ import { borrarBorrador } from "@/lib/data/borradores";
 import type { EstadoVisita } from "@/lib/types";
 import { validar } from "@/lib/validacion/comun";
 import { actaEntrada } from "@/lib/validacion/actas";
+import { errorDeActa, motivoParaNoCerrar } from "@/lib/validacion/reglas-acta";
 import { entradaCambiarEstado, entradaCrearVisitaTecnico, entradaFolio } from "@/lib/validacion/visitas";
 
 export interface ResultadoAccion {
@@ -96,6 +98,12 @@ export async function guardarActaAction(entradaPedida: ActaEntrada): Promise<Res
   const valida = validar(actaEntrada, entradaPedida, "guardarActa");
   if (!valida.ok) return { ok: false, error: valida.error };
   const entrada: ActaEntrada = valida.datos;
+  const falta = errorDeActa(entrada);
+  if (falta) return { ok: false, error: falta };
+  const equipo = await getEquipoDeVisita(entrada.folio);
+  if (!equipo) return { ok: false, error: "No encontramos esa visita." };
+  const rechazo = motivoParaNoCerrar(equipo, sesion.tecnico.id);
+  if (rechazo) return { ok: false, error: rechazo };
 
   try {
     const res = await guardarActa(entrada, {

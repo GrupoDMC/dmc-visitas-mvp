@@ -11,7 +11,7 @@ import { hoyISO } from "@/lib/ui/fecha";
 import { algunoPideHora } from "@/lib/ui/motivos";
 import { cargoVigente } from "@/lib/ui/cargos";
 import { etiquetaPersona, usePersonasLocal } from "@/lib/ui/personas-local";
-import type { DatosVisita } from "@/lib/data/visitas";
+import type { DatosVisita } from "@/lib/contratos/visitas";
 
 /** Un local de la ruta, con lo que es solo suyo. Vacío = usa lo masivo. */
 interface LocalRuta {

@@ -20,7 +20,7 @@ import {
 import { fechaHoraLegible, textoFechaVisita } from "@/lib/ui/fecha";
 import { sinTildes, urlTel } from "@/lib/ui/formato";
 import { nombreProblema, nombreTrabajo, puede, useReferencias } from "@/lib/ui/referencias";
-import type { DatosPendientes, GestionMarca, HistorialLocal, Pendiente } from "@/lib/data/pendientes";
+import type { DatosPendientes, GestionMarca, HistorialLocal, Pendiente } from "@/lib/contratos/panel";
 import type { Visita } from "@/lib/types";
 
 /**

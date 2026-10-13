@@ -50,8 +50,7 @@ import {
   type TrabajoForm,
   type VideoForm,
 } from "@/lib/ui/borrador";
-import type { ActaEntrada } from "@/lib/data/visitas";
-import type { EdicionActaEntrada } from "@/lib/data/ediciones";
+import type { ActaEntrada, EdicionActaEntrada } from "@/lib/contratos/acta";
 import type {
   CatalogoInterno,
   CatalogoMotivo,

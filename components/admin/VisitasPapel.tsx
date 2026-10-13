@@ -15,7 +15,7 @@ import SeccionPlegable from "@/components/ui/SeccionPlegable";
 import { fmtRut, mensajeRut } from "@/lib/ui/formato";
 import { hoyISO } from "@/lib/ui/fecha";
 import { PRIMER_ANIO_PAPEL } from "@/lib/ui/papel";
-import type { InformePapel } from "@/lib/data/visitas-papel";
+import type { InformePapel } from "@/lib/contratos/papel";
 import type { CatalogoTrabajo } from "@/lib/types";
 import { borrarBorradorPapel, escribirBorradorPapel, leerBorradorPapel } from "@/lib/ui/borrador-papel";
 import { useUsuarioLocal } from "@/lib/ui/usuario-local";

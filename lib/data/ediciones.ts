@@ -10,12 +10,16 @@ import {
   insertarItemsDeProblema,
   insertarProblema,
   sincronizarMotivosCon,
-  type FotoActa,
   type FotoLista,
-  type SubtrabajoActa,
-  type TrabajoActa,
 } from "@/lib/data/visitas";
-import { cargoDelChecklist, listarInternos, listarMotivos, listarProblemas, listarTrabajos } from "@/lib/data/catalogos";
+import type { EdicionActaEntrada, SubtrabajoActa } from "@/lib/contratos/acta";
+import {
+  cargoDelChecklist,
+  listarInternos,
+  listarMotivos,
+  listarProblemas,
+  listarTrabajos,
+} from "@/lib/data/catalogos";
 import { rutLimpio } from "@/lib/ui/formato";
 import type { EstadoVisita, OrigenRegistro, Visita } from "@/lib/types";
 
@@ -34,43 +38,6 @@ import type { EstadoVisita, OrigenRegistro, Visita } from "@/lib/types";
 //    de lo que el cliente diga que cambió.
 // 3. El acta sigue siendo la misma. No cambia de estado, no cambian sus horas y
 //    el PDF sale igual que siempre, sin ninguna marca de edición.
-
-export interface ProblemaEdicion {
-  /** Id en dmc.problema si ya estaba en el acta; sin id, es uno nuevo. */
-  id?: number | null;
-  tipoCodigo: string;
-  descripcion: string | null;
-  items: SubtrabajoActa[];
-}
-
-export interface EdicionActaEntrada {
-  folio: string;
-  /** Por qué se edita. Obligatorio: queda en el registro. */
-  motivoEdicion: string;
-  /**
-   * Cuántas ediciones tenía el acta cuando se abrió para editar. Si mientras
-   * tanto alguien más la editó, esta se rechaza en vez de pisarla.
-   */
-  edicionesVistas: number;
-  responsableNombre: string;
-  responsableRut: string | null;
-  responsableTelefono: string | null;
-  /** El cargo del checklist. Sin definir (undefined) = no se toca el que tenía. */
-  responsableCargo?: string | null;
-  motivosCodigos: string[];
-  observaciones: string | null;
-  comentarioInterno: string | null;
-  internosCodigos: string[];
-  trabajos: TrabajoActa[];
-  problemas: ProblemaEdicion[];
-  /** Ids de las fotos del acta que se conservan. Las demás quedan inactivas. */
-  fotosConservadas: number[];
-  fotosNuevas: FotoActa[];
-  /** Los clips que quedan, en orden. Los nuevos ya están subidos. */
-  videosIds: number[];
-  /** De los nuevos, los que son del comentario interno. */
-  videosInternosIds: number[];
-}
 
 export interface ResultadoEdicion {
   ok: boolean;
@@ -372,14 +339,13 @@ function comparar(antes: Visita, e: EdicionActaEntrada, fotosNuevas: FotoLista[]
  * no queda nada. Solo se escriben las partes que cambiaron.
  */
 export async function editarActa(entrada: EdicionActaEntrada, ctx: ContextoEdicion): Promise<ResultadoEdicion> {
+  // Lo que falta en la corrección (errorDeEdicion) y quién la puede hacer ya
+  // lo vio la acción. Acá, el estado, el plazo y si alguien editó antes: se
+  // miran ahora para no armar la comparación en vano, y otra vez con la fila
+  // tomada dentro de la transacción.
   const motivoEdicion = txt(entrada.motivoEdicion);
-  if (motivoEdicion.length < 5) return { ok: false, error: "Escribe por qué se edita el acta: queda en el registro." };
-
   const antes = await getVisitaCompletaPorFolio(entrada.folio);
   if (!antes) return { ok: false, error: "No encontramos esa visita." };
-  if (ctx.tecnicoId !== null && antes.tecnicoId !== ctx.tecnicoId && antes.tecnicoAyudanteId !== ctx.tecnicoId) {
-    return { ok: false, error: "Esa visita no está asignada a ti." };
-  }
   if (antes.estado !== "COMPLETADA" || !antes.ejecucion) {
     return { ok: false, error: "Solo se puede editar un acta que ya está cerrada." };
   }
@@ -387,14 +353,7 @@ export async function editarActa(entrada: EdicionActaEntrada, ctx: ContextoEdici
   if (entrada.edicionesVistas !== (antes.ediciones?.length ?? 0)) return { ok: false, error: EDITADA_POR_OTRO };
 
   const motivos = [...new Set(entrada.motivosCodigos.filter(Boolean))];
-  if (!motivos.length) return { ok: false, error: "Marca al menos un motivo de la visita." };
-  if (!txt(entrada.responsableNombre)) return { ok: false, error: "Falta el nombre del responsable de la tienda." };
-  // ck_problema_otro_desc: se valida antes de escribir nada.
-  for (const pr of entrada.problemas) {
-    if (pr.tipoCodigo === "OTRO" && !txt(pr.descripcion)) {
-      return { ok: false, error: "El problema marcado como «Otro» necesita que escribas qué se encontró." };
-    }
-  }
+  if (!motivos.length) return { ok: false, error: "La corrección llegó incompleta." };
 
   const fotosNuevas: FotoLista[] = [];
   for (const f of entrada.fotosNuevas ?? []) {

@@ -1,10 +1,6 @@
 import "server-only";
-import {
-  editarVisita,
-  getVisitaCompletaPorFolio,
-  reprogramarVisita,
-  type DatosVisita,
-} from "@/lib/data/visitas";
+import { editarVisita, getVisitaCompletaPorFolio, reprogramarVisita } from "@/lib/data/visitas";
+import type { CambiosVisita, DatosVisita } from "@/lib/contratos/visitas";
 import { enTransaccion } from "@/lib/data/sql";
 import { ESTADO_VISITA_LABEL } from "@/lib/ui/estado";
 import { algunoPideHora } from "@/lib/ui/motivos";
@@ -15,18 +11,6 @@ import type { CatalogoMotivo, EstadoVisita } from "@/lib/types";
 // Cancelar y eliminar en lote usan tal cual las funciones de una sola visita
 // (ver app/actions/admin.ts). Lo propio del lote es esto: un cambio parcial,
 // donde lo que no viene se queda como estaba.
-
-/** Lo que se le cambia a una visita. Lo que no viene, no se toca. */
-export interface CambiosVisita {
-  tecnicoId?: number;
-  /** null = pasa a ir solo. */
-  tecnicoAyudanteId?: number | null;
-  fecha?: string;
-  hora?: string;
-  motivosCodigos?: string[];
-  trabajoSolicitado?: string;
-  indicacionesAcceso?: string;
-}
 
 /** Los estados en que todavía tiene sentido mover la fecha o el técnico. */
 const SE_PUEDE_MOVER: EstadoVisita[] = ["PROGRAMADA", "REAGENDADA", "PENDIENTE", "CANCELADA"];

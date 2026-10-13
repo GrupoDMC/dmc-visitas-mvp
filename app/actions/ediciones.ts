@@ -4,9 +4,12 @@ import { revalidatePath } from "next/cache";
 import { log } from "@/lib/log";
 import { getSesion, sesionCon } from "@/lib/auth";
 import { tiene } from "@/lib/permisos";
-import { editarActa, type EdicionActaEntrada, type ResultadoEdicion } from "@/lib/data/ediciones";
+import { editarActa, type ResultadoEdicion } from "@/lib/data/ediciones";
+import type { EdicionActaEntrada } from "@/lib/contratos/acta";
 import { validar } from "@/lib/validacion/comun";
 import { edicionActaEntrada } from "@/lib/validacion/actas";
+import { errorDeEdicion, motivoParaNoEditar } from "@/lib/validacion/reglas-acta";
+import { getEquipoDeVisita } from "@/lib/data/visitas";
 
 // Edición del acta ya cerrada. Dos puertas, una regla distinta en cada una:
 // el técnico corrige la suya desde el celular hasta un día después de cerrarla;
@@ -41,6 +44,12 @@ export async function editarActaTecnicoAction(entradaPedida: EdicionActaEntrada)
   const valida = validar(edicionActaEntrada, entradaPedida, "editarActaTecnico");
   if (!valida.ok) return { ok: false, error: valida.error };
   const entrada: EdicionActaEntrada = valida.datos;
+  const falta = errorDeEdicion(entrada);
+  if (falta) return { ok: false, error: falta };
+  const equipo = await getEquipoDeVisita(entrada.folio);
+  if (!equipo) return { ok: false, error: "No encontramos esa visita." };
+  const rechazo = motivoParaNoEditar(equipo, sesion.tecnico.id);
+  if (rechazo) return { ok: false, error: rechazo };
 
   try {
     const res = await editarActa(entrada, {
@@ -63,6 +72,8 @@ export async function editarActaAdminAction(entradaPedida: EdicionActaEntrada): 
   const valida = validar(edicionActaEntrada, entradaPedida, "editarActaAdmin");
   if (!valida.ok) return { ok: false, error: valida.error };
   const entrada: EdicionActaEntrada = valida.datos;
+  const falta = errorDeEdicion(entrada);
+  if (falta) return { ok: false, error: falta };
 
   try {
     const res = await editarActa(entrada, {

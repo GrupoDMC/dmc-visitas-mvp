@@ -9,7 +9,7 @@ import { cambiarEstadoVisitaAction, iniciarVisitaAction } from "@/app/actions/vi
 import { ESTADO_VISITA_LABEL, ESTADO_VISITA_TAG, nombreDeQuienLaTomo, textoMotivos } from "@/lib/ui/estado";
 import { puede, useReferencias } from "@/lib/ui/referencias";
 import { hayDireccion, urlMapa, urlTel } from "@/lib/ui/formato";
-import type { HistorialVista } from "@/lib/data/historial";
+import type { HistorialVista } from "@/lib/contratos/panel";
 import type { EstadoVisita, Visita } from "@/lib/types";
 
 type AccionEstado = "reagendar" | "pendiente" | "cancelar";

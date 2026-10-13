@@ -14,7 +14,7 @@ import {
 import { ESTADO_VISITA_LABEL, ESTADO_VISITA_TAG, textoMotivos } from "@/lib/ui/estado";
 import { textoFechaVisita } from "@/lib/ui/fecha";
 import { useReferencias } from "@/lib/ui/referencias";
-import type { CambiosVisita } from "@/lib/data/visitas-lote";
+import type { CambiosVisita } from "@/lib/contratos/visitas";
 import type { Visita } from "@/lib/types";
 
 export type AccionLote = "modificar" | "cancelar" | "eliminar";

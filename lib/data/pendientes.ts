@@ -3,68 +3,13 @@ import { agrupar, consulta, consultaCon, ejecutar, num, sql, F_TS, type Parametr
 import { listarPendientes } from "@/lib/data/catalogos";
 import { getVisitasDeLocalesConPendientes } from "@/lib/data/visitas";
 import { hoyISO } from "@/lib/ui/fecha";
-import type { CatalogoPendiente, EstadoProblema, EstadoVisita, OrigenRegistro, Visita } from "@/lib/types";
+import type { EstadoVisita, OrigenRegistro } from "@/lib/types";
+import type { DatosPendientes, HistorialLocal, Pendiente } from "@/lib/contratos/panel";
 
 // "Reagendas y pendientes" del panel: las visitas que no se pudieron hacer, con
 // lo que coordinación necesita para destrabarlas sin abrir cada ficha — desde
 // cuándo esperan, qué pasos de gestión llevan marcados y qué ha pasado antes en
 // ese mismo local.
-
-/** Un paso del checklist de gestión ya marcado en una visita. */
-export interface GestionMarca {
-  codigo: string;
-  /** Quién lo marcó: su nombre si es técnico, si no su correo. */
-  por: string | null;
-  en: string;
-}
-
-export interface ProblemaLocal {
-  id: number;
-  tipoCodigo: string;
-  estado: EstadoProblema;
-  descripcion: string | null;
-  solucion: string | null;
-  items: { etiqueta: string; cantidad: number }[];
-  /** La visita donde se levantó. */
-  folio: string;
-  fecha: string;
-  resueltoEn: string | null;
-}
-
-export interface VisitaLocal {
-  folio: string;
-  fecha: string;
-  estado: EstadoVisita;
-  tecnico: string;
-  motivos: string[];
-  trabajosCodigos: string[];
-  observaciones: string | null;
-  /** Por qué quedó pendiente o cancelada, si fue el caso. */
-  motivoTecnico: string | null;
-}
-
-/** Todo lo registrado en una sucursal, de lo más nuevo a lo más viejo. */
-export interface HistorialLocal {
-  visitas: VisitaLocal[];
-  problemas: ProblemaLocal[];
-}
-
-export interface Pendiente {
-  visita: Visita;
-  /** Cuándo quedó en este estado y quién la dejó así. Null si la bitácora no lo trae. */
-  desde: { en: string; por: string | null; origen: OrigenRegistro } | null;
-  /** Días que lleva esperando, contados desde `desde` (o desde su fecha programada). */
-  dias: number;
-  gestion: GestionMarca[];
-}
-
-export interface DatosPendientes {
-  pendientes: Pendiente[];
-  /** Por id de sucursal. Incluye a la propia visita pendiente: la vista la aparta. */
-  historial: Record<number, HistorialLocal>;
-  /** La Lista 5 del checklist, en su orden. */
-  pasos: CatalogoPendiente[];
-}
 
 const diasEntre = (desde: string, hasta: string) =>
   Math.max(0, Math.round((Date.parse(`${hasta}T00:00:00Z`) - Date.parse(`${desde}T00:00:00Z`)) / 86_400_000));

@@ -1,28 +1,13 @@
 import "server-only";
 import { consultaCon, num, sql, F_FECHA } from "@/lib/data/sql";
 import { listarEstadosProblema } from "@/lib/data/catalogos";
-import { etiquetaEstadoProblema, tagEstadoProblema, type TagVariant } from "@/lib/ui/estado";
+import { etiquetaEstadoProblema, tagEstadoProblema } from "@/lib/ui/estado";
 import type { EstadoProblema } from "@/lib/types";
+import type { HistorialVista } from "@/lib/contratos/panel";
 
 // "Última visita al local" del detalle móvil: qué dejó registrado la visita
 // anterior en esa misma sucursal. Antes era un objeto fijo en lib/mock/historial;
 // ahora es la última visita cerrada de la sucursal, distinta de la que se abre.
-
-export interface HistorialProblema {
-  tipo: string;
-  detalle: string;
-  estado: string;
-  tag: TagVariant;
-}
-
-export interface HistorialVista {
-  hay: boolean;
-  encabezado: string;
-  trabajos: string[];
-  obs: string;
-  problemas: HistorialProblema[];
-  sinProblemas: boolean;
-}
 
 const SIN_HISTORIAL: HistorialVista = {
   hay: false,

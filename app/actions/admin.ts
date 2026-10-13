@@ -14,8 +14,8 @@ import {
   liberarVisita,
   registrarEnvioActa,
   reprogramarVisita,
-  type DatosVisita,
 } from "@/lib/data/visitas";
+import type { CambiosVisita, DatosVisita } from "@/lib/contratos/visitas";
 import { marcarGestionPendiente } from "@/lib/data/pendientes";
 import { marcarGestionProblema } from "@/lib/data/problemas";
 import {
@@ -26,14 +26,13 @@ import {
   esEstadoProblemaVigente,
   listarMotivos,
   PLANTILLA_PROPIA,
-  type BorradorChecklist,
-  type ResumenChecklist,
 } from "@/lib/data/catalogos";
+import type { BorradorChecklist, ResumenChecklist } from "@/lib/contratos/checklist";
 import {
   atenderSolicitudPassword,
   descartarSolicitudPassword,
 } from "@/lib/data/solicitudes-password";
-import { modificarVisita, type CambiosVisita } from "@/lib/data/visitas-lote";
+import { modificarVisita } from "@/lib/data/visitas-lote";
 import { tiene } from "@/lib/permisos";
 import { algunoPideHora } from "@/lib/ui/motivos";
 import type { ChecklistPlantilla, EstadoProblema } from "@/lib/types";

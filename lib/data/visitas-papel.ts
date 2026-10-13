@@ -1,32 +1,13 @@
 import "server-only";
 import { consultaCon, enTransaccion, num, sql } from "@/lib/data/sql";
-import { escribirTrabajos, sincronizarMotivosCon, type TrabajoActa } from "@/lib/data/visitas";
+import { escribirTrabajos, sincronizarMotivosCon } from "@/lib/data/visitas";
 import { DISPOSITIVO_PAPEL } from "@/lib/ui/papel";
+import type { InformePapel } from "@/lib/contratos/papel";
 
 // "Visitas en papel": cargar los informes que se hicieron a mano en años
 // anteriores. Cada uno entra ya cerrado —COMPLETADA, con su acta y el nombre
 // de quien firmó— porque el trabajo se hizo hace rato. No llevan fotos, video
 // ni firma dibujada: la firma quedó en el papel.
-
-/** Un informe en papel, tal como se transcribe. */
-export interface InformePapel {
-  clienteId: number;
-  sucursalId: number;
-  tecnicoId: number;
-  tecnicoAyudanteId: number | null;
-  /** El primero es el principal. */
-  motivosCodigos: string[];
-  /** Lo marcado del checklist de trabajos, con sus subtrabajos. Opcional. */
-  trabajos?: TrabajoActa[];
-  /** El día del informe (YYYY-MM-DD). */
-  fecha: string;
-  firmanteNombre: string;
-  firmanteRut: string | null;
-  /** Lo que dice el informe: queda como las observaciones del acta. */
-  descripcion: string;
-  /** Guardarlo aunque ya haya una visita de esa sucursal ese mismo día. */
-  aunqueRepetida?: boolean;
-}
 
 export type ResultadoInformePapel =
   | { ok: true; folio: string }

@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { inicioSemana, sumarDias } from "@/lib/ui/fecha";
-import type { ProblemaPanel } from "@/lib/data/problemas";
+import type { ProblemaPanel } from "@/lib/contratos/panel";
 
 /**
  * Los gráficos del panel "Problemas".

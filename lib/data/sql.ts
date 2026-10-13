@@ -13,6 +13,14 @@ import { getPool } from "@/lib/db/pool";
 //    tedious devuelve como Date queda en medianoche UTC, y al formatearlo en un
 //    servidor con otro huso se corre un día. Con CONVERT el valor viaja ya como
 //    'YYYY-MM-DD' y nadie lo reinterpreta.
+//
+// Y un criterio de capas: las acciones (app/actions) autorizan y validan —
+// sesión, permisos, quién puede tocar qué visita y qué le falta a lo que llega—
+// y lib/data solo persiste. Lo único que se vuelve a mirar acá es lo que puede
+// cambiar entre la acción y la escritura: eso va dentro de la transacción y
+// con la fila tomada (UPDLOCK), como el estado de la visita en guardarActa o el
+// plazo y las ediciones previas en editarActa. Si la regla es la misma que
+// aplicó la acción, se usa la misma función (ver lib/validacion/reglas-acta).
 
 /** Fecha como 'YYYY-MM-DD'. */
 export const F_FECHA = (col: string) => `CONVERT(varchar(10), ${col}, 23)`;

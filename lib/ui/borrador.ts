@@ -1,6 +1,6 @@
 "use client";
 
-import type { ActaEntrada } from "@/lib/data/visitas";
+import type { ActaEntrada } from "@/lib/contratos/acta";
 import type { EstadoProblema } from "@/lib/types";
 
 /**
