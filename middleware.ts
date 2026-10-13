@@ -8,6 +8,7 @@ import {
   tocaRenovar,
   verificarToken,
 } from "@/lib/session";
+import { CSP_CABECERA, CSP_RUTA_REPORTE, construirCsp, generarNonce } from "@/lib/csp";
 
 // Puerta de entrada única. Antes solo miraba que la cookie existiera; ahora
 // verifica la firma del token, así que una cookie inventada o caducada no
@@ -21,15 +22,29 @@ import {
 // firmar el token con el plazo completo. Solo se cae si nadie hace nada
 // durante VIGENCIA_SESION.
 
-const PUBLICAS = new Set(["/login"]);
+const PUBLICAS = new Set(["/login", CSP_RUTA_REPORTE]);
 
 export async function middleware(req: NextRequest) {
+  // El nonce viaja a Next en la cabecera de la petición (así lo marca en sus
+  // scripts) y la política sale en la respuesta. Va en todas las respuestas
+  // que dejan pasar la petición, públicas o no.
+  const nonce = generarNonce();
+  const csp = construirCsp(nonce, process.env.NODE_ENV === "development");
+  const cabeceras = new Headers(req.headers);
+  cabeceras.set("x-nonce", nonce);
+  cabeceras.set(CSP_CABECERA, csp);
+  const pasar = () => {
+    const r = NextResponse.next({ request: { headers: cabeceras } });
+    r.headers.set(CSP_CABECERA, csp);
+    return r;
+  };
+
   const { pathname } = req.nextUrl;
-  if (PUBLICAS.has(pathname)) return NextResponse.next();
+  if (PUBLICAS.has(pathname)) return pasar();
 
   const token = await verificarToken(req.cookies.get(COOKIE_SESION)?.value);
   if (token) {
-    const respuesta = NextResponse.next();
+    const respuesta = pasar();
     // Sin la cookie de vencimiento (sesiones abiertas antes de que existiera)
     // también se renueva, para que el navegador sepa cuándo vence. Lo mismo un
     // token sin versión: se vuelve a firmar con la 0, que es con la que valía.
