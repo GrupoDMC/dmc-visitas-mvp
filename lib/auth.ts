@@ -2,9 +2,8 @@ import "server-only";
 import { cache } from "react";
 import { cookies } from "next/headers";
 import { COOKIE_EXPIRA, COOKIE_SESION, VIGENCIA_SESION, firmarToken, opcionesCookie, verificarToken } from "@/lib/session";
-import { esHashLegado, gastarTiempoDeVerificacion, hashearPassword, verificarPassword } from "@/lib/password";
+import { gastarTiempoDeVerificacion, verificarPassword } from "@/lib/password";
 import {
-  actualizarPasswordHash,
   getUsuarioPorEmail,
   getUsuarioPorId,
   registrarAcceso,
@@ -43,10 +42,6 @@ export async function autenticar(email: string, password: string): Promise<Usuar
   // cuenta desactivada no se delate respondiendo más rápido que una activa.
   if (!registro.usuario.activo) return null;
   if (registro.usuario.rol === "TECNICO" && !registro.tecnico?.activo) return null;
-
-  if (esHashLegado(registro.passwordHash)) {
-    await actualizarPasswordHash(registro.usuario.id, await hashearPassword(password));
-  }
 
   await registrarAcceso(registro.usuario.id);
   return registro.usuario;

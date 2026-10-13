@@ -36,8 +36,9 @@ export async function GET(req: NextRequest) {
   try {
     exigirConexionSql();
   } catch (err) {
+    console.error("[dmc] /api/salud: configuración SQL incompleta:", err);
     return NextResponse.json(
-      { ok: false, entorno: enProduccion ? "produccion" : "desarrollo", error: (err as Error).message },
+      { ok: false, entorno: enProduccion ? "produccion" : "desarrollo", error: "Configuración de SQL incompleta. Revisa el log del despliegue." },
       { status: 503 }
     );
   }
@@ -68,17 +69,18 @@ export async function GET(req: NextRequest) {
         listo: catalogoListo,
         ...(catalogoListo
           ? {}
-          : { aviso: "Catálogo vacío: corre `npm run sembrar-catalogos` o usa Checklist › Restaurar catálogo por defecto." }),
+          : { aviso: "Catálogo vacío: cárgalo desde Checklist en el panel." }),
       },
     });
   } catch (err) {
+    console.error("[dmc] /api/salud: no se pudo consultar SQL Server:", err);
     return NextResponse.json(
       {
         ok: false,
         entorno: enProduccion ? "produccion" : "desarrollo",
         destino: describirDestinoSql(),
         latenciaMs: Date.now() - inicio,
-        error: (err as Error).message,
+        error: "No se pudo consultar SQL Server. Revisa el log del despliegue.",
       },
       { status: 503 }
     );

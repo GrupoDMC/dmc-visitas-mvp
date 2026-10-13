@@ -14,7 +14,7 @@ const initialSolicitud: SolicitudState = { ok: false, error: null };
 const CAMPO =
   "w-full min-h-[54px] px-3.5 py-3 text-base bg-[var(--color-surface)] border border-[var(--color-divider)] text-[var(--color-text)] caret-[var(--color-accent)] focus-visible:border-[var(--color-accent)] focus-visible:outline-none";
 
-export default function LoginForm() {
+export default function LoginForm({ version }: { version: string }) {
   const [state, formAction, pending] = useActionState(loginAction, initialState);
   const [verPass, setVerPass] = useState(false);
   const [olvide, setOlvide] = useState(false);
@@ -94,7 +94,7 @@ export default function LoginForm() {
         >
           Olvidé mi contraseña
         </button>
-        <span className="text-[11px] tracking-[.08em] uppercase opacity-60">v0.4 · MVP</span>
+        <span className="text-[11px] tracking-[.08em] uppercase opacity-60">v{version}</span>
       </div>
     </form>
   );

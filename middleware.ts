@@ -69,6 +69,6 @@ export const config = {
   matcher: [
     // Todo salvo estáticos de Next, imágenes y la ruta de diagnóstico
     // (/api/salud tiene su propia autorización por token).
-    "/((?!_next/static|_next/image|api/salud|favicon.ico|.*\.(?:png|jpg|jpeg|svg|ico|webp)$).*)",
+    "/((?!_next/static|_next/image|api/salud|favicon.ico|.*\\.(?:png|jpg|jpeg|svg|ico|webp)$).*)",
   ],
 };

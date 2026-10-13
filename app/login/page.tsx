@@ -1,6 +1,7 @@
 import Image from "next/image";
 import { redirect } from "next/navigation";
 import { getSesion } from "@/lib/auth";
+import { version } from "@/package.json";
 import LoginForm from "./LoginForm";
 
 export default async function LoginPage({ searchParams }: { searchParams: Promise<{ expirada?: string }> }) {
@@ -39,7 +40,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
             </div>
           ) : null}
 
-          <LoginForm />
+          <LoginForm version={version} />
 
           <div className="mt-auto pt-[34px]">
             <div className="h-px bg-[var(--color-divider-soft)] mb-3" />
