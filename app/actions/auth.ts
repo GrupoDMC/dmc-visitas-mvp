@@ -11,6 +11,8 @@ import {
 import { crearSolicitudPassword } from "@/lib/data/solicitudes-password";
 import { cambiarPasswordPropia } from "@/lib/data/usuarios";
 import { validarPasswordNueva } from "@/lib/password";
+import { validar } from "@/lib/validacion/comun";
+import { entradaCambioPassword, entradaLogin, entradaSolicitudPassword } from "@/lib/validacion/auth";
 
 export interface LoginState {
   error: string | null;
@@ -24,12 +26,15 @@ const CREDENCIALES_INVALIDAS = "Correo o contraseña incorrectos.";
 const DEMASIADOS_INTENTOS = "Demasiados intentos seguidos. Espera 15 minutos y vuelve a intentarlo.";
 
 export async function loginAction(_prev: LoginState, formData: FormData): Promise<LoginState> {
-  const email = String(formData.get("email") ?? "").trim();
-  const password = String(formData.get("password") ?? "");
+  const email = String(formData?.get?.("email") ?? "").trim();
+  const password = String(formData?.get?.("password") ?? "");
 
   if (!email || !password) {
     return { error: "Ingresa tu correo y contraseña." };
   }
+  // Un correo o una clave de largo absurdo no pueden ser de nadie: se rechazan
+  // sin consultar la base ni gastar un hash.
+  if (!validar(entradaLogin, { email, password }, "login").ok) return { error: CREDENCIALES_INVALIDAS };
 
   let destino: string;
 
@@ -70,12 +75,14 @@ export async function solicitarPasswordAction(
   _prev: SolicitudState,
   formData: FormData
 ): Promise<SolicitudState> {
-  const email = String(formData.get("email") ?? "").trim();
-  const mensaje = String(formData.get("mensaje") ?? "").trim();
+  const email = String(formData?.get?.("email") ?? "").trim();
+  const mensaje = String(formData?.get?.("mensaje") ?? "").trim();
 
   if (!email.includes("@") || email.length < 5) {
     return { ok: false, error: "Escribe el correo con el que entras al sistema." };
   }
+  const valida = validar(entradaSolicitudPassword, { email, mensaje }, "solicitarPassword");
+  if (!valida.ok) return { ok: false, error: valida.error };
 
   try {
     await crearSolicitudPassword(email, mensaje || null, await ipDeLaPeticion());
@@ -103,8 +110,10 @@ export async function cambiarPasswordAction(
   if (!sesion) redirect("/login");
 
   // La contraseña no se recorta: se guarda tal como se escribió.
-  const nueva = String(formData.get("nueva") ?? "");
-  const repetida = String(formData.get("repetida") ?? "");
+  const nueva = String(formData?.get?.("nueva") ?? "");
+  const repetida = String(formData?.get?.("repetida") ?? "");
+  const valida = validar(entradaCambioPassword, { nueva, repetida }, "cambiarPassword");
+  if (!valida.ok) return { error: valida.error };
   if (nueva !== repetida) return { error: "Las dos contraseñas no coinciden." };
   const fallo = validarPasswordNueva(nueva, sesion.usuario.email);
   if (fallo) return { error: fallo };

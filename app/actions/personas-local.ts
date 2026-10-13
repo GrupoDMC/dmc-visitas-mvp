@@ -4,6 +4,8 @@ import { getSesion } from "@/lib/auth";
 import { listarPersonasLocal, tecnicoTieneVisitaEn } from "@/lib/data/personas-local";
 import { tiene } from "@/lib/permisos";
 import type { PersonaLocal } from "@/lib/types";
+import { validar } from "@/lib/validacion/comun";
+import { entradaPersonasLocal } from "@/lib/validacion/visitas";
 
 /**
  * Las personas que ya recibieron o firmaron en una tienda, para elegirlas al
@@ -15,9 +17,12 @@ import type { PersonaLocal } from "@/lib/types";
  *   permiso de agregar visitas en terreno también las que elige en esa hoja,
  *   porque ahí la sucursal todavía no tiene visita suya.
  */
-export async function personasDelLocalAction(sucursalId: number): Promise<PersonaLocal[]> {
+export async function personasDelLocalAction(sucursalPedida: number): Promise<PersonaLocal[]> {
   const sesion = await getSesion();
-  if (!sesion || !Number.isInteger(sucursalId) || sucursalId <= 0) return [];
+  if (!sesion) return [];
+  const entrada = validar(entradaPersonasLocal, sucursalPedida, "personasDelLocal");
+  if (!entrada.ok) return [];
+  const sucursalId = entrada.datos;
 
   if (sesion.usuario.rol === "TECNICO") {
     if (!sesion.tecnico) return [];

@@ -41,6 +41,25 @@ import { modificarVisita, type CambiosVisita } from "@/lib/data/visitas-lote";
 import { tiene } from "@/lib/permisos";
 import { algunoPideHora } from "@/lib/ui/motivos";
 import type { ChecklistPlantilla, EstadoProblema } from "@/lib/types";
+import { validar } from "@/lib/validacion/comun";
+import {
+  datosVisita,
+  entradaActualizarProblema,
+  entradaCancelarAdmin,
+  entradaCancelarVisitas,
+  entradaEditarVisita,
+  entradaEliminarVisita,
+  entradaEliminarVisitas,
+  entradaEnviarActa,
+  entradaFolio,
+  entradaGestionPendiente,
+  entradaGestionProblema,
+  entradaModificarVisitas,
+  entradaReprogramar,
+  entradaVisitasMasivas,
+} from "@/lib/validacion/visitas";
+import { borradorChecklist } from "@/lib/validacion/checklist";
+import { entradaAtenderSolicitud, entradaDescartarSolicitud } from "@/lib/validacion/auth";
 
 export interface ResultadoAdmin {
   ok: boolean;
@@ -94,9 +113,12 @@ async function incluyeInstalacion(datos: DatosVisita): Promise<boolean> {
   return algunoPideHora(marcados, await listarMotivos());
 }
 
-export async function crearVisitaAction(datos: DatosVisita): Promise<ResultadoAdmin> {
+export async function crearVisitaAction(datosPedidos: DatosVisita): Promise<ResultadoAdmin> {
   const sesion = await sesionCon("visitas.crear");
   if (!sesion) return { ok: false, error: "No tienes permiso para crear visitas." };
+  const entrada = validar(datosVisita, datosPedidos, "crearVisita");
+  if (!entrada.ok) return { ok: false, error: entrada.error };
+  const datos = entrada.datos;
   if (!datos.clienteId || !datos.sucursalId || !datos.tecnicoId) {
     return { ok: false, error: "Cliente, sucursal y técnico asignado son obligatorios." };
   }
@@ -137,16 +159,24 @@ export interface ResultadoMasivo {
  * local). Se valida todo antes de escribir nada; si después falla alguna en la
  * base, las anteriores quedan creadas y se devuelve cuáles faltaron.
  */
-export async function crearVisitasMasivasAction(visitas: DatosVisita[]): Promise<ResultadoMasivo> {
+export async function crearVisitasMasivasAction(visitasPedidas: DatosVisita[]): Promise<ResultadoMasivo> {
+  // Lo que llega no es de fiar hasta validarlo: las sucursales de la respuesta
+  // de error se sacan sin suponer la forma de nada.
+  const sucursalesPedidas = (Array.isArray(visitasPedidas) ? visitasPedidas : [])
+    .map((v) => Number(v?.sucursalId))
+    .filter((n) => Number.isInteger(n) && n > 0);
   const falla = (error: string): ResultadoMasivo => ({
     ok: false,
     error,
     folios: [],
-    fallidas: visitas.map((v) => v.sucursalId),
+    fallidas: sucursalesPedidas,
   });
 
   const sesion = await sesionCon("visitas.crear");
   if (!sesion) return falla("No tienes permiso para crear visitas.");
+  const entrada = validar(entradaVisitasMasivas, visitasPedidas, "crearVisitasMasivas");
+  if (!entrada.ok) return falla(entrada.error);
+  const visitas = entrada.datos;
   if (visitas.length === 0) return falla("Agrega al menos un local a la ruta.");
   if (new Set(visitas.map((v) => v.sucursalId)).size !== visitas.length) {
     return falla("Hay un local repetido en la ruta.");
@@ -189,9 +219,12 @@ export async function crearVisitasMasivasAction(visitas: DatosVisita[]): Promise
   return { ok: fallidas.length === 0, error, folios, fallidas };
 }
 
-export async function editarVisitaAction(folio: string, datos: DatosVisita): Promise<ResultadoAdmin> {
+export async function editarVisitaAction(folioPedido: string, datosPedidos: DatosVisita): Promise<ResultadoAdmin> {
   const sesion = await sesionCon("visitas.editar");
   if (!sesion) return { ok: false, error: "No tienes permiso para editar visitas." };
+  const entrada = validar(entradaEditarVisita, { folio: folioPedido, datos: datosPedidos }, "editarVisita");
+  if (!entrada.ok) return { ok: false, error: entrada.error };
+  const { folio, datos } = entrada.datos;
   if (!datos.clienteId || !datos.sucursalId || !datos.tecnicoId) {
     return { ok: false, error: "Cliente, sucursal y técnico asignado son obligatorios." };
   }
@@ -217,7 +250,7 @@ export async function editarVisitaAction(folio: string, datos: DatosVisita): Pro
   return { ok: true, folio };
 }
 
-export async function reprogramarVisitaAction(input: {
+export async function reprogramarVisitaAction(pedido: {
   folio: string;
   tecnicoId: number;
   fecha: string;
@@ -225,7 +258,9 @@ export async function reprogramarVisitaAction(input: {
 }): Promise<ResultadoAdmin> {
   const sesion = await sesionCon("visitas.reprogramar");
   if (!sesion) return { ok: false, error: "No tienes permiso para reprogramar visitas." };
-  if (!input.tecnicoId || !input.fecha) return { ok: false, error: "Elige el técnico y la nueva fecha." };
+  const entrada = validar(entradaReprogramar, pedido, "reprogramarVisita");
+  if (!entrada.ok) return { ok: false, error: "Elige el técnico y la nueva fecha." };
+  const input = entrada.datos;
   if (!input.hora) {
     const visita = await getVisitaCompletaPorFolio(input.folio);
     if (visita && algunoPideHora(visita.motivosCodigos, await listarMotivos())) {
@@ -258,7 +293,7 @@ export async function reprogramarVisitaAction(input: {
  * comprobar la capa de datos con la fila bloqueada, por si el técnico alcanza a
  * cerrarla mientras el administrador confirma el diálogo.
  */
-export async function cancelarVisitaAdminAction(input: {
+export async function cancelarVisitaAdminAction(pedido: {
   folio: string;
   motivo: string;
 }): Promise<ResultadoAdmin> {
@@ -266,6 +301,9 @@ export async function cancelarVisitaAdminAction(input: {
   if (!sesion) {
     return { ok: false, error: "No tienes permiso para cancelar visitas por admin." };
   }
+  const entrada = validar(entradaCancelarAdmin, pedido, "cancelarVisitaAdmin");
+  if (!entrada.ok) return { ok: false, error: entrada.error };
+  const input = entrada.datos;
   const motivo = input.motivo.trim();
   if (motivo.length < 10) {
     return { ok: false, error: "Escribe por qué se cierra la visita: queda en la bitácora." };
@@ -292,9 +330,12 @@ export async function cancelarVisitaAdminAction(input: {
  * asignado o el ayudante). Esto la destraba: lo que estaba en curso se anula
  * y cualquiera de los dos puede iniciarla de nuevo.
  */
-export async function liberarVisitaAction(folio: string): Promise<ResultadoAdmin> {
+export async function liberarVisitaAction(folioPedido: string): Promise<ResultadoAdmin> {
   const sesion = await sesionCon("visitas.liberar");
   if (!sesion) return { ok: false, error: "No tienes permiso para liberar visitas." };
+  const entrada = validar(entradaFolio, folioPedido, "liberarVisita");
+  if (!entrada.ok) return { ok: false, error: "No encontramos esa visita." };
+  const folio = entrada.datos;
 
   try {
     const fallo = await liberarVisita({ folio, usuarioId: sesion.usuario.id });
@@ -316,7 +357,7 @@ export async function liberarVisitaAction(folio: string): Promise<ResultadoAdmin
  * traba contra el clic accidental. Queda con nombre y apellido en
  * dmc.visita_eliminacion.
  */
-export async function eliminarVisitaAction(input: {
+export async function eliminarVisitaAction(pedido: {
   folio: string;
   confirmacionFolio: string;
 }): Promise<ResultadoAdmin> {
@@ -324,6 +365,9 @@ export async function eliminarVisitaAction(input: {
   if (!sesion) {
     return { ok: false, error: "No tienes permiso para eliminar visitas." };
   }
+  const entrada = validar(entradaEliminarVisita, pedido, "eliminarVisita");
+  if (!entrada.ok) return { ok: false, error: entrada.error };
+  const input = entrada.datos;
 
   try {
     const fallo = await eliminarVisita({
@@ -399,10 +443,13 @@ async function aplicarEnLote(
  * esa visita. Lo que no viene en `cambios` se queda como estaba.
  */
 export async function modificarVisitasAction(
-  items: { folio: string; cambios: CambiosVisita }[]
+  itemsPedidos: { folio: string; cambios: CambiosVisita }[]
 ): Promise<ResultadoLote> {
   const sesion = await sesionParaLote("visitas.editar");
   if (!sesion) return loteRechazado("No tienes permiso para editar varias visitas a la vez.");
+  const entrada = validar(entradaModificarVisitas, itemsPedidos, "modificarVisitas");
+  if (!entrada.ok) return loteRechazado(entrada.error);
+  const items = entrada.datos;
   const mal = tandaInvalida(items.map((x) => x.folio));
   if (mal) return loteRechazado(mal);
 
@@ -436,9 +483,12 @@ export async function modificarVisitasAction(
 }
 
 /** «Cancelar por admin» sobre varias: cada una con su motivo (el común o el suyo). */
-export async function cancelarVisitasAdminAction(items: { folio: string; motivo: string }[]): Promise<ResultadoLote> {
+export async function cancelarVisitasAdminAction(itemsPedidos: { folio: string; motivo: string }[]): Promise<ResultadoLote> {
   const sesion = await sesionParaLote("visitas.cancelar");
   if (!sesion) return loteRechazado("No tienes permiso para cancelar varias visitas por admin.");
+  const entrada = validar(entradaCancelarVisitas, itemsPedidos, "cancelarVisitasAdmin");
+  if (!entrada.ok) return loteRechazado(entrada.error);
+  const items = entrada.datos;
   const mal = tandaInvalida(items.map((x) => x.folio));
   if (mal) return loteRechazado(mal);
   const sinMotivo = items.find((x) => x.motivo.trim().length < 10);
@@ -458,13 +508,16 @@ export async function cancelarVisitasAdminAction(items: { folio: string; motivo:
  * —son muchos— sino escribir «ELIMINAR» y cuántas son: `total` es el número
  * que se le mostró a quien confirma, aunque lleguen por tandas.
  */
-export async function eliminarVisitasAction(input: {
+export async function eliminarVisitasAction(pedido: {
   folios: string[];
   total: number;
   confirmacion: string;
 }): Promise<ResultadoLote> {
   const sesion = await sesionParaLote("visitas.eliminar");
   if (!sesion) return loteRechazado("No tienes permiso para eliminar varias visitas a la vez.");
+  const entrada = validar(entradaEliminarVisitas, pedido, "eliminarVisitas");
+  if (!entrada.ok) return loteRechazado(entrada.error);
+  const input = entrada.datos;
   const mal = tandaInvalida(input.folios);
   if (mal) return loteRechazado(mal);
   if (input.folios.length > input.total || input.confirmacion.trim().toUpperCase() !== `ELIMINAR ${input.total}`) {
@@ -476,7 +529,7 @@ export async function eliminarVisitasAction(input: {
   );
 }
 
-export async function actualizarProblemaAction(input: {
+export async function actualizarProblemaAction(pedido: {
   problemaId: number;
   estado: EstadoProblema;
   tipoCodigo: string;
@@ -485,6 +538,9 @@ export async function actualizarProblemaAction(input: {
 }): Promise<ResultadoAdmin> {
   const sesion = await sesionCon("problemas.editar");
   if (!sesion) return { ok: false, error: "No tienes permiso para cambiar problemas." };
+  const entrada = validar(entradaActualizarProblema, pedido, "actualizarProblema");
+  if (!entrada.ok) return { ok: false, error: entrada.error };
+  const input = entrada.datos;
 
   // El estado tiene que ser uno de la Lista 7 del checklist.
   if (!(await listarEstadosProblema()).some((e) => e.codigo === input.estado)) {
@@ -504,13 +560,16 @@ export async function actualizarProblemaAction(input: {
 }
 
 /** Marca o desmarca un paso del checklist de gestión en «Reagendas y pendientes». */
-export async function marcarGestionPendienteAction(input: {
+export async function marcarGestionPendienteAction(pedido: {
   folio: string;
   codigo: string;
   marcado: boolean;
 }): Promise<ResultadoAdmin> {
   const sesion = await sesionCon("reagendas.gestionar");
   if (!sesion) return { ok: false, error: "No tienes permiso para marcar la gestión de pendientes." };
+  const entrada = validar(entradaGestionPendiente, pedido, "marcarGestionPendiente");
+  if (!entrada.ok) return { ok: false, error: entrada.error };
+  const input = entrada.datos;
 
   try {
     const fallo = await marcarGestionPendiente({
@@ -528,13 +587,16 @@ export async function marcarGestionPendienteAction(input: {
 }
 
 /** Marca o desmarca un paso del checklist de gestión en «Problemas». */
-export async function marcarGestionProblemaAction(input: {
+export async function marcarGestionProblemaAction(pedido: {
   problemaId: number;
   codigo: string;
   marcado: boolean;
 }): Promise<ResultadoAdmin> {
   const sesion = await sesionCon("problemas.editar");
   if (!sesion) return { ok: false, error: "No tienes permiso para marcar la gestión de problemas." };
+  const entrada = validar(entradaGestionProblema, pedido, "marcarGestionProblema");
+  if (!entrada.ok) return { ok: false, error: entrada.error };
+  const input = entrada.datos;
 
   try {
     const fallo = await marcarGestionProblema({
@@ -551,7 +613,7 @@ export async function marcarGestionProblemaAction(input: {
   return { ok: true };
 }
 
-export async function enviarActaAction(input: {
+export async function enviarActaAction(pedido: {
   folio: string;
   para: string;
   cc: string;
@@ -561,6 +623,9 @@ export async function enviarActaAction(input: {
 }): Promise<ResultadoAdmin> {
   const sesion = await sesionCon("visitas.enviar");
   if (!sesion) return { ok: false, error: "No tienes permiso para enviar actas." };
+  const entrada = validar(entradaEnviarActa, pedido, "enviarActa");
+  if (!entrada.ok) return { ok: false, error: entrada.error };
+  const input = entrada.datos;
   if (!input.para.includes("@")) return { ok: false, error: "Escribe el correo del destinatario." };
   if (!input.asunto.trim()) return { ok: false, error: "El asunto no puede ir vacío." };
 
@@ -637,9 +702,12 @@ function repetidos(nombres: string[]): string | null {
   return null;
 }
 
-export async function guardarChecklistAction(borrador: BorradorChecklist): Promise<ResultadoChecklist> {
+export async function guardarChecklistAction(borradorPedido: BorradorChecklist): Promise<ResultadoChecklist> {
   const sesion = await sesionCon("checklist.editar");
   if (!sesion) return { ok: false, error: "No tienes permiso para editar el checklist." };
+  const entrada = validar(borradorChecklist, borradorPedido, "guardarChecklist");
+  if (!entrada.ok) return { ok: false, error: entrada.error };
+  const borrador: BorradorChecklist = entrada.datos;
 
   const choque =
     repetidos(borrador.motivos.map((m) => m.nombre)) ??
@@ -702,11 +770,14 @@ export async function reiniciarChecklistAction(): Promise<ResultadoChecklist> {
 // ── Recuperación de contraseña ──────────────────────────────────────────────
 
 export async function atenderSolicitudPasswordAction(
-  id: number,
-  passwordTemporal: string
+  idPedido: number,
+  passwordPedida: string
 ): Promise<ResultadoAdmin> {
   const sesion = await sesionCon("usuarios.contrasenas");
   if (!sesion) return { ok: false, error: "No tienes permiso para asignar contraseñas." };
+  const entrada = validar(entradaAtenderSolicitud, { id: idPedido, passwordTemporal: passwordPedida }, "atenderSolicitudPassword");
+  if (!entrada.ok) return { ok: false, error: entrada.error };
+  const { id, passwordTemporal } = entrada.datos;
 
   try {
     // La clave no se recorta: se guarda tal como se va a entregar. La política
@@ -720,9 +791,12 @@ export async function atenderSolicitudPasswordAction(
   return { ok: true };
 }
 
-export async function descartarSolicitudPasswordAction(id: number): Promise<ResultadoAdmin> {
+export async function descartarSolicitudPasswordAction(idPedido: number): Promise<ResultadoAdmin> {
   const sesion = await sesionCon("usuarios.contrasenas");
   if (!sesion) return { ok: false, error: "No tienes permiso para cerrar solicitudes." };
+  const entrada = validar(entradaDescartarSolicitud, idPedido, "descartarSolicitudPassword");
+  if (!entrada.ok) return { ok: false, error: "Esa solicitud no existe." };
+  const id = entrada.datos;
   try {
     if (!(await descartarSolicitudPassword(id, sesion.usuario.id))) {
       return { ok: false, error: "Esa solicitud ya estaba cerrada." };

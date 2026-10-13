@@ -18,6 +18,9 @@ import { algunoPideHora } from "@/lib/ui/motivos";
 import { participaEnVisita, tomadaPorOtro } from "@/lib/ui/estado";
 import { borrarBorrador } from "@/lib/data/borradores";
 import type { EstadoVisita } from "@/lib/types";
+import { validar } from "@/lib/validacion/comun";
+import { actaEntrada } from "@/lib/validacion/actas";
+import { entradaCambiarEstado, entradaCrearVisitaTecnico, entradaFolio } from "@/lib/validacion/visitas";
 
 export interface ResultadoAccion {
   ok: boolean;
@@ -51,7 +54,12 @@ function comoError(err: unknown, contexto: string): ResultadoAccion {
 }
 
 /** "Iniciar visita" — deja la visita EN_CURSO antes de abrir el formulario. */
-export async function iniciarVisitaAction(folio: string): Promise<ResultadoAccion> {
+export async function iniciarVisitaAction(folioPedido: string): Promise<ResultadoAccion> {
+  // El folio decide qué visita se busca: se valida antes. Sin una visita suya
+  // la respuesta es la de siempre.
+  const entrada = validar(entradaFolio, folioPedido, "iniciarVisita");
+  if (!entrada.ok) return { ok: false, error: "No encontramos esa visita entre las tuyas." };
+  const folio = entrada.datos;
   const contexto = await visitaDelTecnico(folio);
   if (!contexto) return { ok: false, error: "No encontramos esa visita entre las tuyas." };
   const { visita, sesion, tecnico } = contexto;
@@ -81,9 +89,12 @@ export async function iniciarVisitaAction(folio: string): Promise<ResultadoAccio
  * aprieta este botón, lo que hay en pantalla no existe en ninguna parte; a
  * partir de acá la visita queda COMPLETADA y coordinación la ve al instante.
  */
-export async function guardarActaAction(entrada: ActaEntrada): Promise<ResultadoAccion> {
+export async function guardarActaAction(entradaPedida: ActaEntrada): Promise<ResultadoAccion> {
   const sesion = await getSesion();
   if (!sesion?.tecnico) return { ok: false, error: "Tu cuenta no tiene un técnico asociado." };
+  const valida = validar(actaEntrada, entradaPedida, "guardarActa");
+  if (!valida.ok) return { ok: false, error: valida.error };
+  const entrada: ActaEntrada = valida.datos;
 
   try {
     const res = await guardarActa(entrada, {
@@ -129,13 +140,18 @@ export async function guardarActaAction(entrada: ActaEntrada): Promise<Resultado
 }
 
 /** Reagendar, dejar pendiente o cancelar desde "Otras acciones de la visita". */
-export async function cambiarEstadoVisitaAction(input: {
+export async function cambiarEstadoVisitaAction(pedido: {
   folio: string;
   estado: Extract<EstadoVisita, "REAGENDADA" | "PENDIENTE" | "CANCELADA">;
   motivo: string;
   fechaNueva?: string | null;
   horaNueva?: string | null;
 }): Promise<ResultadoAccion> {
+  // El folio decide qué visita se busca: se valida antes. Sin una visita suya
+  // la respuesta es la de siempre.
+  const entrada = validar(entradaCambiarEstado, pedido, "cambiarEstadoVisita");
+  if (!entrada.ok) return { ok: false, error: entrada.error };
+  const input = entrada.datos;
   const contexto = await visitaDelTecnico(input.folio);
   if (!contexto) return { ok: false, error: "No encontramos esa visita entre las tuyas." };
   if (!tiene(contexto.sesion.permisos, "celular.estado")) {
@@ -173,7 +189,7 @@ export async function cambiarEstadoVisitaAction(input: {
  * "Agregar visita" desde el celular: la visita que el técnico hace fuera de su
  * planificación. Nace asignada a él y queda EN_CURSO para llenar el acta.
  */
-export async function crearVisitaTecnicoAction(input: {
+export async function crearVisitaTecnicoAction(pedido: {
   sucursalId: number;
   /** El motivo principal: el primero que marcó el técnico. */
   motivoCodigo: string;
@@ -194,6 +210,9 @@ export async function crearVisitaTecnicoAction(input: {
   if (!tiene(sesion.permisos, "celular.crearVisita")) {
     return { ok: false, error: "Tu rol no puede agregar visitas desde el celular." };
   }
+  const entrada = validar(entradaCrearVisitaTecnico, pedido, "crearVisitaTecnico");
+  if (!entrada.ok) return { ok: false, error: entrada.error };
+  const input = entrada.datos;
 
   const sucursal = (await listarSucursales()).find((s) => s.id === input.sucursalId);
   if (!sucursal) return { ok: false, error: "Elige la sucursal donde estás." };

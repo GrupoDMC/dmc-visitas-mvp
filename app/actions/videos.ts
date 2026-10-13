@@ -12,6 +12,9 @@ import {
 } from "@/lib/data/videos";
 import { participaEnVisita, tomadaPorOtro } from "@/lib/ui/estado";
 import { tiene } from "@/lib/permisos";
+import { validar } from "@/lib/validacion/comun";
+import { datosVideo, entradaVideoId, trozoVideo } from "@/lib/validacion/actas";
+import { entradaFolio } from "@/lib/validacion/visitas";
 
 /**
  * Subida del video del trabajo, por partes.
@@ -73,9 +76,16 @@ async function visitaAbierta(folio: string) {
 }
 
 /** Paso 1: reserva la fila del clip y devuelve su id. */
-export async function abrirVideoAction(folio: string, datos: DatosVideo): Promise<ResultadoVideo> {
-  const visita = await visitaAbierta(folio);
+export async function abrirVideoAction(folioPedido: string, datosPedidos: DatosVideo): Promise<ResultadoVideo> {
+  // En esta puerta el folio decide qué visita se busca (y con ella el permiso),
+  // así que se valida antes de buscarla.
+  const folioValido = validar(entradaFolio, folioPedido, "abrirVideo");
+  if (!folioValido.ok) return { ok: false, error: "Esa visita no está abierta para ti." };
+  const visita = await visitaAbierta(folioValido.datos);
   if (!visita) return { ok: false, error: "Esa visita no está abierta para ti." };
+  const valida = validar(datosVideo, datosPedidos, "abrirVideo");
+  if (!valida.ok) return { ok: false, error: "El video llegó en un formato que no se puede guardar." };
+  const datos: DatosVideo = valida.datos;
 
   const rechazo = motivoRechazo(datos);
   if (rechazo) return { ok: false, error: rechazo };
@@ -122,11 +132,12 @@ export interface TrozoVideo {
  * duplicar ni dejar un hueco.
  */
 export async function subirTrozoVideoAction(envio: TrozoVideo): Promise<ResultadoVideo> {
-  const { folio, videoId, desde, trozoBase64 } = envio;
+  // El folio decide qué visita se busca: se valida antes.
+  const valido = validar(trozoVideo, envio, "subirTrozoVideo");
+  if (!valido.ok) return { ok: false, error: "Un trozo del video llegó dañado." };
+  const { folio, videoId, desde, trozoBase64 } = valido.datos;
   const visita = await visitaAbierta(folio);
   if (!visita) return { ok: false, error: "Esa visita no está abierta para ti." };
-  if (!Number.isInteger(videoId) || videoId <= 0) return { ok: false, error: "Ese video no existe." };
-  if (!Number.isInteger(desde) || desde < 0) return { ok: false, error: "El video se descuadró al subirlo." };
 
   let trozo: Buffer;
   try {
@@ -147,7 +158,10 @@ export async function subirTrozoVideoAction(envio: TrozoVideo): Promise<Resultad
 }
 
 /** Paso 3: el clip queda utilizable. Falla si no llegó completo. */
-export async function cerrarVideoAction(folio: string, videoId: number): Promise<ResultadoVideo> {
+export async function cerrarVideoAction(folioPedido: string, videoIdPedido: number): Promise<ResultadoVideo> {
+  const valido = validar(entradaVideoId, { folio: folioPedido, videoId: videoIdPedido }, "cerrarVideo");
+  if (!valido.ok) return { ok: false, error: "Ese video no existe." };
+  const { folio, videoId } = valido.datos;
   const visita = await visitaAbierta(folio);
   if (!visita) return { ok: false, error: "Esa visita no está abierta para ti." };
 
@@ -166,7 +180,10 @@ export async function cerrarVideoAction(folio: string, videoId: number): Promise
 }
 
 /** Quitar un clip del acta. La fila no se borra: queda inactiva. */
-export async function borrarVideoAction(folio: string, videoId: number): Promise<ResultadoVideo> {
+export async function borrarVideoAction(folioPedido: string, videoIdPedido: number): Promise<ResultadoVideo> {
+  const valido = validar(entradaVideoId, { folio: folioPedido, videoId: videoIdPedido }, "borrarVideo");
+  if (!valido.ok) return { ok: false, error: "Ese video no existe." };
+  const { folio, videoId } = valido.datos;
   const visita = await visitaAbierta(folio);
   // Sobre un acta cerrada los clips solo se quitan guardando la edición.
   if (!visita || visita.enEdicion) return { ok: false, error: "Esa visita no está abierta para ti." };

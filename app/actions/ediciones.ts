@@ -4,6 +4,8 @@ import { revalidatePath } from "next/cache";
 import { getSesion, sesionCon } from "@/lib/auth";
 import { tiene } from "@/lib/permisos";
 import { editarActa, type EdicionActaEntrada, type ResultadoEdicion } from "@/lib/data/ediciones";
+import { validar } from "@/lib/validacion/comun";
+import { edicionActaEntrada } from "@/lib/validacion/actas";
 
 // Edición del acta ya cerrada. Dos puertas, una regla distinta en cada una:
 // el técnico corrige la suya desde el celular hasta un día después de cerrarla;
@@ -29,12 +31,15 @@ function comoError(err: unknown, contexto: string): ResultadoEdicion {
 }
 
 /** El técnico corrige su acta desde el celular, dentro del plazo. */
-export async function editarActaTecnicoAction(entrada: EdicionActaEntrada): Promise<ResultadoEdicion> {
+export async function editarActaTecnicoAction(entradaPedida: EdicionActaEntrada): Promise<ResultadoEdicion> {
   const sesion = await getSesion();
   if (!sesion?.tecnico) return { ok: false, error: "Tu cuenta no tiene un técnico asociado." };
   if (!tiene(sesion.permisos, "celular.editarActa")) {
     return { ok: false, error: "Tu rol no puede editar actas ya cerradas. Pídeselo a coordinación." };
   }
+  const valida = validar(edicionActaEntrada, entradaPedida, "editarActaTecnico");
+  if (!valida.ok) return { ok: false, error: valida.error };
+  const entrada: EdicionActaEntrada = valida.datos;
 
   try {
     const res = await editarActa(entrada, {
@@ -51,9 +56,12 @@ export async function editarActaTecnicoAction(entrada: EdicionActaEntrada): Prom
 }
 
 /** Administración corrige el acta desde el panel, sin plazo. */
-export async function editarActaAdminAction(entrada: EdicionActaEntrada): Promise<ResultadoEdicion> {
+export async function editarActaAdminAction(entradaPedida: EdicionActaEntrada): Promise<ResultadoEdicion> {
   const sesion = await sesionCon("visitas.editarActa");
   if (!sesion) return { ok: false, error: "No tienes permiso para editar un acta ya cerrada." };
+  const valida = validar(edicionActaEntrada, entradaPedida, "editarActaAdmin");
+  if (!valida.ok) return { ok: false, error: valida.error };
+  const entrada: EdicionActaEntrada = valida.datos;
 
   try {
     const res = await editarActa(entrada, {

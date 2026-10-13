@@ -7,6 +7,8 @@ import { consultaCon, num, paramIds, subIds } from "@/lib/data/sql";
 import { crearInformePapel, type InformePapel } from "@/lib/data/visitas-papel";
 import { hoyISO } from "@/lib/ui/fecha";
 import { PRIMER_ANIO_PAPEL } from "@/lib/ui/papel";
+import { validar } from "@/lib/validacion/comun";
+import { entradaFirmantes, entradaVisitasPapel } from "@/lib/validacion/visitas";
 
 /** Cuántos informes se aceptan por guardado: más que eso conviene partirlo. */
 const MAXIMO_POR_LOTE = 150;
@@ -27,16 +29,21 @@ export interface ResultadoLotePapel {
  * Va envuelto en un objeto y no como arreglo suelto: los argumentos de una
  * Server Action tienen un tope de 1 MB y así queda un solo nivel que medir.
  */
-export async function crearVisitasPapelAction(lote: { informes: InformePapel[] }): Promise<ResultadoLotePapel> {
-  const informes = lote?.informes ?? [];
+export async function crearVisitasPapelAction(lotePedido: { informes: InformePapel[] }): Promise<ResultadoLotePapel> {
+  // Lo que llega no es de fiar hasta validarlo: la respuesta de error solo
+  // necesita cuántos informes venían.
+  const cuantos = Array.isArray(lotePedido?.informes) ? lotePedido.informes.length : 0;
   const fallaTodo = (error: string): ResultadoLotePapel => ({
     ok: false,
     error,
-    resultados: informes.map(() => ({ ok: false, error })),
+    resultados: Array.from({ length: cuantos }, () => ({ ok: false, error })),
   });
 
   const sesion = await sesionCon("visitas.crear");
   if (!sesion) return fallaTodo("No tienes permiso para crear visitas.");
+  const entrada = validar(entradaVisitasPapel, lotePedido, "crearVisitasPapel");
+  if (!entrada.ok) return fallaTodo(entrada.error);
+  const informes: InformePapel[] = entrada.datos.informes;
   if (informes.length === 0) return fallaTodo("Agrega al menos un informe.");
   if (informes.length > MAXIMO_POR_LOTE) {
     return fallaTodo(`Son ${informes.length} informes: guarda de a ${MAXIMO_POR_LOTE} como máximo.`);
@@ -145,12 +152,14 @@ export interface FirmanteSugerido {
  * Los firmantes que ya constan en las visitas de esas sucursales, los más
  * frecuentes primero. Solo lee: no toca nada.
  */
-export async function firmantesDeSucursalesAction(lote: {
+export async function firmantesDeSucursalesAction(lotePedido: {
   sucursalIds: number[];
 }): Promise<Record<string, FirmanteSugerido[]>> {
   const sesion = await sesionCon("visitas.crear");
   if (!sesion) return {};
-  const ids = [...new Set((lote?.sucursalIds ?? []).map(Number).filter((n) => Number.isInteger(n) && n > 0))].slice(0, 200);
+  const entrada = validar(entradaFirmantes, lotePedido, "firmantesDeSucursales");
+  if (!entrada.ok) return {};
+  const ids = [...new Set(entrada.datos.sucursalIds.filter((n) => n > 0))];
   if (ids.length === 0) return {};
 
   try {

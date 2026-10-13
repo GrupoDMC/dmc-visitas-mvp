@@ -4,6 +4,9 @@ import { getSesion } from "@/lib/auth";
 import { getVisitaCompletaPorFolio } from "@/lib/data/visitas";
 import { borrarBorrador, guardarBorrador, leerBorrador } from "@/lib/data/borradores";
 import { participaEnVisita } from "@/lib/ui/estado";
+import { validar } from "@/lib/validacion/comun";
+import { entradaGuardarBorrador } from "@/lib/validacion/actas";
+import { entradaFolio } from "@/lib/validacion/visitas";
 
 // Respaldo en el servidor del acta a medio llenar.
 //
@@ -19,11 +22,6 @@ export interface ResultadoBorrador {
   guardadoEn?: string;
 }
 
-// Tope del respaldo, en caracteres. El borrador lleva fotos en base64 y el
-// cuerpo de una Server Action ya está acotado (ver next.config.ts); esto
-// protege además a la base de un payload gigante.
-const PAYLOAD_BORRADOR_MAX = 3_000_000;
-
 async function tecnicoDeLaVisita(folio: string) {
   const sesion = await getSesion();
   if (!sesion?.tecnico) return null;
@@ -33,9 +31,12 @@ async function tecnicoDeLaVisita(folio: string) {
 }
 
 /** Sube lo que lleva escrito. Se llama cada tanto, no en cada tecla. */
-export async function guardarBorradorAction(folio: string, payload: string): Promise<ResultadoBorrador> {
-  // Un respaldo que no cabe en el cuerpo de la acción no se sube; sigue en el celular.
-  if (typeof payload !== "string" || payload.length > PAYLOAD_BORRADOR_MAX) return { ok: false };
+export async function guardarBorradorAction(folioPedido: string, payloadPedido: string): Promise<ResultadoBorrador> {
+  // Un respaldo que no cabe en el cuerpo de la acción no se sube; sigue en el
+  // celular. El folio decide qué visita se busca: se valida antes.
+  const entrada = validar(entradaGuardarBorrador, { folio: folioPedido, payload: payloadPedido }, "guardarBorrador");
+  if (!entrada.ok) return { ok: false };
+  const { folio, payload } = entrada.datos;
   const contexto = await tecnicoDeLaVisita(folio);
   if (!contexto) return { ok: false };
   try {
@@ -48,7 +49,10 @@ export async function guardarBorradorAction(folio: string, payload: string): Pro
 }
 
 /** El borrador que haya quedado en el servidor de este técnico y esta visita. */
-export async function leerBorradorAction(folio: string): Promise<ResultadoBorrador> {
+export async function leerBorradorAction(folioPedido: string): Promise<ResultadoBorrador> {
+  const entrada = validar(entradaFolio, folioPedido, "leerBorrador");
+  if (!entrada.ok) return { ok: false };
+  const folio = entrada.datos;
   const contexto = await tecnicoDeLaVisita(folio);
   if (!contexto) return { ok: false };
   try {
@@ -61,7 +65,10 @@ export async function leerBorradorAction(folio: string): Promise<ResultadoBorrad
 }
 
 /** "Empezar de nuevo": tira el borrador respaldado. */
-export async function descartarBorradorAction(folio: string): Promise<ResultadoBorrador> {
+export async function descartarBorradorAction(folioPedido: string): Promise<ResultadoBorrador> {
+  const entrada = validar(entradaFolio, folioPedido, "descartarBorrador");
+  if (!entrada.ok) return { ok: false };
+  const folio = entrada.datos;
   const contexto = await tecnicoDeLaVisita(folio);
   if (!contexto) return { ok: false };
   try {

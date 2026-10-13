@@ -28,6 +28,18 @@ import { eliminarRol, guardarPermisosCelular, guardarRol, leerRol, type DatosRol
 import { motivoCuentaAjena, normalizarPermisos, puedeAdministrarCuenta, tiene } from "@/lib/permisos";
 import { validarPasswordNueva } from "@/lib/password";
 import { mensajeRut, rutCompleto } from "@/lib/ui/formato";
+import { idPositivo, validar } from "@/lib/validacion/comun";
+import {
+  entradaCliente,
+  entradaMall,
+  entradaPermisosCelular,
+  entradaRol,
+  entradaSucursal,
+  entradaSucursalesLote,
+  entradaTecnico,
+  entradaTiendasMall,
+  entradaUsuario,
+} from "@/lib/validacion/maestros";
 import type { RolUsuario } from "@/lib/types";
 
 // Altas y ediciones de los maestros del panel. Todo escribe en SQL Server.
@@ -89,8 +101,11 @@ function revalidar() {
   revalidatePath("/admin", "layout");
 }
 
-export async function guardarClienteAction(id: number | null, datos: DatosCliente): Promise<ResultadoMaestro> {
-  if (!(await sesionMaestro("clientes", id))) return { ok: false, error: "No tienes permiso para editar clientes." };
+export async function guardarClienteAction(idPedido: number | null, datosPedidos: DatosCliente): Promise<ResultadoMaestro> {
+  if (!(await sesionMaestro("clientes", idPedido))) return { ok: false, error: "No tienes permiso para editar clientes." };
+  const entrada = validar(entradaCliente, { id: idPedido, datos: datosPedidos }, "guardarCliente");
+  if (!entrada.ok) return { ok: false, error: entrada.error };
+  const { id, datos } = entrada.datos;
   if (!datos.razonSocial.trim() || !datos.rut.trim()) {
     return { ok: false, error: "Razón social y RUT son obligatorios." };
   }
@@ -108,8 +123,11 @@ export async function guardarClienteAction(id: number | null, datos: DatosClient
   return { ok: true };
 }
 
-export async function guardarMallAction(id: number | null, datos: DatosMall): Promise<ResultadoMaestro> {
-  if (!(await sesionMaestro("malls", id))) return { ok: false, error: "No tienes permiso para editar malls." };
+export async function guardarMallAction(idPedido: number | null, datosPedidos: DatosMall): Promise<ResultadoMaestro> {
+  if (!(await sesionMaestro("malls", idPedido))) return { ok: false, error: "No tienes permiso para editar malls." };
+  const entrada = validar(entradaMall, { id: idPedido, datos: datosPedidos }, "guardarMall");
+  if (!entrada.ok) return { ok: false, error: entrada.error };
+  const { id, datos } = entrada.datos;
   if (!datos.nombre.trim() || !datos.direccion.trim() || !datos.comuna?.trim() || !datos.region?.trim()) {
     return { ok: false, error: "Nombre, dirección, comuna y región son obligatorios." };
   }
@@ -123,8 +141,15 @@ export async function guardarMallAction(id: number | null, datos: DatosMall): Pr
 }
 
 /** Las tiendas del mall: la lista completa, tal como quedó en el diálogo. */
-export async function guardarTiendasMallAction(mallId: number, sucursalIds: number[]): Promise<ResultadoMaestro> {
+export async function guardarTiendasMallAction(mallIdPedido: number, sucursalIdsPedidos: number[]): Promise<ResultadoMaestro> {
   if (!(await sesionCon("malls.editar"))) return { ok: false, error: "No tienes permiso para editar malls." };
+  const entrada = validar(
+    entradaTiendasMall,
+    { mallId: mallIdPedido, sucursalIds: sucursalIdsPedidos },
+    "guardarTiendasMall"
+  );
+  if (!entrada.ok) return { ok: false, error: "La lista de tiendas no es válida." };
+  const { mallId, sucursalIds } = entrada.datos;
   const ids = [...new Set(sucursalIds)].filter((x) => Number.isInteger(x) && x > 0);
   if (!mallId || ids.length !== sucursalIds.length) return { ok: false, error: "La lista de tiendas no es válida." };
   try {
@@ -136,8 +161,11 @@ export async function guardarTiendasMallAction(mallId: number, sucursalIds: numb
   return { ok: true };
 }
 
-export async function guardarSucursalAction(id: number | null, datos: DatosSucursal): Promise<ResultadoMaestro> {
-  if (!(await sesionMaestro("sucursales", id))) return { ok: false, error: "No tienes permiso para editar sucursales." };
+export async function guardarSucursalAction(idPedido: number | null, datosPedidos: DatosSucursal): Promise<ResultadoMaestro> {
+  if (!(await sesionMaestro("sucursales", idPedido))) return { ok: false, error: "No tienes permiso para editar sucursales." };
+  const entrada = validar(entradaSucursal, { id: idPedido, datos: datosPedidos }, "guardarSucursal");
+  if (!entrada.ok) return { ok: false, error: entrada.error };
+  const { id, datos } = entrada.datos;
   if (!datos.nombre.trim() || !datos.clienteId) {
     return { ok: false, error: "Nombre y cliente son obligatorios." };
   }
@@ -159,10 +187,13 @@ export async function guardarSucursalAction(id: number | null, datos: DatosSucur
 
 /** Alta masiva: todas las sucursales nuevas de un cliente, en un solo INSERT. */
 export async function crearSucursalesLoteAction(
-  clienteId: number,
-  filas: DatosSucursalLote[]
+  clientePedido: number,
+  filasPedidas: DatosSucursalLote[]
 ): Promise<ResultadoMaestro & { creadas?: number }> {
   if (!(await sesionCon("sucursales.crear"))) return { ok: false, error: "No tienes permiso para crear sucursales." };
+  const entrada = validar(entradaSucursalesLote, { clienteId: clientePedido, filas: filasPedidas }, "crearSucursalesLote");
+  if (!entrada.ok) return { ok: false, error: entrada.error };
+  const { clienteId, filas } = entrada.datos;
   if (!clienteId || filas.length === 0) return { ok: false, error: "No hay sucursales por crear." };
   if (filas.some((f) => !f.nombre.trim() || !f.direccion.trim() || !f.comuna.trim() || !f.region.trim())) {
     return { ok: false, error: "Cada sucursal necesita nombre, dirección, comuna y región." };
@@ -176,8 +207,11 @@ export async function crearSucursalesLoteAction(
   }
 }
 
-export async function guardarTecnicoAction(id: number | null, datos: DatosTecnico): Promise<ResultadoMaestro> {
-  if (!(await sesionMaestro("tecnicos", id))) return { ok: false, error: "No tienes permiso para editar técnicos." };
+export async function guardarTecnicoAction(idPedido: number | null, datosPedidos: DatosTecnico): Promise<ResultadoMaestro> {
+  if (!(await sesionMaestro("tecnicos", idPedido))) return { ok: false, error: "No tienes permiso para editar técnicos." };
+  const entrada = validar(entradaTecnico, { id: idPedido, datos: datosPedidos }, "guardarTecnico");
+  if (!entrada.ok) return { ok: false, error: entrada.error };
+  const { id, datos } = entrada.datos;
   if (!datos.nombres.trim() || !datos.rut.trim() || !datos.email.trim()) {
     return { ok: false, error: "Nombre, RUT y correo son obligatorios." };
   }
@@ -192,11 +226,14 @@ export async function guardarTecnicoAction(id: number | null, datos: DatosTecnic
 }
 
 export async function guardarUsuarioAction(
-  id: number | null,
-  datos: DatosUsuario & { rol: RolUsuario }
+  idPedido: number | null,
+  datosPedidos: DatosUsuario & { rol: RolUsuario }
 ): Promise<ResultadoMaestro> {
-  const sesion = await sesionMaestro("usuarios", id);
+  const sesion = await sesionMaestro("usuarios", idPedido);
   if (!sesion) return { ok: false, error: "No tienes permiso para editar usuarios." };
+  const entrada = validar(entradaUsuario, { id: idPedido, datos: datosPedidos }, "guardarUsuario");
+  if (!entrada.ok) return { ok: false, error: entrada.error };
+  const { id, datos } = entrada.datos;
   if (!datos.email.includes("@")) return { ok: false, error: "Escribe un correo válido." };
   if (datos.rol === "TECNICO" && !datos.tecnicoId) {
     return { ok: false, error: "Un usuario TÉCNICO necesita técnico vinculado." };
@@ -242,9 +279,12 @@ export async function guardarUsuarioAction(
 // ── Roles y permisos ────────────────────────────────────────────────────────
 
 /** Crea un rol o cambia su nombre y lo que puede hacer. */
-export async function guardarRolAction(id: number | null, datos: DatosRol): Promise<ResultadoMaestro> {
+export async function guardarRolAction(idPedido: number | null, datosPedidos: DatosRol): Promise<ResultadoMaestro> {
   const sesion = await sesionCon("usuarios.roles");
   if (!sesion) return { ok: false, error: "No tienes permiso para administrar roles." };
+  const entrada = validar(entradaRol, { id: idPedido, datos: datosPedidos }, "guardarRol");
+  if (!entrada.ok) return { ok: false, error: entrada.error };
+  const { id, datos } = entrada.datos;
   const nombre = datos.nombre.trim();
   if (!nombre) return { ok: false, error: "El rol necesita un nombre." };
   if (/^(administrador|t[eé]cnico)$/i.test(nombre)) {
@@ -276,9 +316,12 @@ export async function guardarRolAction(id: number | null, datos: DatosRol): Prom
   return { ok: true };
 }
 
-export async function eliminarRolAction(id: number): Promise<ResultadoMaestro> {
+export async function eliminarRolAction(idPedido: number): Promise<ResultadoMaestro> {
   const sesion = await sesionCon("usuarios.roles");
   if (!sesion) return { ok: false, error: "No tienes permiso para administrar roles." };
+  const entrada = validar(idPositivo, idPedido, "eliminarRol");
+  if (!entrada.ok) return { ok: false, error: "Ese rol no existe." };
+  const id = entrada.datos;
   try {
     // Borrar un rol que puede más que uno es quitarles acceso a otros por
     // encima de lo que uno mismo tiene.
@@ -296,8 +339,11 @@ export async function eliminarRolAction(id: number): Promise<ResultadoMaestro> {
 }
 
 /** Los permisos de celular de todos los técnicos (apartado «Permisos del celular»). */
-export async function guardarPermisosCelularAction(permisos: string[]): Promise<ResultadoMaestro> {
+export async function guardarPermisosCelularAction(permisosPedidos: string[]): Promise<ResultadoMaestro> {
   if (!(await sesionCon("usuarios.roles"))) return { ok: false, error: "No tienes permiso para administrar roles." };
+  const entrada = validar(entradaPermisosCelular, permisosPedidos, "guardarPermisosCelular");
+  if (!entrada.ok) return { ok: false, error: entrada.error };
+  const permisos = entrada.datos;
   try {
     await guardarPermisosCelular(permisos);
   } catch (err) {
