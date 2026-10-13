@@ -127,12 +127,26 @@ export interface Rol {
   permisos: string[];
 }
 
+/**
+ * Una sección agrupa motivos o agrupa trabajos para ordenar y plegar la lista.
+ * Es solo una capa de presentación: no cambia qué trabajos van con cada motivo.
+ */
+export interface CatalogoSeccion {
+  id: number;
+  nombre: string;
+  orden: number;
+}
+
 export interface CatalogoMotivo {
   id: number;
   codigo: string;
   nombre: string;
   orden: number;
   activo: boolean;
+  /** Nombre de su sección. Null = sin sección (o falta la migración 020). */
+  seccion?: string | null;
+  /** El orden de esa sección entre las demás. */
+  seccionOrden?: number;
 }
 
 export interface CatalogoProblemaOpcion {
@@ -183,6 +197,10 @@ export interface CatalogoTrabajo {
   motivosCodigos: string[];
   /** Su posición dentro de cada motivo (código del motivo → orden). */
   ordenEnMotivo: Record<string, number>;
+  /** Nombre de su sección. Null = sin sección (o falta la migración 020). */
+  seccion?: string | null;
+  /** El orden de esa sección entre las demás. */
+  seccionOrden?: number;
 }
 
 /** Ítem del checklist del comentario interno. No lo ve el cliente. */

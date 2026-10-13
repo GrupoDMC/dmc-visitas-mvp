@@ -4,6 +4,7 @@ import {
   hayEstadosProblema,
   hayGestionPendientes,
   hayGestionProblemas,
+  haySecciones,
   hayTrabajosPorMotivo,
   listarEstadosProblema,
   listarGestionProblemas,
@@ -11,6 +12,7 @@ import {
   listarMotivos,
   listarPendientes,
   listarProblemas,
+  listarSecciones,
   listarTrabajos,
   PLANTILLA_PROPIA,
 } from "@/lib/data/catalogos";
@@ -33,6 +35,9 @@ export default async function ChecklistPage() {
     estadosProblema,
     estadosProblemaDisponible,
     trabajosPorMotivoDisponible,
+    seccionesDisponible,
+    seccionesMotivo,
+    seccionesTrabajo,
     plantilla,
   ] = await Promise.all([
     listarMotivos(),
@@ -46,6 +51,9 @@ export default async function ChecklistPage() {
     listarEstadosProblema(),
     hayEstadosProblema(),
     hayTrabajosPorMotivo(),
+    haySecciones(),
+    listarSecciones("MOTIVO"),
+    listarSecciones("TRABAJO"),
     getPlantilla(PLANTILLA_PROPIA),
   ]);
 
@@ -62,6 +70,9 @@ export default async function ChecklistPage() {
       estadosProblemaIniciales={estadosProblema.filter((e) => e.activo)}
       estadosProblemaDisponible={estadosProblemaDisponible}
       trabajosPorMotivoDisponible={trabajosPorMotivoDisponible}
+      seccionesDisponible={seccionesDisponible}
+      seccionesMotivoIniciales={seccionesMotivo}
+      seccionesTrabajoIniciales={seccionesTrabajo}
       plantillaInicial={plantilla}
     />
   );

@@ -10,6 +10,7 @@ import type {
   CatalogoPendiente,
   CatalogoProblema,
   CatalogoProblemaOpcion,
+  CatalogoSeccion,
   CatalogoTrabajo,
   CatalogoTrabajoSubtrabajo,
   ChecklistPlantilla,
@@ -39,10 +40,51 @@ interface FilaMotivo {
   activo: boolean;
 }
 
+/** La Lista 1 y la Lista 3 necesitan la migración 020 para guardar secciones. */
+export class FaltaMigracionSecciones extends Error {
+  constructor() {
+    super("Falta la migración 020: dmc.catalogo_seccion");
+    this.name = "FaltaMigracionSecciones";
+  }
+}
+
+let conSecciones = false;
+
+/**
+ * ¿Está la migración 020 (dmc.catalogo_seccion y seccion_id en motivos y
+ * trabajos)? Sin ella todo sigue como antes: las listas salen planas.
+ */
+export async function haySecciones(): Promise<boolean> {
+  if (conSecciones) return true;
+  const [fila] = await consulta<{ tabla: number | null; motivo: number | null; trabajo: number | null }>(
+    `SELECT OBJECT_ID('dmc.catalogo_seccion', 'U')              AS tabla,
+            COL_LENGTH('dmc.catalogo_motivo', 'seccion_id')     AS motivo,
+            COL_LENGTH('dmc.catalogo_trabajo', 'seccion_id')    AS trabajo`
+  );
+  conSecciones = fila?.tabla != null && fila.motivo != null && fila.trabajo != null;
+  return conSecciones;
+}
+
+/** Las secciones activas de motivos o de trabajos, en su orden. */
+export async function listarSecciones(tipo: "MOTIVO" | "TRABAJO"): Promise<CatalogoSeccion[]> {
+  if (!(await haySecciones())) return [];
+  const filas = await consulta<{ id: number; nombre: string; orden: number }>(
+    `SELECT id, nombre, orden FROM dmc.catalogo_seccion
+      WHERE tipo = '${tipo}' AND activo = 1 ORDER BY orden, id`
+  );
+  return filas.map((f) => ({ id: num(f.id), nombre: f.nombre, orden: f.orden }));
+}
+
 export async function listarMotivos(): Promise<CatalogoMotivo[]> {
-  const filas = await consulta<FilaMotivo>(
-    `SELECT id, codigo, nombre, orden, activo
-       FROM dmc.catalogo_motivo WHERE activo = 1 ORDER BY orden, id`
+  const conSeccion = await haySecciones();
+  const filas = await consulta<FilaMotivo & { seccion: string | null; seccion_orden: number | null }>(
+    conSeccion
+      ? `SELECT m.id, m.codigo, m.nombre, m.orden, m.activo, s.nombre AS seccion, s.orden AS seccion_orden
+           FROM dmc.catalogo_motivo m
+           LEFT JOIN dmc.catalogo_seccion s ON s.id = m.seccion_id AND s.activo = 1
+          WHERE m.activo = 1 ORDER BY m.orden, m.id`
+      : `SELECT id, codigo, nombre, orden, activo, CAST(NULL AS nvarchar(80)) AS seccion, CAST(NULL AS smallint) AS seccion_orden
+           FROM dmc.catalogo_motivo WHERE activo = 1 ORDER BY orden, id`
   );
   return filas.map((f) => ({
     id: num(f.id),
@@ -50,6 +92,8 @@ export async function listarMotivos(): Promise<CatalogoMotivo[]> {
     nombre: f.nombre,
     orden: f.orden,
     activo: Boolean(f.activo),
+    seccion: f.seccion,
+    seccionOrden: f.seccion_orden ?? 0,
   }));
 }
 
@@ -145,10 +189,18 @@ export async function hayTrabajosPorMotivo(): Promise<boolean> {
 
 export async function listarTrabajos(): Promise<CatalogoTrabajo[]> {
   const conOrden = await hayTrabajosPorMotivo();
+  const conSeccion = await haySecciones();
   const [filas, subs, enlaces, motivos] = await Promise.all([
-    consulta<FilaTrabajo>(
-      `SELECT id, codigo, nombre, grupo_label, singular, orden, activo
-         FROM dmc.catalogo_trabajo WHERE activo = 1 ORDER BY orden, id`
+    consulta<FilaTrabajo & { seccion: string | null; seccion_orden: number | null }>(
+      conSeccion
+        ? `SELECT t.id, t.codigo, t.nombre, t.grupo_label, t.singular, t.orden, t.activo,
+                  s.nombre AS seccion, s.orden AS seccion_orden
+             FROM dmc.catalogo_trabajo t
+             LEFT JOIN dmc.catalogo_seccion s ON s.id = t.seccion_id AND s.activo = 1
+            WHERE t.activo = 1 ORDER BY t.orden, t.id`
+        : `SELECT id, codigo, nombre, grupo_label, singular, orden, activo,
+                  CAST(NULL AS nvarchar(80)) AS seccion, CAST(NULL AS smallint) AS seccion_orden
+             FROM dmc.catalogo_trabajo WHERE activo = 1 ORDER BY orden, id`
     ),
     consulta<FilaSubtrabajo>(
       `SELECT id, trabajo_id, etiqueta, orden, permite_cantidad, activo
@@ -192,6 +244,8 @@ export async function listarTrabajos(): Promise<CatalogoTrabajo[]> {
       motivosCodigos: enlazados.map((e) => e.codigo),
       // Sin la migración 019 la columna no existe y manda el orden global.
       ordenEnMotivo: Object.fromEntries(enlazados.map((e) => [e.codigo, conOrden ? e.orden : f.orden])),
+      seccion: f.seccion,
+      seccionOrden: f.seccion_orden ?? 0,
     };
   });
 }
@@ -425,6 +479,8 @@ export interface MotivoConTrabajos extends MotivoBorrador {
    * en el mismo borrador todavía no tiene id. Vacío = ninguno.
    */
   trabajos?: string[];
+  /** Su sección, por nombre (debe estar en `seccionesMotivo`). Null o ausente = sin sección. */
+  seccion?: string | null;
 }
 
 export interface TrabajoBorrador {
@@ -432,6 +488,8 @@ export interface TrabajoBorrador {
   nombre: string;
   grupoLabel: string | null;
   subtrabajos: ItemBorrador[];
+  /** Su sección, por nombre (debe estar en `seccionesTrabajo`). Null o ausente = sin sección. */
+  seccion?: string | null;
   /**
    * Solo plantillas guardadas antes de la migración 019: los motivos del
    * trabajo, por nombre, con vacío = todos. Ahora la relación viaja en
@@ -444,6 +502,12 @@ export interface BorradorChecklist {
   motivos: MotivoConTrabajos[];
   problemas: ProblemaBorrador[];
   trabajos: TrabajoBorrador[];
+  /**
+   * Las secciones de motivos y de trabajos, por nombre y en su orden. Sin la
+   * lista (un panel viejo todavía abierto) no se tocan las secciones.
+   */
+  seccionesMotivo?: string[];
+  seccionesTrabajo?: string[];
   /** Checklist del comentario interno. Misma forma que los motivos. */
   internos?: MotivoBorrador[];
   /** Checklist de gestión de reagendas y pendientes. Misma forma que los motivos. */
@@ -476,6 +540,15 @@ export interface ResumenChecklist {
  */
 export async function guardarChecklist(borrador: BorradorChecklist): Promise<ResumenChecklist> {
   let desactivados = 0;
+
+  // Sin la migración 020 las secciones no tienen dónde vivir: se avisa antes de
+  // escribir nada, no a medio guardado.
+  const traeSecciones =
+    Boolean(borrador.seccionesMotivo?.some((s) => s.trim())) ||
+    Boolean(borrador.seccionesTrabajo?.some((s) => s.trim())) ||
+    borrador.motivos.some((m) => m.seccion?.trim()) ||
+    borrador.trabajos.some((t) => t.seccion?.trim());
+  if (traeSecciones && !(await haySecciones())) throw new FaltaMigracionSecciones();
 
   // ── Motivos ──
   const motivos = await guardarListaSimple("dmc.catalogo_motivo", borrador.motivos, "MOTIVO");
@@ -573,6 +646,9 @@ export async function guardarChecklist(borrador: BorradorChecklist): Promise<Res
   // ── Qué trabajos van en cada motivo ──
   await guardarTrabajosPorMotivo(borrador.motivos, motivos.idPorNombre, trabajoPorNombre);
 
+  // ── Secciones de motivos y de trabajos ── (migración 020)
+  await guardarSecciones(borrador, motivos.idPorNombre, trabajoPorNombre);
+
   // ── Checklist del comentario interno ──
   // Sin la lista en el borrador (un panel viejo todavía abierto) no se toca:
   // si no, guardar los motivos vaciaría el checklist interno.
@@ -644,6 +720,87 @@ export async function guardarChecklist(borrador: BorradorChecklist): Promise<Res
     estadosProblema: vivosEstado,
     desactivados,
   };
+}
+
+/**
+ * Escribe las secciones de motivos y de trabajos y deja a cada entrada en la
+ * suya. La posición en la lista es el orden; una sección que no viene se
+ * desactiva (sus entradas quedan «sin sección») y nada se borra.
+ */
+async function guardarSecciones(
+  borrador: BorradorChecklist,
+  motivoPorNombre: Map<string, number>,
+  trabajoPorNombre: Map<string, number>
+): Promise<void> {
+  if (!(await haySecciones())) return;
+  await guardarSeccionesDe("MOTIVO", "dmc.catalogo_motivo", borrador.seccionesMotivo, borrador.motivos, motivoPorNombre);
+  await guardarSeccionesDe(
+    "TRABAJO",
+    "dmc.catalogo_trabajo",
+    borrador.seccionesTrabajo,
+    borrador.trabajos,
+    trabajoPorNombre
+  );
+}
+
+async function guardarSeccionesDe(
+  tipo: "MOTIVO" | "TRABAJO",
+  tabla: "dmc.catalogo_motivo" | "dmc.catalogo_trabajo",
+  nombres: string[] | undefined,
+  items: { nombre: string; seccion?: string | null }[],
+  idPorNombre: Map<string, number>
+): Promise<void> {
+  // Sin la lista en el borrador (un panel viejo todavía abierto) no se toca.
+  if (!nombres) return;
+
+  const existentes = await consulta<{ id: number; nombre: string }>(
+    `SELECT id, nombre FROM dmc.catalogo_seccion WHERE tipo = '${tipo}'`
+  );
+  const previas = new Map(existentes.map((f) => [f.nombre.trim().toLowerCase(), num(f.id)]));
+  const idPorSeccion = new Map<string, number>();
+  const vivas: number[] = [];
+
+  for (const [i, bruto] of nombres.entries()) {
+    const nombre = bruto.trim();
+    const clave = nombre.toLowerCase();
+    if (!nombre || idPorSeccion.has(clave)) continue;
+    const previa = previas.get(clave);
+    let id: number;
+    if (previa !== undefined) {
+      await ejecutar(`UPDATE dmc.catalogo_seccion SET nombre = @nombre, orden = @orden, activo = 1 WHERE id = @id`, [
+        ["nombre", sql.NVarChar(80), nombre],
+        ["orden", sql.SmallInt, i + 1],
+        ["id", sql.BigInt, previa],
+      ]);
+      id = previa;
+    } else {
+      const [fila] = await consultaCon<{ id: number }>(
+        `INSERT INTO dmc.catalogo_seccion (tipo, nombre, orden, activo)
+         OUTPUT INSERTED.id AS id VALUES ('${tipo}', @nombre, @orden, 1)`,
+        [
+          ["nombre", sql.NVarChar(80), nombre],
+          ["orden", sql.SmallInt, i + 1],
+        ]
+      );
+      id = num(fila.id);
+    }
+    idPorSeccion.set(clave, id);
+    vivas.push(id);
+  }
+  await desactivarSobrantes("dmc.catalogo_seccion", vivas, `tipo = '${tipo}'`);
+
+  // Cada entrada, en su sección. Un UPDATE por sección y no uno por entrada.
+  const entero = (n: number | undefined): n is number => n !== undefined && Number.isSafeInteger(n) && n > 0;
+  const porSeccion = new Map<number | null, number[]>();
+  for (const item of items) {
+    const id = idPorNombre.get(item.nombre.trim().toLowerCase());
+    if (!entero(id)) continue;
+    const seccion = item.seccion?.trim() ? (idPorSeccion.get(item.seccion.trim().toLowerCase()) ?? null) : null;
+    porSeccion.set(seccion, [...(porSeccion.get(seccion) ?? []), id]);
+  }
+  for (const [seccion, ids] of porSeccion) {
+    await ejecutar(`UPDATE ${tabla} SET seccion_id = ${seccion ?? "NULL"} WHERE id IN (${ids.join(",")})`);
+  }
 }
 
 /**
@@ -833,18 +990,24 @@ async function desactivarSobrantes(tabla: string, vivos: number[], extra = "1 = 
 export const PLANTILLA_PROPIA = "Mi plantilla";
 
 export async function guardarPlantilla(nombre: string, usuarioId: number | null): Promise<ChecklistPlantilla> {
-  const [motivos, problemas, trabajos, internos, pendientes, gestionProblemas] = await Promise.all([
-    listarMotivos(),
-    listarProblemas(),
-    listarTrabajos(),
-    listarInternos(),
-    listarPendientes(),
-    listarGestionProblemas(),
-  ]);
+  const [motivos, problemas, trabajos, internos, pendientes, gestionProblemas, seccionesMotivo, seccionesTrabajo] =
+    await Promise.all([
+      listarMotivos(),
+      listarProblemas(),
+      listarTrabajos(),
+      listarInternos(),
+      listarPendientes(),
+      listarGestionProblemas(),
+      listarSecciones("MOTIVO"),
+      listarSecciones("TRABAJO"),
+    ]);
   const payload: BorradorChecklist = {
+    seccionesMotivo: seccionesMotivo.map((s) => s.nombre),
+    seccionesTrabajo: seccionesTrabajo.map((s) => s.nombre),
     motivos: motivos.map((m) => ({
       id: null,
       nombre: m.nombre,
+      seccion: m.seccion ?? null,
       trabajos: trabajosDelMotivo(trabajos, m.codigo).map((t) => t.nombre),
     })),
     problemas: problemas.map((p) => ({
@@ -861,6 +1024,7 @@ export async function guardarPlantilla(nombre: string, usuarioId: number | null)
       id: null,
       nombre: t.nombre,
       grupoLabel: t.grupoLabel,
+      seccion: t.seccion ?? null,
       subtrabajos: t.subtrabajos.map((s) => ({
         id: null,
         etiqueta: s.etiqueta,
@@ -915,6 +1079,9 @@ async function leerPlantilla(nombre: string): Promise<{ fila: FilaPlantilla; dat
         motivos: datos.motivos ?? [],
         problemas: datos.problemas ?? [],
         trabajos: datos.trabajos ?? [],
+        // Plantillas guardadas antes de la migración 020: sin secciones.
+        seccionesMotivo: datos.seccionesMotivo,
+        seccionesTrabajo: datos.seccionesTrabajo,
         // Plantillas guardadas antes de que existieran: sin estas listas.
         internos: datos.internos,
         pendientes: datos.pendientes,
@@ -978,9 +1145,13 @@ export async function aplicarPlantilla(nombre: string): Promise<ResumenChecklist
       .map((t) => t.nombre);
 
   const borrador: BorradorChecklist = {
+    // Una plantilla sin secciones (anterior a la migración 020) las deja como están.
+    seccionesMotivo: leida.datos.seccionesMotivo,
+    seccionesTrabajo: leida.datos.seccionesTrabajo,
     motivos: leida.datos.motivos.map((m) => ({
       id: idPorNombre(motivos, m.nombre),
       nombre: m.nombre,
+      seccion: m.seccion ?? null,
       trabajos: deTrabajos ? trabajosDe(m.nombre) : (m.trabajos ?? []),
     })),
     problemas: leida.datos.problemas.map((p) => ({
@@ -994,6 +1165,7 @@ export async function aplicarPlantilla(nombre: string): Promise<ResumenChecklist
       id: idPorNombre(trabajos, t.nombre),
       nombre: t.nombre,
       grupoLabel: t.grupoLabel,
+      seccion: t.seccion ?? null,
       subtrabajos: t.subtrabajos.map((s) => ({ id: null, etiqueta: s.etiqueta, permiteCantidad: s.permiteCantidad })),
     })),
     internos: leida.datos.internos?.map((x) => ({ id: idPorNombre(internos, x.nombre), nombre: x.nombre })),

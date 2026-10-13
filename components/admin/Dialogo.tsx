@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 import SelectBuscable from "@/components/ui/SelectBuscable";
+import SeccionPlegable from "@/components/ui/SeccionPlegable";
+import { agruparPorSeccion, hayAlgunaSeccion } from "@/lib/ui/secciones";
 import { fmtRut, fmtTel, mensajeRut, sinTildes } from "@/lib/ui/formato";
 
 export type CampoTipo =
@@ -35,6 +37,17 @@ export function escribirChecks(codigos: string[]): string {
   return [...new Set(codigos.filter(Boolean))].join(",");
 }
 
+/**
+ * Una opción de un select o de unas casillas. `seccion` solo la mira el tipo
+ * «checks»: agrupa las opciones en secciones que se despliegan.
+ */
+export interface OpcionCampo {
+  v: string;
+  t: string;
+  seccion?: string | null;
+  seccionOrden?: number;
+}
+
 export interface CampoDef {
   k: string;
   label: string;
@@ -43,7 +56,7 @@ export interface CampoDef {
   tipo?: CampoTipo;
   ph?: string;
   ayuda?: string;
-  opciones?: { v: string; t: string }[];
+  opciones?: OpcionCampo[];
   /**
    * Fuerza el selector con búsqueda aunque la lista sea corta. Se usa donde el
    * catálogo crece con el tiempo —clientes, sucursales, técnicos— para que el
@@ -437,19 +450,49 @@ export function CasillasMultiples({
   onCambiar,
 }: {
   valor: string;
-  opciones: { v: string; t: string }[];
+  opciones: OpcionCampo[];
   onCambiar: (v: string) => void;
 }) {
   const [busqueda, setBusqueda] = useState("");
   const marcados = leerChecks(valor);
   const q = sinTildes(busqueda.trim());
   const visibles = q ? opciones.filter((o) => sinTildes(o.t).includes(q)) : opciones;
+  // Con secciones, cada una se despliega por separado; sin ellas, la lista de siempre.
+  const grupos = hayAlgunaSeccion(opciones) ? agruparPorSeccion(visibles) : null;
 
   function alternar(codigo: string) {
     onCambiar(
       escribirChecks(marcados.includes(codigo) ? marcados.filter((c) => c !== codigo) : [...marcados, codigo])
     );
   }
+
+  const casilla = (o: OpcionCampo) => {
+    const activo = marcados.includes(o.v);
+    return (
+      <button
+        key={o.v}
+        type="button"
+        role="checkbox"
+        aria-checked={activo}
+        onClick={() => alternar(o.v)}
+        className="flex items-center gap-2 min-h-9 px-2.5 border border-black/[.35] text-[13px] leading-[1.2] cursor-pointer text-left"
+        style={{
+          background: activo ? "var(--color-text)" : "var(--color-bg)",
+          color: activo ? "var(--color-bg)" : "var(--color-text)",
+          fontWeight: activo ? 800 : 400,
+        }}
+      >
+        <span className="w-3.5 h-3.5 flex-none border-2 border-current grid place-items-center">
+          {activo ? (
+            <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="4">
+              <path d="M4 12l5 5L20 6" />
+            </svg>
+          ) : null}
+        </span>
+        <span>{o.t}</span>
+      </button>
+    );
+  };
 
   return (
     <div className="border border-[var(--color-divider)] bg-[var(--color-surface-3)]">
@@ -463,38 +506,35 @@ export function CasillasMultiples({
           className="w-full min-h-9 px-3 text-[13px] bg-[var(--color-bg)] border-0 border-b border-[var(--color-divider)] text-[var(--color-text)] focus-visible:outline-none"
         />
       ) : null}
-      <div className="max-h-[190px] overflow-y-auto p-2 flex flex-wrap gap-1.5">
-        {visibles.map((o) => {
-          const activo = marcados.includes(o.v);
-          return (
-            <button
-              key={o.v}
-              type="button"
-              role="checkbox"
-              aria-checked={activo}
-              onClick={() => alternar(o.v)}
-              className="flex items-center gap-2 min-h-9 px-2.5 border border-black/[.35] text-[13px] leading-[1.2] cursor-pointer text-left"
-              style={{
-                background: activo ? "var(--color-text)" : "var(--color-bg)",
-                color: activo ? "var(--color-bg)" : "var(--color-text)",
-                fontWeight: activo ? 800 : 400,
-              }}
-            >
-              <span className="w-3.5 h-3.5 flex-none border-2 border-current grid place-items-center">
-                {activo ? (
-                  <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="4">
-                    <path d="M4 12l5 5L20 6" />
-                  </svg>
-                ) : null}
-              </span>
-              <span>{o.t}</span>
-            </button>
-          );
-        })}
-        {visibles.length === 0 ? (
-          <div className="px-1 py-1.5 text-[13px] opacity-66">Nada coincide con «{busqueda}».</div>
-        ) : null}
-      </div>
+      {grupos ? (
+        <div className="max-h-[300px] overflow-y-auto p-2 flex flex-col gap-1.5">
+          {grupos.map((g) => {
+            const marcadosAca = g.items.filter((o) => marcados.includes(o.v)).length;
+            return (
+              <SeccionPlegable
+                key={g.nombre ?? "__sin"}
+                titulo={g.nombre ?? "Sin sección"}
+                total={g.items.length}
+                marcados={marcadosAca}
+                abiertaInicial={marcadosAca > 0}
+                forzarAbierta={Boolean(q)}
+              >
+                <div className="flex flex-wrap gap-1.5">{g.items.map(casilla)}</div>
+              </SeccionPlegable>
+            );
+          })}
+          {visibles.length === 0 ? (
+            <div className="px-1 py-1.5 text-[13px] opacity-66">Nada coincide con «{busqueda}».</div>
+          ) : null}
+        </div>
+      ) : (
+        <div className="max-h-[190px] overflow-y-auto p-2 flex flex-wrap gap-1.5">
+          {visibles.map(casilla)}
+          {visibles.length === 0 ? (
+            <div className="px-1 py-1.5 text-[13px] opacity-66">Nada coincide con «{busqueda}».</div>
+          ) : null}
+        </div>
+      )}
       <div className="px-3 py-1.5 border-t border-[var(--color-divider)] text-[11px] tracking-[.06em] uppercase opacity-62 tabular-nums">
         {marcados.length} {marcados.length === 1 ? "marcado" : "marcados"}
       </div>

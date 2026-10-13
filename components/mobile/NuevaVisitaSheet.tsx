@@ -4,10 +4,12 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Sheet from "@/components/mobile/Sheet";
 import SelectBuscable from "@/components/ui/SelectBuscable";
+import SeccionPlegable from "@/components/ui/SeccionPlegable";
 import { crearVisitaTecnicoAction } from "@/app/actions/visitas";
 import { useReferencias } from "@/lib/ui/referencias";
 import { fmtRut, fmtTel, mensajeRut } from "@/lib/ui/formato";
 import { algunoPideHora } from "@/lib/ui/motivos";
+import { agruparPorSeccion, hayAlgunaSeccion } from "@/lib/ui/secciones";
 
 const LABEL = "block text-[11px] tracking-[.09em] uppercase opacity-60 mb-1.5";
 const CAMPO =
@@ -58,6 +60,38 @@ export default function NuevaVisitaSheet({
 
   const propias = sucursales.filter((s) => String(s.clienteId) === clienteId);
   const esInstalacion = algunoPideHora(motivos, catalogoMotivo);
+  const conSecciones = hayAlgunaSeccion(catalogoMotivo);
+
+  const fila = (m: (typeof catalogoMotivo)[number]) => {
+    const activo = motivos.includes(m.codigo);
+    return (
+      <button
+        key={m.codigo}
+        type="button"
+        role="checkbox"
+        aria-checked={activo}
+        onClick={() => setMotivos((prev) => (activo ? prev.filter((c) => c !== m.codigo) : [...prev, m.codigo]))}
+        className="w-full min-h-[52px] flex items-center gap-3 px-3.5 text-[15px] leading-[1.25] text-[var(--color-text)] cursor-pointer text-left"
+        style={{
+          background: activo ? "var(--color-accent-100)" : "var(--color-surface)",
+          border: `1px solid ${activo ? "var(--color-accent)" : "var(--color-divider)"}`,
+          fontWeight: activo ? 800 : 400,
+        }}
+      >
+        <span
+          className="w-[20px] h-[20px] flex-none border-2 border-[var(--color-text)] grid place-items-center"
+          style={{ background: activo ? "var(--color-accent)" : "transparent" }}
+        >
+          {activo ? (
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#f3f2f2" strokeWidth="3.4">
+              <path d="M4 12l5 5L20 6" />
+            </svg>
+          ) : null}
+        </span>
+        <span className="flex-1 min-w-0">{m.nombre}</span>
+      </button>
+    );
+  };
   const companeros = referencias.tecnicos.filter((t) => t.id !== tecnicoId);
   const listo = Boolean(clienteId && sucursalId && motivos.length > 0 && (!esInstalacion || hora));
 
@@ -151,38 +185,23 @@ export default function NuevaVisitaSheet({
             Motivo de la visita <span className="opacity-70 normal-case tracking-normal">(marca todos los que correspondan)</span>
           </div>
           <div className="flex flex-col gap-1.5">
-            {catalogoMotivo.map((m) => {
-              const activo = motivos.includes(m.codigo);
-              return (
-                <button
-                  key={m.codigo}
-                  type="button"
-                  role="checkbox"
-                  aria-checked={activo}
-                  onClick={() =>
-                    setMotivos((prev) => (activo ? prev.filter((c) => c !== m.codigo) : [...prev, m.codigo]))
-                  }
-                  className="w-full min-h-[52px] flex items-center gap-3 px-3.5 text-[15px] leading-[1.25] text-[var(--color-text)] cursor-pointer text-left"
-                  style={{
-                    background: activo ? "var(--color-accent-100)" : "var(--color-surface)",
-                    border: `1px solid ${activo ? "var(--color-accent)" : "var(--color-divider)"}`,
-                    fontWeight: activo ? 800 : 400,
-                  }}
-                >
-                  <span
-                    className="w-[20px] h-[20px] flex-none border-2 border-[var(--color-text)] grid place-items-center"
-                    style={{ background: activo ? "var(--color-accent)" : "transparent" }}
-                  >
-                    {activo ? (
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#f3f2f2" strokeWidth="3.4">
-                        <path d="M4 12l5 5L20 6" />
-                      </svg>
-                    ) : null}
-                  </span>
-                  <span className="flex-1 min-w-0">{m.nombre}</span>
-                </button>
-              );
-            })}
+            {conSecciones
+              ? agruparPorSeccion(catalogoMotivo).map((g) => {
+                  const marcadosAca = g.items.filter((m) => motivos.includes(m.codigo)).length;
+                  return (
+                    <SeccionPlegable
+                      key={g.nombre ?? "__sin"}
+                      titulo={g.nombre ?? "Sin sección"}
+                      total={g.items.length}
+                      marcados={marcadosAca}
+                      abiertaInicial={marcadosAca > 0}
+                      tono="movil"
+                    >
+                      <div className="flex flex-col gap-1.5">{g.items.map(fila)}</div>
+                    </SeccionPlegable>
+                  );
+                })
+              : catalogoMotivo.map(fila)}
             {catalogoMotivo.length === 0 ? (
               <div className="px-3.5 py-3 border border-dashed border-black/[.4] text-[13px] opacity-70">
                 No hay motivos en el checklist: avisa a coordinacion.

@@ -23,6 +23,7 @@ import type {
   CatalogoMotivo,
   CatalogoPendiente,
   CatalogoProblema,
+  CatalogoSeccion,
   CatalogoTrabajo,
   ChecklistPlantilla,
 } from "@/lib/types";
@@ -60,6 +61,8 @@ interface Motivo {
  * el trabajo no sabe en qué motivos está, se calcula mirando los motivos.
  */
 interface MotivoConTrabajos extends Motivo {
+  /** La `key` de su sección en la Lista 1. Null = sin sección. */
+  seccion: string | null;
   /**
    * Las claves (`key`) de sus trabajos, en el orden en que el técnico los ve.
    * Por clave y no por nombre para que renombrar un trabajo no suelte el enlace.
@@ -74,6 +77,17 @@ interface Grupo {
   nombre: string;
   grupoLabel: string;
   items: Item[];
+  /** Solo los trabajos: la `key` de su sección en la Lista 3. Null = sin sección. */
+  seccion?: string | null;
+}
+
+/**
+ * Una sección de la Lista 1 (agrupa motivos) o de la Lista 3 (agrupa trabajos).
+ * Quien está en ella la nombra por su `key`, así renombrarla no suelta a nadie.
+ */
+interface Seccion {
+  key: string;
+  nombre: string;
 }
 
 let contadorClave = 0;
@@ -83,14 +97,31 @@ function aMotivos(lista: (CatalogoMotivo | CatalogoInterno | CatalogoPendiente |
   return lista.map((m) => ({ key: nuevaClave(), id: m.id, codigo: m.codigo, nombre: m.nombre }));
 }
 
+function aSecciones(lista: CatalogoSeccion[]): Seccion[] {
+  return lista.map((s) => ({ key: nuevaClave(), nombre: s.nombre }));
+}
+
+/** La `key` de la sección que tiene ese nombre, o null si no hay (o no se nombró). */
+function claveDeSeccion(secciones: Seccion[], nombre: string | null | undefined): string | null {
+  const buscado = nombre?.trim().toLowerCase();
+  if (!buscado) return null;
+  return secciones.find((s) => s.nombre.trim().toLowerCase() === buscado)?.key ?? null;
+}
+
 /** Los motivos con sus trabajos ya ordenados, enlazados por la clave de cada trabajo. */
-function aMotivosConTrabajos(lista: CatalogoMotivo[], catalogo: CatalogoTrabajo[], grupos: Grupo[]): MotivoConTrabajos[] {
+function aMotivosConTrabajos(
+  lista: CatalogoMotivo[],
+  catalogo: CatalogoTrabajo[],
+  grupos: Grupo[],
+  secciones: Seccion[]
+): MotivoConTrabajos[] {
   const clavePorCodigo = new Map(grupos.map((g) => [g.codigo, g.key]));
   return lista.map((m) => ({
     key: nuevaClave(),
     id: m.id,
     codigo: m.codigo,
     nombre: m.nombre,
+    seccion: claveDeSeccion(secciones, m.seccion),
     trabajos: trabajosDelMotivo(catalogo, m.codigo)
       .map((t) => clavePorCodigo.get(t.codigo))
       .filter((k): k is string => Boolean(k)),
@@ -113,13 +144,14 @@ function aGruposProblema(lista: CatalogoProblema[]): Grupo[] {
   }));
 }
 
-function aGruposTrabajo(lista: CatalogoTrabajo[]): Grupo[] {
+function aGruposTrabajo(lista: CatalogoTrabajo[], secciones: Seccion[]): Grupo[] {
   return lista.map((t) => ({
     key: nuevaClave(),
     id: t.id,
     codigo: t.codigo,
     nombre: t.nombre,
     grupoLabel: t.grupoLabel ?? "",
+    seccion: claveDeSeccion(secciones, t.seccion),
     items: t.subtrabajos.map((s) => ({
       key: nuevaClave(),
       id: s.id,
@@ -127,6 +159,28 @@ function aGruposTrabajo(lista: CatalogoTrabajo[]): Grupo[] {
       permiteCantidad: s.permiteCantidad,
     })),
   }));
+}
+
+/**
+ * Motivos, trabajos y secciones nacen juntos: los motivos y los trabajos
+ * apuntan a su sección, y los motivos a sus trabajos, por las claves que se
+ * les acaban de dar.
+ */
+function armarListas(
+  motivos: CatalogoMotivo[],
+  trabajos: CatalogoTrabajo[],
+  seccionesMotivo: CatalogoSeccion[],
+  seccionesTrabajo: CatalogoSeccion[]
+) {
+  const secMotivo = aSecciones(seccionesMotivo);
+  const secTrabajo = aSecciones(seccionesTrabajo);
+  const t = aGruposTrabajo(trabajos, secTrabajo);
+  return {
+    seccionesMotivo: secMotivo,
+    seccionesTrabajo: secTrabajo,
+    trabajos: t,
+    motivos: aMotivosConTrabajos(motivos, trabajos, t, secMotivo),
+  };
 }
 
 /** Mueve un elemento del arreglo `delta` posiciones sin salirse de los bordes. */
@@ -151,6 +205,36 @@ function reubicar<T>(lista: T[], desde: number, ranura: number): T[] {
   const copia = [...lista];
   const [fuera] = copia.splice(desde, 1);
   copia.splice(desde < ranura ? ranura - 1 : ranura, 0, fuera);
+  return copia;
+}
+
+/**
+ * Lo mismo que `reubicar`, pero solo entre los elementos que cumplen `enGrupo`
+ * (los de una sección): los demás no se mueven de su sitio. `desde` y `ranura`
+ * cuentan dentro del grupo, no en la lista entera.
+ */
+function reubicarEn<T>(lista: T[], enGrupo: (x: T) => boolean, desde: number, ranura: number): T[] {
+  const sitios = lista.map((x, i) => (enGrupo(x) ? i : -1)).filter((i) => i >= 0);
+  const del = sitios.map((i) => lista[i]);
+  const nuevo = reubicar(del, desde, ranura);
+  if (nuevo === del) return lista;
+  const copia = [...lista];
+  sitios.forEach((sitio, k) => {
+    copia[sitio] = nuevo[k];
+  });
+  return copia;
+}
+
+/** `mover` dentro de una sección: ver `reubicarEn`. */
+function moverEn<T>(lista: T[], enGrupo: (x: T) => boolean, indice: number, delta: number): T[] {
+  const sitios = lista.map((x, i) => (enGrupo(x) ? i : -1)).filter((i) => i >= 0);
+  const del = sitios.map((i) => lista[i]);
+  const nuevo = mover(del, indice, delta);
+  if (nuevo === del) return lista;
+  const copia = [...lista];
+  sitios.forEach((sitio, k) => {
+    copia[sitio] = nuevo[k];
+  });
   return copia;
 }
 
@@ -183,6 +267,9 @@ export default function ChecklistEditor({
   estadosProblemaIniciales,
   estadosProblemaDisponible,
   trabajosPorMotivoDisponible,
+  seccionesDisponible,
+  seccionesMotivoIniciales,
+  seccionesTrabajoIniciales,
   plantillaInicial,
 }: {
   motivosIniciales: CatalogoMotivo[];
@@ -201,6 +288,10 @@ export default function ChecklistEditor({
   estadosProblemaDisponible: boolean;
   /** false = falta la migración 019: un trabajo sin motivos sigue apareciendo en todos. */
   trabajosPorMotivoDisponible: boolean;
+  /** false = falta la migración 020: no se pueden crear secciones. */
+  seccionesDisponible: boolean;
+  seccionesMotivoIniciales: CatalogoSeccion[];
+  seccionesTrabajoIniciales: CatalogoSeccion[];
   plantillaInicial: ChecklistPlantilla | null;
 }) {
   const router = useRouter();
@@ -208,11 +299,14 @@ export default function ChecklistEditor({
 
   // Motivos y trabajos nacen juntos: los motivos apuntan a sus trabajos por la
   // clave que se les acaba de dar.
-  const [inicial] = useState(() => {
-    const t = aGruposTrabajo(trabajosIniciales);
-    return { motivos: aMotivosConTrabajos(motivosIniciales, trabajosIniciales, t), trabajos: t };
-  });
+  const [inicial] = useState(() =>
+    armarListas(motivosIniciales, trabajosIniciales, seccionesMotivoIniciales, seccionesTrabajoIniciales)
+  );
   const [motivos, setMotivos] = useState<MotivoConTrabajos[]>(inicial.motivos);
+  const [seccionesMotivo, setSeccionesMotivo] = useState<Seccion[]>(inicial.seccionesMotivo);
+  const [seccionesTrabajo, setSeccionesTrabajo] = useState<Seccion[]>(inicial.seccionesTrabajo);
+  /** Las secciones plegadas. Por defecto todas se ven abiertas. */
+  const [plegadas, setPlegadas] = useState<Set<string>>(() => new Set());
   const [tipos, setTipos] = useState<Grupo[]>(() => aGruposProblema(tiposIniciales));
   const [trabajos, setTrabajos] = useState<Grupo[]>(inicial.trabajos);
   const [internos, setInternos] = useState<Motivo[]>(() => aMotivos(internosIniciales));
@@ -246,10 +340,12 @@ export default function ChecklistEditor({
   // Tras guardar, el servidor vuelve a mandar las listas ya escritas: el
   // borrador se rehace desde ellas para que los ids nuevos queden en pantalla.
   useEffect(() => {
-    const t = aGruposTrabajo(trabajosIniciales);
-    setMotivos(aMotivosConTrabajos(motivosIniciales, trabajosIniciales, t));
+    const listas = armarListas(motivosIniciales, trabajosIniciales, seccionesMotivoIniciales, seccionesTrabajoIniciales);
+    setSeccionesMotivo(listas.seccionesMotivo);
+    setSeccionesTrabajo(listas.seccionesTrabajo);
+    setMotivos(listas.motivos);
     setTipos(aGruposProblema(tiposIniciales));
-    setTrabajos(t);
+    setTrabajos(listas.trabajos);
     setInternos(aMotivos(internosIniciales));
     setPendientes(aMotivos(pendientesIniciales));
     setGestionProblemas(aMotivos(gestionProblemasIniciales));
@@ -266,6 +362,8 @@ export default function ChecklistEditor({
     setSucio(false);
   }, [
     motivosIniciales,
+    seccionesMotivoIniciales,
+    seccionesTrabajoIniciales,
     tiposIniciales,
     trabajosIniciales,
     internosIniciales,
@@ -336,10 +434,16 @@ export default function ChecklistEditor({
     [estadosProblema, coincide]
   );
 
+  const nombreDeSeccion = (lista: Seccion[], key: string | null | undefined) =>
+    lista.find((x) => x.key === key)?.nombre.trim() || null;
+
   const borrador = (): BorradorChecklist => ({
+    seccionesMotivo: seccionesMotivo.map((x) => x.nombre.trim()).filter(Boolean),
+    seccionesTrabajo: seccionesTrabajo.map((x) => x.nombre.trim()).filter(Boolean),
     motivos: motivos.map((m) => ({
       id: m.id,
       nombre: m.nombre,
+      seccion: nombreDeSeccion(seccionesMotivo, m.seccion),
       trabajos: m.trabajos.map((k) => trabajoPorClave.get(k)?.nombre.trim() ?? "").filter(Boolean),
     })),
     problemas: tipos.map((t) => ({
@@ -352,6 +456,7 @@ export default function ChecklistEditor({
       id: t.id,
       nombre: t.nombre,
       grupoLabel: t.grupoLabel.trim() || null,
+      seccion: nombreDeSeccion(seccionesTrabajo, t.seccion),
       subtrabajos: t.items.map((o) => ({ id: o.id, etiqueta: o.etiqueta, permiteCantidad: o.permiteCantidad })),
     })),
     internos: internos.map((m) => ({ id: m.id, nombre: m.nombre })),
@@ -361,6 +466,8 @@ export default function ChecklistEditor({
   });
 
   const vacios =
+    seccionesMotivo.filter((x) => !x.nombre.trim()).length +
+    seccionesTrabajo.filter((x) => !x.nombre.trim()).length +
     motivos.filter((m) => !m.nombre.trim()).length +
     tipos.filter((t) => !t.nombre.trim()).length +
     trabajos.filter((t) => !t.nombre.trim()).length +
@@ -477,10 +584,11 @@ export default function ChecklistEditor({
 
   // ── Altas y clones ────────────────────────────────────────────────────────
 
-  function agregarMotivo() {
+  function agregarMotivo(seccion: string | null = null) {
     const key = nuevaClave();
-    editar(setMotivos, (prev) => [...prev, { key, id: null, codigo: null, nombre: "", trabajos: [] }]);
+    editar(setMotivos, (prev) => [...prev, { key, id: null, codigo: null, nombre: "", seccion, trabajos: [] }]);
     setAbiertoMotivo(key);
+    if (seccion) abrirSeccion(seccion);
     aviso("Motivo agregado · escribe su nombre y agrégale sus trabajos");
   }
 
@@ -512,10 +620,67 @@ export default function ChecklistEditor({
     aviso("Estado agregado · escribe su nombre y guarda");
   }
 
-  function agregarGrupo(set: React.Dispatch<React.SetStateAction<Grupo[]>>, abrir: (k: string) => void) {
+  function agregarGrupo(
+    set: React.Dispatch<React.SetStateAction<Grupo[]>>,
+    abrir: (k: string) => void,
+    seccion: string | null = null
+  ) {
     const key = nuevaClave();
-    editar(set, (prev) => [...prev, { key, id: null, codigo: null, nombre: "", grupoLabel: "", items: [] }]);
+    editar(set, (prev) => [...prev, { key, id: null, codigo: null, nombre: "", grupoLabel: "", items: [], seccion }]);
     abrir(key);
+    if (seccion) abrirSeccion(seccion);
+  }
+
+  // ── Secciones ─────────────────────────────────────────────────────────────
+
+  function abrirSeccion(key: string) {
+    setPlegadas((prev) => {
+      if (!prev.has(key)) return prev;
+      const siguiente = new Set(prev);
+      siguiente.delete(key);
+      return siguiente;
+    });
+  }
+
+  function alternarSeccion(key: string) {
+    setPlegadas((prev) => {
+      const siguiente = new Set(prev);
+      if (!siguiente.delete(key)) siguiente.add(key);
+      return siguiente;
+    });
+  }
+
+  function agregarSeccion(set: React.Dispatch<React.SetStateAction<Seccion[]>>) {
+    if (!seccionesDisponible) {
+      return aviso("Para crear secciones falta correr la migración 020 en la base");
+    }
+    const key = nuevaClave();
+    editar(set, (prev) => [...prev, { key, nombre: "" }]);
+    aviso("Sección agregada · escribe su nombre");
+  }
+
+  /** Quitar una sección no quita a nadie: sus entradas pasan a «Sin sección». */
+  function quitarSeccion(sec: Seccion, de: "motivos" | "trabajos") {
+    const cuantas = (de === "motivos" ? motivos : trabajos).filter((x) => x.seccion === sec.key).length;
+    setConfirmar({
+      titulo: "¿Quitar esta sección?",
+      texto:
+        `«${sec.nombre || "Sin nombre"}» deja de existir como sección. ` +
+        (cuantas
+          ? `Sus ${cuantas} ${de === "motivos" ? "motivos" : "trabajos"} no se quitan: pasan a «Sin sección». `
+          : "") +
+        "El cambio se aplica al guardar.",
+      cta: "Quitar sección",
+      accion: () => {
+        if (de === "motivos") {
+          editar(setSeccionesMotivo, (prev) => prev.filter((x) => x.key !== sec.key));
+          setMotivos((prev) => prev.map((m) => (m.seccion === sec.key ? { ...m, seccion: null } : m)));
+        } else {
+          editar(setSeccionesTrabajo, (prev) => prev.filter((x) => x.key !== sec.key));
+          setTrabajos((prev) => prev.map((t) => (t.seccion === sec.key ? { ...t, seccion: null } : t)));
+        }
+      },
+    });
   }
 
   /**
@@ -535,6 +700,7 @@ export default function ChecklistEditor({
       codigo: null,
       nombre: nombreDeCopia(grupo.nombre, lista.map((g) => g.nombre)),
       grupoLabel: grupo.grupoLabel,
+      seccion: grupo.seccion,
       // Los subdetalles van sin id: son filas nuevas colgando de la copia.
       items: grupo.items.map((o) => ({ ...o, key: nuevaClave(), id: null })),
     };
@@ -641,6 +807,135 @@ export default function ChecklistEditor({
     estadosProblema.length;
 
 
+  /** Una fila de la Lista 3: el trabajo con sus subtrabajos y los motivos donde aparece. */
+  const filaTrabajoL3 = (t: Grupo, i: number) => {
+    const en = motivosDeTrabajo.get(t.key) ?? [];
+    return (
+      <div key={t.key} className="mb-2.5">
+                <Desplegable
+                  agarre={null}
+                  n={i + 1}
+                  grupo={t}
+                  phNombre="Ej: Calibración de antenas"
+                  abierto={abiertoTrabajo === t.key}
+                  onToggle={() => setAbiertoTrabajo(abiertoTrabajo === t.key ? null : t.key)}
+                  resumen={
+                    (t.items.length
+                      ? `${t.items.length} ${t.items.length === 1 ? "subtrabajo" : "subtrabajos"}`
+                      : "Sin subtrabajo") +
+                    (en.length ? ` · en ${en.length} ${en.length === 1 ? "motivo" : "motivos"}` : " · sin motivo")
+                  }
+                  alerta={en.length === 0}
+                  seccion={{
+                    valor: t.seccion ?? null,
+                    opciones: seccionesTrabajo,
+                    onCambiar: (k) =>
+                      editar(setTrabajos, (prev) => prev.map((x) => (x.key === t.key ? { ...x, seccion: k } : x))),
+                  }}
+                  enMotivos={{ lista: motivos, onAlternar: (motivoKey) => alternarEnMotivo(motivoKey, t.key) }}
+                  etiquetaSingular="subtrabajo"
+                  etiquetaPlural="subtrabajos"
+                  tituloSub="Título del subtrabajo"
+                  phSub="Ej: Repuesto cambiado"
+                  phNueva="Ej: Tarjeta electrónica"
+                  vacioSub="Sin subtrabajos: en el celular este trabajo se agrega directo, con un toque."
+                  onCambiar={(fn) => editar(setTrabajos, (prev) => prev.map((x) => (x.key === t.key ? fn(x) : x)))}
+                  onClonar={() => clonarTrabajo(t)}
+                  onQuitar={() => quitarTrabajo(t)}
+                  onConfirmarQuitarItem={setConfirmar}
+                  onAviso={aviso}
+                />
+      </div>
+    );
+  };
+
+  /**
+   * Una fila de la Lista 1. `local` es su lugar dentro de su sección (o de la
+   * lista entera si no hay secciones): ahí cuenta el arrastre y la numeración.
+   */
+  const filaMotivo = (
+    m: MotivoConTrabajos,
+    local: number,
+    totalLocal: number,
+    enGrupo: (x: MotivoConTrabajos) => boolean,
+    claveGrupo: string
+  ) => {
+    const i = motivos.findIndex((x) => x.key === m.key);
+    return (
+      <Arrastrable
+        key={m.key}
+        grupo={`motivo-${claveGrupo}`}
+        indice={local}
+        total={totalLocal}
+        bloqueado={!!filtro}
+        onReordenar={(desde, ranura) => editar(setMotivos, (prev) => reubicarEn(prev, enGrupo, desde, ranura))}
+        onMover={(d) => editar(setMotivos, (prev) => moverEn(prev, enGrupo, local, d))}
+      >
+        {(agarre) => (
+                  <MotivoDesplegable
+                    agarre={agarre}
+                    n={local + 1}
+                    motivo={m}
+                    motivos={motivos}
+                    secciones={seccionesMotivo}
+                    onCambiarSeccion={(k) =>
+                      editar(setMotivos, (prev) => prev.map((x) => (x.key === m.key ? { ...x, seccion: k } : x)))
+                    }
+                    trabajos={trabajos}
+                    motivosDeTrabajo={motivosDeTrabajo}
+                    abierto={abiertoMotivo === m.key}
+                    onToggle={() => setAbiertoMotivo(abiertoMotivo === m.key ? null : m.key)}
+                    abiertoEnMotivo={abiertoEnMotivo}
+                    setAbiertoEnMotivo={setAbiertoEnMotivo}
+                    onRenombrar={(nombre) =>
+                      editar(setMotivos, (prev) => prev.map((x) => (x.key === m.key ? { ...x, nombre } : x)))
+                    }
+                    onOrdenar={(fn) =>
+                      editar(setMotivos, (prev) =>
+                        prev.map((x) => (x.key === m.key ? { ...x, trabajos: fn(x.trabajos) } : x))
+                      )
+                    }
+                    onAlternar={(k) => alternarEnMotivo(m.key, k)}
+                    onCrearTrabajo={() => crearTrabajoEnMotivo(m.key)}
+                    onCopiarDe={(origen) => copiarTrabajosDe(m.key, origen)}
+                    onCambiarTrabajo={(k, fn) =>
+                      editar(setTrabajos, (prev) => prev.map((x) => (x.key === k ? fn(x) : x)))
+                    }
+                    onClonarTrabajo={(t) => clonarTrabajo(t, m.key)}
+                    onClonar={() => {
+                      const key = nuevaClave();
+                      editar(setMotivos, (prev) => {
+                        const copia: MotivoConTrabajos = {
+                          key,
+                          id: null,
+                          codigo: null,
+                          nombre: nombreDeCopia(m.nombre, prev.map((x) => x.nombre)),
+                          seccion: m.seccion,
+                          trabajos: [...m.trabajos],
+                        };
+                        const lista = [...prev];
+                        lista.splice(i + 1, 0, copia);
+                        return lista;
+                      });
+                      setAbiertoMotivo(key);
+                      aviso(`Se clonó «${m.nombre}» con sus ${m.trabajos.length} trabajos`);
+                    }}
+                    onQuitar={() =>
+                      setConfirmar({
+                        titulo: "¿Quitar este motivo?",
+                        texto: `«${m.nombre || "Sin nombre"}» deja de aparecer al agendar y en el celular del técnico. No se borra: las visitas ya registradas con este motivo lo siguen mostrando. Sus trabajos siguen en los demás motivos donde estén. El cambio se aplica al guardar.`,
+                        cta: "Quitar motivo",
+                        accion: () => editar(setMotivos, (prev) => prev.filter((x) => x.key !== m.key)),
+                      })
+                    }
+                    onConfirmar={setConfirmar}
+                    onAviso={aviso}
+                  />
+        )}
+      </Arrastrable>
+    );
+  };
+
   return (
     <>
       <AdminHeader kicker="Maestros · listas que ve el técnico en terreno" title="Checklist">
@@ -701,86 +996,96 @@ export default function ChecklistEditor({
         <Bloque
           numero="Lista 1"
           titulo="Motivos y sus trabajos"
-          bajada="Coordinación agenda la visita con uno o varios motivos, y bajo cada motivo el técnico registra lo que hizo eligiendo entre SUS trabajos, en este orden. Despliega un motivo para armar su lista. Un mismo trabajo puede ir en varios motivos: sus subtrabajos se editan una vez y valen en todos."
+          bajada="Coordinación agenda la visita con uno o varios motivos, y bajo cada motivo el técnico registra lo que hizo eligiendo entre SUS trabajos, en este orden. Despliega un motivo para armar su lista. Agrupa los motivos en secciones (ej. «Visitas») y el celular y el panel los muestran plegables por sección. Un mismo trabajo puede ir en varios motivos: sus subtrabajos se editan una vez y valen en todos."
           cta="Nuevo motivo"
-          onAgregar={agregarMotivo}
+          onAgregar={() => agregarMotivo()}
+          ctaExtra={{ label: "Nueva sección", onClick: () => agregarSeccion(setSeccionesMotivo) }}
         >
+          {!seccionesDisponible ? (
+            <div className="mb-3 px-3.5 py-3 bg-[var(--color-accent-200)] border-l-4 border-[var(--color-accent)] text-[13px] text-[var(--color-accent-800)] max-w-[720px]">
+              Las secciones necesitan la migración 020 en la base. Hasta que se corra no se pueden crear.
+            </div>
+          ) : null}
           {!trabajosPorMotivoDisponible ? (
             <div className="mb-3 px-3.5 py-3 bg-[var(--color-accent-200)] border-l-4 border-[var(--color-accent)] text-[13px] text-[var(--color-accent-800)] max-w-[720px]">
               Falta la migración 019 en la base. Hasta que se corra, el orden de los trabajos dentro de cada motivo no
               se guarda y un trabajo que no esté en ningún motivo le sigue apareciendo al técnico en todos.
             </div>
           ) : null}
-          <div className="flex flex-col gap-2.5">
-            {motivosVisibles.map(({ m, i }) => (
-              <Arrastrable
-                key={m.key}
-                grupo="motivo"
-                indice={i}
-                total={motivos.length}
-                bloqueado={!!filtro}
-                onReordenar={(desde, ranura) => editar(setMotivos, (prev) => reubicar(prev, desde, ranura))}
-                onMover={(d) => editar(setMotivos, (prev) => mover(prev, i, d))}
-              >
-                {(agarre) => (
-                  <MotivoDesplegable
-                    agarre={agarre}
-                    n={i + 1}
-                    motivo={m}
-                    motivos={motivos}
-                    trabajos={trabajos}
-                    motivosDeTrabajo={motivosDeTrabajo}
-                    abierto={abiertoMotivo === m.key}
-                    onToggle={() => setAbiertoMotivo(abiertoMotivo === m.key ? null : m.key)}
-                    abiertoEnMotivo={abiertoEnMotivo}
-                    setAbiertoEnMotivo={setAbiertoEnMotivo}
+          {seccionesMotivo.length === 0 ? (
+            <div className="flex flex-col gap-2.5">
+              {motivosVisibles.map(({ m, i }) => filaMotivo(m, i, motivos.length, () => true, "todos"))}
+            </div>
+          ) : (
+            <div className="flex flex-col gap-3">
+              {seccionesMotivo.map((sec, si) => {
+                const miembros = motivos.filter((m) => m.seccion === sec.key);
+                const visibles = motivosVisibles.filter(({ m }) => m.seccion === sec.key);
+                if (filtro && visibles.length === 0) return null;
+                return (
+                  <CajaSeccion
+                    key={sec.key}
+                    nombre={sec.nombre}
+                    phNombre="Ej: Visitas"
+                    cuenta={`${miembros.length} ${miembros.length === 1 ? "motivo" : "motivos"}`}
+                    abierta={!plegadas.has(sec.key) || !!filtro}
+                    onToggle={() => alternarSeccion(sec.key)}
                     onRenombrar={(nombre) =>
-                      editar(setMotivos, (prev) => prev.map((x) => (x.key === m.key ? { ...x, nombre } : x)))
+                      editar(setSeccionesMotivo, (prev) => prev.map((x) => (x.key === sec.key ? { ...x, nombre } : x)))
                     }
-                    onOrdenar={(fn) =>
-                      editar(setMotivos, (prev) =>
-                        prev.map((x) => (x.key === m.key ? { ...x, trabajos: fn(x.trabajos) } : x))
+                    onSubir={si > 0 && !filtro ? () => editar(setSeccionesMotivo, (prev) => mover(prev, si, -1)) : undefined}
+                    onBajar={
+                      si < seccionesMotivo.length - 1 && !filtro
+                        ? () => editar(setSeccionesMotivo, (prev) => mover(prev, si, 1))
+                        : undefined
+                    }
+                    onQuitar={() => quitarSeccion(sec, "motivos")}
+                    cta="Nuevo motivo aquí"
+                    onNuevo={() => agregarMotivo(sec.key)}
+                  >
+                    {visibles.map(({ m }) =>
+                      filaMotivo(
+                        m,
+                        miembros.findIndex((x) => x.key === m.key),
+                        miembros.length,
+                        (x) => x.seccion === sec.key,
+                        sec.key
                       )
-                    }
-                    onAlternar={(k) => alternarEnMotivo(m.key, k)}
-                    onCrearTrabajo={() => crearTrabajoEnMotivo(m.key)}
-                    onCopiarDe={(origen) => copiarTrabajosDe(m.key, origen)}
-                    onCambiarTrabajo={(k, fn) =>
-                      editar(setTrabajos, (prev) => prev.map((x) => (x.key === k ? fn(x) : x)))
-                    }
-                    onClonarTrabajo={(t) => clonarTrabajo(t, m.key)}
-                    onClonar={() => {
-                      const key = nuevaClave();
-                      editar(setMotivos, (prev) => {
-                        const copia: MotivoConTrabajos = {
-                          key,
-                          id: null,
-                          codigo: null,
-                          nombre: nombreDeCopia(m.nombre, prev.map((x) => x.nombre)),
-                          trabajos: [...m.trabajos],
-                        };
-                        const lista = [...prev];
-                        lista.splice(i + 1, 0, copia);
-                        return lista;
-                      });
-                      setAbiertoMotivo(key);
-                      aviso(`Se clonó «${m.nombre}» con sus ${m.trabajos.length} trabajos`);
-                    }}
-                    onQuitar={() =>
-                      setConfirmar({
-                        titulo: "¿Quitar este motivo?",
-                        texto: `«${m.nombre || "Sin nombre"}» deja de aparecer al agendar y en el celular del técnico. No se borra: las visitas ya registradas con este motivo lo siguen mostrando. Sus trabajos siguen en los demás motivos donde estén. El cambio se aplica al guardar.`,
-                        cta: "Quitar motivo",
-                        accion: () => editar(setMotivos, (prev) => prev.filter((x) => x.key !== m.key)),
-                      })
-                    }
-                    onConfirmar={setConfirmar}
-                    onAviso={aviso}
-                  />
-                )}
-              </Arrastrable>
-            ))}
-          </div>
+                    )}
+                    {miembros.length === 0 ? (
+                      <Vacio>Sección vacía: agrégale un motivo, o cámbialo de sección desde su fila.</Vacio>
+                    ) : null}
+                  </CajaSeccion>
+                );
+              })}
+              {(() => {
+                const sueltos = motivos.filter((m) => !m.seccion);
+                const visibles = motivosVisibles.filter(({ m }) => !m.seccion);
+                if (sueltos.length === 0 || (filtro && visibles.length === 0)) return null;
+                return (
+                  <CajaSeccion
+                    fija
+                    nombre="Sin sección"
+                    cuenta={`${sueltos.length} ${sueltos.length === 1 ? "motivo" : "motivos"}`}
+                    abierta={!plegadas.has("sin-motivo") || !!filtro}
+                    onToggle={() => alternarSeccion("sin-motivo")}
+                    cta="Nuevo motivo aquí"
+                    onNuevo={() => agregarMotivo(null)}
+                  >
+                    {visibles.map(({ m }) =>
+                      filaMotivo(
+                        m,
+                        sueltos.findIndex((x) => x.key === m.key),
+                        sueltos.length,
+                        (x) => !x.seccion,
+                        "sin"
+                      )
+                    )}
+                  </CajaSeccion>
+                );
+              })()}
+            </div>
+          )}
           {motivos.length === 0 ? (
             <Vacio>Sin motivos: el técnico no podría clasificar la visita, y coordinación no puede agendarla.</Vacio>
           ) : null}
@@ -850,9 +1155,10 @@ export default function ChecklistEditor({
         <Bloque
           numero="Lista 3"
           titulo="Todos los trabajos"
-          bajada="Los mismos trabajos de la Lista 1, vistos desde el otro lado: cada uno con los motivos donde aparece. Sirve para poner un trabajo en varios motivos de una vez y para encontrar los que quedaron sin motivo, que el técnico no ve. El orden lo da cada motivo, no esta lista."
+          bajada="Los mismos trabajos de la Lista 1, vistos desde el otro lado: cada uno con los motivos donde aparece. Sirve para poner un trabajo en varios motivos de una vez y para encontrar los que quedaron sin motivo, que el técnico no ve. Agrupa los trabajos (con sus subtrabajos) en secciones: el técnico las ve plegables. El orden lo da cada motivo, no esta lista."
           cta="Nuevo trabajo"
           onAgregar={() => agregarGrupo(setTrabajos, setAbiertoTrabajo)}
+          ctaExtra={{ label: "Nueva sección", onClick: () => agregarSeccion(setSeccionesTrabajo) }}
         >
           {trabajosSinMotivo.length > 0 ? (
             <div className="mb-3 px-3.5 py-3 bg-[var(--color-accent-200)] border-l-4 border-[var(--color-accent)] text-[13px] text-[var(--color-accent-800)] max-w-[720px]">
@@ -861,40 +1167,62 @@ export default function ChecklistEditor({
               {listaCorta(trabajosSinMotivo.map((t) => t.nombre), 5)}. Despliégalo y marca sus motivos, o quítalo.
             </div>
           ) : null}
-          {trabajosVisibles.map(({ t, i }) => {
-            const en = motivosDeTrabajo.get(t.key) ?? [];
-            return (
-              <div key={t.key} className="mb-2.5">
-                <Desplegable
-                  agarre={null}
-                  n={i + 1}
-                  grupo={t}
-                  phNombre="Ej: Calibración de antenas"
-                  abierto={abiertoTrabajo === t.key}
-                  onToggle={() => setAbiertoTrabajo(abiertoTrabajo === t.key ? null : t.key)}
-                  resumen={
-                    (t.items.length
-                      ? `${t.items.length} ${t.items.length === 1 ? "subtrabajo" : "subtrabajos"}`
-                      : "Sin subtrabajo") +
-                    (en.length ? ` · en ${en.length} ${en.length === 1 ? "motivo" : "motivos"}` : " · sin motivo")
-                  }
-                  alerta={en.length === 0}
-                  enMotivos={{ lista: motivos, onAlternar: (motivoKey) => alternarEnMotivo(motivoKey, t.key) }}
-                  etiquetaSingular="subtrabajo"
-                  etiquetaPlural="subtrabajos"
-                  tituloSub="Título del subtrabajo"
-                  phSub="Ej: Repuesto cambiado"
-                  phNueva="Ej: Tarjeta electrónica"
-                  vacioSub="Sin subtrabajos: en el celular este trabajo se agrega directo, con un toque."
-                  onCambiar={(fn) => editar(setTrabajos, (prev) => prev.map((x) => (x.key === t.key ? fn(x) : x)))}
-                  onClonar={() => clonarTrabajo(t)}
-                  onQuitar={() => quitarTrabajo(t)}
-                  onConfirmarQuitarItem={setConfirmar}
-                  onAviso={aviso}
-                />
-              </div>
-            );
-          })}
+          {seccionesTrabajo.length === 0 ? (
+            trabajosVisibles.map(({ t, i }) => filaTrabajoL3(t, i))
+          ) : (
+            <div className="flex flex-col gap-3">
+              {seccionesTrabajo.map((sec, si) => {
+                const miembros = trabajos.filter((t) => t.seccion === sec.key);
+                const visibles = trabajosVisibles.filter(({ t }) => t.seccion === sec.key);
+                if (filtro && visibles.length === 0) return null;
+                return (
+                  <CajaSeccion
+                    key={sec.key}
+                    nombre={sec.nombre}
+                    phNombre="Ej: Trabajos de antenas"
+                    cuenta={`${miembros.length} ${miembros.length === 1 ? "trabajo" : "trabajos"}`}
+                    abierta={!plegadas.has(sec.key) || !!filtro}
+                    onToggle={() => alternarSeccion(sec.key)}
+                    onRenombrar={(nombre) =>
+                      editar(setSeccionesTrabajo, (prev) => prev.map((x) => (x.key === sec.key ? { ...x, nombre } : x)))
+                    }
+                    onSubir={si > 0 && !filtro ? () => editar(setSeccionesTrabajo, (prev) => mover(prev, si, -1)) : undefined}
+                    onBajar={
+                      si < seccionesTrabajo.length - 1 && !filtro
+                        ? () => editar(setSeccionesTrabajo, (prev) => mover(prev, si, 1))
+                        : undefined
+                    }
+                    onQuitar={() => quitarSeccion(sec, "trabajos")}
+                    cta="Nuevo trabajo aquí"
+                    onNuevo={() => agregarGrupo(setTrabajos, setAbiertoTrabajo, sec.key)}
+                  >
+                    {visibles.map(({ t, i }) => filaTrabajoL3(t, i))}
+                    {miembros.length === 0 ? (
+                      <Vacio>Sección vacía: agrégale un trabajo, o cámbialo de sección desde su fila.</Vacio>
+                    ) : null}
+                  </CajaSeccion>
+                );
+              })}
+              {(() => {
+                const sueltos = trabajos.filter((t) => !t.seccion);
+                const visibles = trabajosVisibles.filter(({ t }) => !t.seccion);
+                if (sueltos.length === 0 || (filtro && visibles.length === 0)) return null;
+                return (
+                  <CajaSeccion
+                    fija
+                    nombre="Sin sección"
+                    cuenta={`${sueltos.length} ${sueltos.length === 1 ? "trabajo" : "trabajos"}`}
+                    abierta={!plegadas.has("sin-trabajo") || !!filtro}
+                    onToggle={() => alternarSeccion("sin-trabajo")}
+                    cta="Nuevo trabajo aquí"
+                    onNuevo={() => agregarGrupo(setTrabajos, setAbiertoTrabajo)}
+                  >
+                    {visibles.map(({ t, i }) => filaTrabajoL3(t, i))}
+                  </CajaSeccion>
+                );
+              })()}
+            </div>
+          )}
           {trabajos.length === 0 ? (
             <Vacio grande>
               No hay trabajos. Créalos desde un motivo de la Lista 1: el técnico no podrá registrar qué hizo hasta que
@@ -1111,12 +1439,133 @@ export default function ChecklistEditor({
   );
 }
 
+/**
+ * Una sección de la Lista 1 o de la Lista 3: una caja que se pliega, con su
+ * nombre editable, su lugar entre las demás y un atajo para crear dentro de ella.
+ * «Sin sección» (`fija`) es la misma caja sin nombre editable ni quitar.
+ */
+function CajaSeccion({
+  nombre,
+  phNombre,
+  fija,
+  cuenta,
+  abierta,
+  onToggle,
+  onRenombrar,
+  onSubir,
+  onBajar,
+  onQuitar,
+  cta,
+  onNuevo,
+  children,
+}: {
+  nombre: string;
+  phNombre?: string;
+  fija?: boolean;
+  cuenta: string;
+  abierta: boolean;
+  onToggle: () => void;
+  onRenombrar?: (nombre: string) => void;
+  onSubir?: () => void;
+  onBajar?: () => void;
+  onQuitar?: () => void;
+  cta: string;
+  onNuevo: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="border-2 border-black/[.45] bg-[var(--color-bg)]">
+      <div
+        className="flex items-center gap-2.5 flex-wrap px-3 py-2.5"
+        style={{ background: abierta ? "#d9d7d6" : "var(--color-surface)" }}
+      >
+        <button
+          type="button"
+          onClick={onToggle}
+          aria-expanded={abierta}
+          aria-label={abierta ? "Plegar la sección" : "Desplegar la sección"}
+          className="btn btn-icon w-8.5 h-8.5 flex-none border border-black/[.3]"
+        >
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.4"
+            className="transition-transform duration-150"
+            style={{ transform: `rotate(${abierta ? 180 : 0}deg)` }}
+          >
+            <path d="M6 9l6 6 6-6" />
+          </svg>
+        </button>
+        {fija || !onRenombrar ? (
+          <div className="flex-1 min-w-[160px] font-extrabold text-[15px] opacity-80">{nombre}</div>
+        ) : (
+          <input
+            value={nombre}
+            onChange={(e) => onRenombrar(e.target.value)}
+            placeholder={phNombre}
+            className="input flex-1 min-w-[160px] min-h-10 font-extrabold text-[15px] bg-[var(--color-bg)]"
+            aria-label="Nombre de la sección"
+            autoComplete="off"
+          />
+        )}
+        <span className="text-[11px] leading-[1.2] tracking-[.06em] uppercase opacity-62">{cuenta}</span>
+        {fija ? null : (
+          <>
+            <button
+              type="button"
+              onClick={onSubir}
+              disabled={!onSubir}
+              className="btn btn-icon w-8.5 h-8.5 flex-none border border-black/[.3] disabled:opacity-30"
+              aria-label="Subir la sección"
+              title="Subir la sección"
+            >
+              ↑
+            </button>
+            <button
+              type="button"
+              onClick={onBajar}
+              disabled={!onBajar}
+              className="btn btn-icon w-8.5 h-8.5 flex-none border border-black/[.3] disabled:opacity-30"
+              aria-label="Bajar la sección"
+              title="Bajar la sección"
+            >
+              ↓
+            </button>
+          </>
+        )}
+        <button type="button" onClick={onNuevo} className="btn btn-secondary min-h-[34px] px-2.5 text-[12px]">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6">
+            <path d="M12 5v14M5 12h14" />
+          </svg>
+          <span>{cta}</span>
+        </button>
+        {fija || !onQuitar ? null : (
+          <button
+            type="button"
+            onClick={onQuitar}
+            className="btn btn-icon w-8.5 h-8.5 flex-none border border-black/[.3]"
+            aria-label="Quitar la sección"
+            title="Quitar la sección (sus entradas pasan a «Sin sección»)"
+          >
+            <IconoBasura />
+          </button>
+        )}
+      </div>
+      {abierta ? <div className="p-3 flex flex-col gap-2.5 border-t border-black/[.25]">{children}</div> : null}
+    </div>
+  );
+}
+
 function Bloque({
   numero,
   titulo,
   bajada,
   cta,
   onAgregar,
+  ctaExtra,
   children,
 }: {
   numero: string;
@@ -1124,6 +1573,8 @@ function Bloque({
   bajada: string;
   cta: string;
   onAgregar: () => void;
+  /** Un segundo botón junto al principal (en las listas con secciones: «Nueva sección»). */
+  ctaExtra?: { label: string; onClick: () => void };
   children: React.ReactNode;
 }) {
   return (
@@ -1134,12 +1585,22 @@ function Bloque({
           <h2 className="font-extrabold text-[21px] leading-[1.15] tracking-[-.02em] mt-1.5 mb-1">{titulo}</h2>
           <p className="m-0 text-[13px] opacity-68 max-w-[64ch]">{bajada}</p>
         </div>
-        <button className="btn btn-secondary ml-auto min-h-10 px-3.5 text-[13px]" onClick={onAgregar}>
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6">
-            <path d="M12 5v14M5 12h14" />
-          </svg>
-          <span>{cta}</span>
-        </button>
+        <div className="ml-auto flex items-center gap-2 flex-wrap">
+          {ctaExtra ? (
+            <button className="btn btn-secondary min-h-10 px-3.5 text-[13px]" onClick={ctaExtra.onClick}>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6">
+                <path d="M12 5v14M5 12h14" />
+              </svg>
+              <span>{ctaExtra.label}</span>
+            </button>
+          ) : null}
+          <button className="btn btn-secondary min-h-10 px-3.5 text-[13px]" onClick={onAgregar}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6">
+              <path d="M12 5v14M5 12h14" />
+            </svg>
+            <span>{cta}</span>
+          </button>
+        </div>
       </div>
       {children}
     </div>
@@ -1167,6 +1628,7 @@ function Desplegable({
   onConfirmarQuitarItem,
   onAviso,
   enMotivos,
+  seccion,
   alerta,
   quitarLabel = "Quitar de la lista",
   nota,
@@ -1192,6 +1654,8 @@ function Desplegable({
   onAviso: (texto: string) => void;
   /** Solo en «Todos los trabajos»: los motivos entre los que se elige dónde se ofrece. */
   enMotivos?: { lista: MotivoConTrabajos[]; onAlternar: (motivoKey: string) => void };
+  /** Solo en «Todos los trabajos»: en qué sección está el trabajo y las que hay para elegir. */
+  seccion?: { valor: string | null; opciones: Seccion[]; onCambiar: (key: string | null) => void };
   /** Resalta el resumen: algo falta (un trabajo sin motivo). */
   alerta?: boolean;
   quitarLabel?: string;
@@ -1278,6 +1742,26 @@ function Desplegable({
       {abierto ? (
         <div className="px-3.5 pt-3.5 pb-4 border-t border-black/[.25]">
           {nota ? <p className="m-0 mb-3.5 text-xs opacity-72 max-w-[72ch]">{nota}</p> : null}
+          {seccion && seccion.opciones.some((o) => o.nombre.trim()) ? (
+            <div className="mb-4.5">
+              <label className="block text-[10px] tracking-[.11em] uppercase opacity-62 mb-1.5">Sección</label>
+              <select
+                value={seccion.valor ?? ""}
+                onChange={(e) => seccion.onCambiar(e.target.value || null)}
+                className="input min-h-10 max-w-[320px] bg-[var(--color-bg)]"
+                aria-label="Sección del trabajo"
+              >
+                <option value="">Sin sección</option>
+                {seccion.opciones
+                  .filter((o) => o.nombre.trim())
+                  .map((o) => (
+                    <option key={o.key} value={o.key}>
+                      {o.nombre}
+                    </option>
+                  ))}
+              </select>
+            </div>
+          ) : null}
           {enMotivos ? (
             <div className="mb-4.5">
               <div className="block text-[10px] tracking-[.11em] uppercase opacity-62 mb-1.5">
@@ -1433,6 +1917,8 @@ function MotivoDesplegable({
   n,
   motivo,
   motivos,
+  secciones,
+  onCambiarSeccion,
   trabajos,
   motivosDeTrabajo,
   abierto,
@@ -1455,6 +1941,9 @@ function MotivoDesplegable({
   n: number;
   motivo: MotivoConTrabajos;
   motivos: MotivoConTrabajos[];
+  /** Las secciones de la Lista 1, para moverlo de una a otra. */
+  secciones: Seccion[];
+  onCambiarSeccion: (key: string | null) => void;
   trabajos: Grupo[];
   motivosDeTrabajo: Map<string, MotivoConTrabajos[]>;
   abierto: boolean;
@@ -1500,6 +1989,24 @@ function MotivoDesplegable({
           autoComplete="off"
         />
         <Codigo codigo={motivo.codigo} />
+        {secciones.some((x) => x.nombre.trim()) ? (
+          <select
+            value={motivo.seccion ?? ""}
+            onChange={(e) => onCambiarSeccion(e.target.value || null)}
+            className="input min-h-[34px] max-w-[160px] flex-none text-[12px] bg-[var(--color-bg)]"
+            aria-label="Sección del motivo"
+            title="Cambiar el motivo de sección"
+          >
+            <option value="">Sin sección</option>
+            {secciones
+              .filter((x) => x.nombre.trim())
+              .map((x) => (
+                <option key={x.key} value={x.key}>
+                  {x.nombre}
+                </option>
+              ))}
+          </select>
+        ) : null}
         <span
           className={`text-[11px] leading-[1.2] tracking-[.06em] uppercase ${sinTrabajos ? "font-extrabold text-[var(--color-accent-800)]" : "opacity-62"}`}
           title={sinTrabajos ? "Una visita con solo este motivo no se puede cerrar: el técnico no tiene qué registrar." : undefined}

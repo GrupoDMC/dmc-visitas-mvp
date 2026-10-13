@@ -28,7 +28,7 @@ export function opciones(ref: Referencias) {
     clientes: ref.clientes.filter((c) => c.activo).map((c) => ({ v: String(c.id), t: c.nombreFantasia })),
     malls: ref.malls.filter((m) => m.activo).map((m) => ({ v: String(m.id), t: m.nombre })),
     tecnicos: ref.tecnicos.filter((t) => t.activo).map((t) => ({ v: String(t.id), t: t.nombreCompleto })),
-    motivos: ref.motivos.map((m) => ({ v: m.codigo, t: m.nombre })),
+    motivos: ref.motivos.map((m) => ({ v: m.codigo, t: m.nombre, seccion: m.seccion, seccionOrden: m.seccionOrden })),
     sucursalesDe: (clienteId: string) => {
       const lista = ref.sucursales.filter((s) => s.activo && String(s.clienteId) === clienteId);
       return lista.length

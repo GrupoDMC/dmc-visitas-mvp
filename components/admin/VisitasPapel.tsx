@@ -10,6 +10,8 @@ import { Toast, useToast } from "@/components/ui/Toast";
 import { crearVisitasPapelAction, firmantesDeSucursalesAction, type FirmanteSugerido } from "@/app/actions/visitas-papel";
 import { trabajoVaConMotivo, useReferencias } from "@/lib/ui/referencias";
 import { trabajosDelMotivo } from "@/lib/ui/motivos";
+import { agruparPorSeccion, hayAlgunaSeccion } from "@/lib/ui/secciones";
+import SeccionPlegable from "@/components/ui/SeccionPlegable";
 import { fmtRut, mensajeRut } from "@/lib/ui/formato";
 import { hoyISO } from "@/lib/ui/fecha";
 import { PRIMER_ANIO_PAPEL } from "@/lib/ui/papel";
@@ -208,7 +210,13 @@ export default function VisitasPapel() {
         .map((t) => ({ v: String(t.id), t: t.activo ? t.nombreCompleto : `${t.nombreCompleto} (inactivo)` })),
     [ref.tecnicos]
   );
-  const opcMotivos = useMemo(() => ref.motivos.map((m) => ({ v: m.codigo, t: m.nombre })), [ref.motivos]);
+  const opcMotivos = useMemo(
+    () =>
+      agruparPorSeccion(ref.motivos)
+        .flatMap((g) => g.items)
+        .map((m) => ({ v: m.codigo, t: m.seccion ? `${m.seccion} · ${m.nombre}` : m.nombre })),
+    [ref.motivos]
+  );
   const catalogoTrabajos = useMemo(() => ref.trabajos.filter((t) => t.activo), [ref.trabajos]);
   const nombreCliente = (id: string) => ref.clientes.find((c) => String(c.id) === id)?.nombreFantasia ?? "";
   const nombreTecnico = (id: string) => ref.tecnicos.find((t) => String(t.id) === id)?.nombreCompleto ?? "";
@@ -1152,16 +1160,7 @@ function TrabajosDelInforme({
   const cambiarSubs = (codigo: string, subs: TrabajoPapel["subs"]) =>
     onCambiar(trabajos.map((t) => (t.codigo === codigo ? { ...t, subs } : t)));
 
-  return (
-    <div className="mt-3 sm:pl-9">
-      <div className="flex items-baseline gap-2 mb-1.5">
-        <span className="text-[11px] tracking-[.09em] uppercase opacity-62">Trabajos realizados (opcional)</span>
-        {trabajos.length ? (
-          <span className="text-[11px] font-extrabold tabular-nums">{trabajos.length} marcados</span>
-        ) : null}
-      </div>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-        {delMotivo.map((t) => {
+  const tarjeta = (t: (typeof delMotivo)[number]) => {
           const sel = marcado(t.codigo);
           const subsActivos = t.subtrabajos.filter((x) => x.activo);
           return (
@@ -1255,8 +1254,36 @@ function TrabajosDelInforme({
               ) : null}
             </div>
           );
-        })}
+  };
+
+  return (
+    <div className="mt-3 sm:pl-9">
+      <div className="flex items-baseline gap-2 mb-1.5">
+        <span className="text-[11px] tracking-[.09em] uppercase opacity-62">Trabajos realizados (opcional)</span>
+        {trabajos.length ? (
+          <span className="text-[11px] font-extrabold tabular-nums">{trabajos.length} marcados</span>
+        ) : null}
       </div>
+      {hayAlgunaSeccion(delMotivo) ? (
+        <div className="flex flex-col gap-1.5">
+          {agruparPorSeccion(delMotivo).map((g) => {
+            const marcadosAca = g.items.filter((t) => marcado(t.codigo)).length;
+            return (
+              <SeccionPlegable
+                key={g.nombre ?? "__sin"}
+                titulo={g.nombre ?? "Sin sección"}
+                total={g.items.length}
+                marcados={marcadosAca}
+                abiertaInicial={marcadosAca > 0}
+              >
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">{g.items.map(tarjeta)}</div>
+              </SeccionPlegable>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">{delMotivo.map(tarjeta)}</div>
+      )}
     </div>
   );
 }

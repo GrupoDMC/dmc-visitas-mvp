@@ -189,17 +189,33 @@ GO
       Lista 2 · Tipos de problema  (+ sus opciones de detalle)
       Lista 3 · Trabajos realizados (+ sus subtrabajos)
    ===================================================================== */
+-- Una capa por encima de las listas: agrupa motivos o agrupa trabajos para
+-- ordenarlos y plegarlos. Null en seccion_id = «sin sección».
+CREATE TABLE dmc.catalogo_seccion (
+    id      bigint        IDENTITY(1,1) NOT NULL,
+    tipo    varchar(10)   NOT NULL,     -- MOTIVO | TRABAJO
+    nombre  nvarchar(80)  NOT NULL,     -- "Visitas", "Instalaciones"…
+    orden   smallint      NOT NULL CONSTRAINT df_cat_seccion_orden DEFAULT (0),
+    activo  bit           NOT NULL CONSTRAINT df_cat_seccion_activo DEFAULT (1),
+    CONSTRAINT pk_catalogo_seccion PRIMARY KEY (id),
+    CONSTRAINT ck_catalogo_seccion_tipo CHECK (tipo IN ('MOTIVO', 'TRABAJO')),
+    CONSTRAINT uq_catalogo_seccion_nombre UNIQUE (tipo, nombre)
+);
+GO
+
 CREATE TABLE dmc.catalogo_motivo (
     id              bigint        IDENTITY(1,1) NOT NULL,
     codigo          varchar(40)   NOT NULL,     -- CALIBRACION, INSTALACION…
     nombre          nvarchar(80)  NOT NULL,     -- "Calibración de las antenas"
+    seccion_id      bigint        NULL,         -- la sección donde se agrupa
     orden           smallint      NOT NULL CONSTRAINT df_cat_motivo_orden DEFAULT (0),
     activo          bit           NOT NULL CONSTRAINT df_cat_motivo_activo DEFAULT (1),
     creado_en       datetime2(0)  NOT NULL CONSTRAINT df_cat_motivo_creado DEFAULT (SYSDATETIME()),
     actualizado_en  datetime2(0)  NOT NULL CONSTRAINT df_cat_motivo_actualizado DEFAULT (SYSDATETIME()),
     CONSTRAINT pk_catalogo_motivo        PRIMARY KEY (id),
     CONSTRAINT uq_catalogo_motivo_codigo UNIQUE (codigo),
-    CONSTRAINT uq_catalogo_motivo_nombre UNIQUE (nombre)
+    CONSTRAINT uq_catalogo_motivo_nombre UNIQUE (nombre),
+    CONSTRAINT fk_cat_motivo_seccion FOREIGN KEY (seccion_id) REFERENCES dmc.catalogo_seccion (id)
 );
 GO
 
@@ -241,13 +257,15 @@ CREATE TABLE dmc.catalogo_trabajo (
     nombre          nvarchar(80)  NOT NULL,     -- "Calibración de antenas"
     grupo_label     nvarchar(60)  NULL,         -- "Antena calibrada" (título del paso 2)
     singular        nvarchar(30)  NULL,         -- "antena", "repuesto", "tarea"…
+    seccion_id      bigint        NULL,         -- la sección donde se agrupa
     orden           smallint      NOT NULL CONSTRAINT df_cat_trab_orden DEFAULT (0),
     activo          bit           NOT NULL CONSTRAINT df_cat_trab_activo DEFAULT (1),
     creado_en       datetime2(0)  NOT NULL CONSTRAINT df_cat_trab_creado DEFAULT (SYSDATETIME()),
     actualizado_en  datetime2(0)  NOT NULL CONSTRAINT df_cat_trab_actualizado DEFAULT (SYSDATETIME()),
     CONSTRAINT pk_catalogo_trabajo        PRIMARY KEY (id),
     CONSTRAINT uq_catalogo_trabajo_codigo UNIQUE (codigo),
-    CONSTRAINT uq_catalogo_trabajo_nombre UNIQUE (nombre)
+    CONSTRAINT uq_catalogo_trabajo_nombre UNIQUE (nombre),
+    CONSTRAINT fk_cat_trabajo_seccion FOREIGN KEY (seccion_id) REFERENCES dmc.catalogo_seccion (id)
 );
 GO
 

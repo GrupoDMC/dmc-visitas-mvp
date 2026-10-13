@@ -22,6 +22,7 @@ import {
   FaltaMigracionEstadosProblema,
   FaltaMigracionGestionProblemas,
   FaltaMigracionPendientes,
+  FaltaMigracionSecciones,
   getPlantilla,
   guardarChecklist,
   guardarPlantilla,
@@ -608,6 +609,9 @@ function errorChecklist(err: unknown, contexto: string): ResultadoChecklist {
   if (err instanceof FaltaMigracionGestionProblemas) {
     return { ok: false, error: "Para guardar la lista «Gestión de problemas» falta correr la migración 015 en la base." };
   }
+  if (err instanceof FaltaMigracionSecciones) {
+    return { ok: false, error: "Para guardar secciones falta correr la migración 020 en la base." };
+  }
   const texto = err instanceof Error ? err.message : String(err);
   if (/uq_\w*nombre/i.test(texto)) return { ok: false, error: "Hay dos entradas con el mismo nombre en la misma lista." };
   if (/uq_\w*opcion|uq_\w*subtrabajo/i.test(texto)) {
@@ -642,6 +646,9 @@ export async function guardarChecklistAction(borrador: BorradorChecklist): Promi
     repetidos((borrador.gestionProblemas ?? []).map((x) => x.nombre)) ??
     repetidos((borrador.estadosProblema ?? []).map((x) => x.nombre));
   if (choque) return { ok: false, error: `«${choque}» está dos veces en la misma lista.` };
+
+  const seccionRepetida = repetidos(borrador.seccionesMotivo ?? []) ?? repetidos(borrador.seccionesTrabajo ?? []);
+  if (seccionRepetida) return { ok: false, error: `Hay dos secciones llamadas «${seccionRepetida}» en la misma lista.` };
 
   for (const pr of borrador.problemas) {
     const dup = repetidos(pr.opciones.map((o) => o.etiqueta));

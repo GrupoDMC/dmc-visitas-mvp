@@ -23,6 +23,8 @@ import {
 } from "@/app/actions/videos";
 import { descartarBorradorAction, guardarBorradorAction } from "@/app/actions/borradores";
 import { trabajosDelMotivo } from "@/lib/ui/motivos";
+import { agruparPorSeccion, hayAlgunaSeccion } from "@/lib/ui/secciones";
+import SeccionPlegable from "@/components/ui/SeccionPlegable";
 import {
   actasEnCola,
   borradorConDatos,
@@ -1061,6 +1063,31 @@ export default function FormularioVisita({
   // En la hoja de trabajo solo van los que el checklist asignó a este motivo.
   const ofrecidos = trabajosDelMotivo(catalogoTrabajo, nt.motivo);
   const yaAgregado = (codigo: string) => trabajos.some((t) => t.codigo === codigo && motivoDe(t) === nt.motivo);
+  const filaTrabajo = (t: (typeof ofrecidos)[number]) => {
+    const activo = nt.codigo === t.codigo;
+    const agregado = yaAgregado(t.codigo);
+    return (
+      <button
+        key={t.codigo}
+        disabled={agregado}
+        onClick={() => setNt((p) => ({ ...p, codigo: t.codigo, subs: [] }))}
+        className="w-full min-h-[54px] flex items-center gap-3 px-3.5 font-extrabold text-[15px] leading-[1.2] cursor-pointer text-left hover:brightness-95 disabled:cursor-default disabled:opacity-55"
+        style={{
+          background: activo ? "var(--color-text)" : "var(--color-surface-3)",
+          color: activo ? "var(--color-bg)" : "var(--color-text)",
+          border: `1px solid ${activo ? "var(--color-text)" : "rgba(32,30,29,.35)"}`,
+        }}
+      >
+        <span className="w-[18px] h-[18px] flex-none border-2 border-current grid place-items-center">
+          {activo || agregado ? <span className="w-2 h-2 bg-current" /> : null}
+        </span>
+        <span className="flex-1 min-w-0">{t.nombre}</span>
+        {agregado ? (
+          <span className="text-[10px] tracking-[.08em] uppercase font-normal flex-none">Agregado</span>
+        ) : null}
+      </button>
+    );
+  };
   const probSel = catalogoProblema.find((p) => p.codigo === np.codigo) ?? null;
   const probTieneOpciones = !!probSel && probSel.opciones.length > 0;
   const probListo = !!np.codigo && (probTieneOpciones ? np.items.length > 0 : !!np.desc.trim());
@@ -1768,31 +1795,23 @@ export default function FormularioVisita({
             <div>
               <PasoTitulo n="1" texto={ofrecidos.some((t) => yaAgregado(t.codigo)) ? "¿Qué más hiciste?" : "¿Qué trabajo hiciste?"} />
               <div className="flex flex-col gap-1.5">
-                {ofrecidos.map((t) => {
-                  const activo = nt.codigo === t.codigo;
-                  const agregado = yaAgregado(t.codigo);
-                  return (
-                    <button
-                      key={t.codigo}
-                      disabled={agregado}
-                      onClick={() => setNt((p) => ({ ...p, codigo: t.codigo, subs: [] }))}
-                      className="w-full min-h-[54px] flex items-center gap-3 px-3.5 font-extrabold text-[15px] leading-[1.2] cursor-pointer text-left hover:brightness-95 disabled:cursor-default disabled:opacity-55"
-                      style={{
-                        background: activo ? "var(--color-text)" : "var(--color-surface-3)",
-                        color: activo ? "var(--color-bg)" : "var(--color-text)",
-                        border: `1px solid ${activo ? "var(--color-text)" : "rgba(32,30,29,.35)"}`,
-                      }}
-                    >
-                      <span className="w-[18px] h-[18px] flex-none border-2 border-current grid place-items-center">
-                        {activo || agregado ? <span className="w-2 h-2 bg-current" /> : null}
-                      </span>
-                      <span className="flex-1 min-w-0">{t.nombre}</span>
-                      {agregado ? (
-                        <span className="text-[10px] tracking-[.08em] uppercase font-normal flex-none">Agregado</span>
-                      ) : null}
-                    </button>
-                  );
-                })}
+                {hayAlgunaSeccion(ofrecidos)
+                  ? agruparPorSeccion(ofrecidos).map((g) => {
+                      const marcadosAca = g.items.filter((t) => nt.codigo === t.codigo || yaAgregado(t.codigo)).length;
+                      return (
+                        <SeccionPlegable
+                          key={g.nombre ?? "__sin"}
+                          titulo={g.nombre ?? "Sin sección"}
+                          total={g.items.length}
+                          marcados={marcadosAca}
+                          abiertaInicial={marcadosAca > 0}
+                          tono="movil"
+                        >
+                          <div className="flex flex-col gap-1.5">{g.items.map(filaTrabajo)}</div>
+                        </SeccionPlegable>
+                      );
+                    })
+                  : ofrecidos.map(filaTrabajo)}
                 {ofrecidos.length === 0 ? (
                   <div className="px-3.5 py-3 border border-dashed border-black/[.4] text-[13px] opacity-70">
                     El checklist no tiene trabajos para este motivo. Avisa a coordinación.

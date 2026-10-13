@@ -13,6 +13,8 @@ import { fechaHoraCorta, formularioDesdeActa } from "@/lib/ui/edicion";
 import { fmtRut, fmtTel, mensajeRut } from "@/lib/ui/formato";
 import { comprimirFoto } from "@/lib/ui/imagen";
 import { trabajosDelMotivo } from "@/lib/ui/motivos";
+import { agruparPorSeccion, hayAlgunaSeccion } from "@/lib/ui/secciones";
+import SeccionPlegable from "@/components/ui/SeccionPlegable";
 import { ajustarVideo, reloj, trozoBase64, VIDEO_TROZO_BYTES } from "@/lib/ui/video";
 import { abrirVideoAction, cerrarVideoAction, subirTrozoVideoAction } from "@/app/actions/videos";
 import type { FotoForm, ProblemaForm, SubSeleccion, TrabajoForm } from "@/lib/ui/borrador";
@@ -502,7 +504,9 @@ export default function EditarActa({
                           <SelectBuscable
                             id={`ea-agregar-${codigo}`}
                             valor=""
-                            opciones={porAgregar.map((c) => ({ v: c.codigo, t: c.nombre }))}
+                            opciones={agruparPorSeccion(porAgregar)
+                              .flatMap((g) => g.items)
+                              .map((c) => ({ v: c.codigo, t: c.seccion ? `${c.seccion} · ${c.nombre}` : c.nombre }))}
                             onChange={(elegido) => {
                               if (!elegido) return;
                               const id = nuevoId();
@@ -523,23 +527,33 @@ export default function EditarActa({
                   <div className="text-[11px] tracking-[.09em] uppercase opacity-62 mb-2">
                     ¿La visita fue también por otro motivo?
                   </div>
-                  <div className="flex flex-wrap gap-2">
-                    {motivos
-                      .filter((m) => !motivosCodigos.includes(m.codigo))
-                      .map((m) => (
-                        <button
-                          key={m.codigo}
-                          type="button"
-                          onClick={() => setMotivosCodigos((prev) => [...prev, m.codigo])}
-                          className="inline-flex items-center gap-1.5 min-h-9 px-3 bg-transparent border border-dashed border-[var(--color-divider)] text-[13px] text-[var(--color-text)] cursor-pointer hover:bg-black/[.06] hover:border-solid"
-                        >
-                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6">
-                            <path d="M12 5v14M5 12h14" />
-                          </svg>
-                          {m.nombre}
-                        </button>
-                      ))}
-                  </div>
+                  {(() => {
+                    const faltan = motivos.filter((m) => !motivosCodigos.includes(m.codigo));
+                    const chip = (m: (typeof faltan)[number]) => (
+          <button
+            key={m.codigo}
+            type="button"
+            onClick={() => setMotivosCodigos((prev) => [...prev, m.codigo])}
+            className="inline-flex items-center gap-1.5 min-h-9 px-3 bg-transparent border border-dashed border-[var(--color-divider)] text-[13px] text-[var(--color-text)] cursor-pointer hover:bg-black/[.06] hover:border-solid"
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6">
+              <path d="M12 5v14M5 12h14" />
+            </svg>
+            {m.nombre}
+          </button>
+                    );
+                    return hayAlgunaSeccion(faltan) ? (
+                      <div className="flex flex-col gap-1.5 max-w-[560px]">
+                        {agruparPorSeccion(faltan).map((g) => (
+                          <SeccionPlegable key={g.nombre ?? "__sin"} titulo={g.nombre ?? "Sin sección"} total={g.items.length}>
+                            <div className="flex flex-wrap gap-2">{g.items.map(chip)}</div>
+                          </SeccionPlegable>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="flex flex-wrap gap-2">{faltan.map(chip)}</div>
+                    );
+                  })()}
                 </div>
               ) : null}
 
