@@ -1,5 +1,5 @@
 import "server-only";
-import { consulta, consultaCon, enTransaccion, num, numONull, sql } from "@/lib/data/sql";
+import { consulta, consultaCon, ejecutorSuelto, enTransaccion, num, numONull, sql, type Ejecutor } from "@/lib/data/sql";
 import {
   normalizarPermisos,
   normalizarPermisosCelular,
@@ -7,7 +7,7 @@ import {
   TODOS_LOS_PERMISOS,
   TODOS_LOS_PERMISOS_CELULAR,
 } from "@/lib/permisos";
-import type { Rol, Usuario } from "@/lib/types";
+import type { Rol, RolUsuario, Usuario } from "@/lib/types";
 
 // Roles del panel y sus permisos: dmc.rol, dmc.rol_permiso y dmc.usuario.rol_id
 // (migración 008).
@@ -93,6 +93,8 @@ export async function guardarPermisosCelular(permisos: string[]): Promise<void> 
       `SELECT id FROM dmc.rol WITH (UPDLOCK) WHERE nombre = @nombre`,
       [["nombre", sql.NVarChar(60), ROL_TECNICO]]
     );
+    // Mientras la fila no exista, los técnicos lo pueden todo (ver permisosCelular).
+    const creado = !fila;
     if (!fila) {
       [fila] = await ej.consulta<{ id: number }>(
         `INSERT INTO dmc.rol (nombre, descripcion, es_sistema) VALUES (@nombre, @descripcion, 1);
@@ -104,6 +106,17 @@ export async function guardarPermisosCelular(permisos: string[]): Promise<void> 
       );
     }
     const rolId = num(fila.id);
+    const previos = creado
+      ? TODOS_LOS_PERMISOS_CELULAR
+      : (
+          await ej.consulta<{ permiso: string }>(`SELECT permiso FROM dmc.rol_permiso WHERE rol_id = @id`, [
+            ["id", sql.BigInt, rolId],
+          ])
+        ).map((p) => p.permiso);
+    // Quitarles algo a los técnicos cierra sus sesiones abiertas.
+    if (previos.some((p) => !limpios.includes(p))) {
+      await ej.ejecutar(`UPDATE dmc.usuario SET sesion_version = sesion_version + 1 WHERE rol = 'TECNICO'`);
+    }
     await ej.ejecutar(`DELETE FROM dmc.rol_permiso WHERE rol_id = @id`, [["id", sql.BigInt, rolId]]);
     for (const permiso of limpios) {
       await ej.ejecutar(`INSERT INTO dmc.rol_permiso (rol_id, permiso) VALUES (@id, @permiso)`, [
@@ -188,6 +201,16 @@ export async function guardarRol(id: number | null, d: DatosRol): Promise<number
           ["id", sql.BigInt, rolId],
         ]
       );
+      const previos = await ej.consulta<{ permiso: string }>(
+        `SELECT permiso FROM dmc.rol_permiso WITH (UPDLOCK) WHERE rol_id = @id`,
+        [["id", sql.BigInt, rolId]]
+      );
+      // Quitarle algo al rol cierra las sesiones abiertas de quienes lo tienen.
+      if (previos.some((p) => !permisos.includes(p.permiso))) {
+        await ej.ejecutar(`UPDATE dmc.usuario SET sesion_version = sesion_version + 1 WHERE rol_id = @id`, [
+          ["id", sql.BigInt, rolId],
+        ]);
+      }
       await ej.ejecutar(`DELETE FROM dmc.rol_permiso WHERE rol_id = @id`, [["id", sql.BigInt, rolId]]);
     }
     for (const permiso of permisos) {
@@ -221,4 +244,97 @@ export async function eliminarRol(id: number): Promise<string | null> {
     await ej.ejecutar(`DELETE FROM dmc.rol WHERE id = @id`, [["id", sql.BigInt, id]]);
     return null;
   });
+}
+
+// ── Cuentas vistas desde quien las administra ───────────────────────────────
+
+/** Una cuenta con lo que puede hacer en el panel. Ver puedeAdministrarCuenta. */
+export interface Cuenta {
+  id: number;
+  email: string;
+  rol: RolUsuario;
+  rolId: number | null;
+  activo: boolean;
+  /** Permisos del panel: todos para ADMIN, ninguno para TECNICO. */
+  permisos: string[];
+}
+
+/** Lo que puede en el panel una cuenta de ese tipo y con ese rol. */
+export function permisosDelPanel(rol: RolUsuario, rolId: number | null, permisosRol: readonly string[]): string[] {
+  if (rol === "ADMIN") return TODOS_LOS_PERMISOS;
+  if (rol === "TECNICO") return [];
+  // Un coordinador sin rol asignado conserva lo que podía hacer siempre.
+  if (rolId === null) return PERMISOS_COORDINADOR;
+  return normalizarPermisos(permisosRol);
+}
+
+/**
+ * Varias cuentas por id. Con `bloquear`, dentro de una transacción, las filas
+ * de dmc.usuario quedan tomadas hasta el final: nadie les cambia el rol entre
+ * el control y la escritura.
+ */
+export async function leerCuentas(
+  ids: number[],
+  ej: Ejecutor = ejecutorSuelto,
+  bloquear = false
+): Promise<Map<number, Cuenta>> {
+  const cuentas = new Map<number, Cuenta>();
+  if (ids.length === 0) return cuentas;
+  const filas = await ej.consulta<{
+    id: number;
+    email: string;
+    rol: RolUsuario;
+    rol_id: number | null;
+    activo: boolean;
+    permiso: string | null;
+  }>(
+    `SELECT u.id, u.email, u.rol, u.rol_id, u.activo, rp.permiso
+       FROM dmc.usuario u ${bloquear ? "WITH (UPDLOCK, HOLDLOCK)" : ""}
+       LEFT JOIN dmc.rol_permiso rp ON rp.rol_id = u.rol_id
+      WHERE u.id IN (SELECT CAST(value AS bigint) FROM OPENJSON(@ids))`,
+    [["ids", sql.NVarChar(sql.MAX), JSON.stringify([...new Set(ids)])]]
+  );
+  const permisosRol = new Map<number, string[]>();
+  for (const f of filas) {
+    const id = num(f.id);
+    if (!permisosRol.has(id)) permisosRol.set(id, []);
+    if (f.permiso) permisosRol.get(id)!.push(f.permiso);
+  }
+  for (const f of filas) {
+    const id = num(f.id);
+    if (cuentas.has(id)) continue;
+    const rolId = numONull(f.rol_id);
+    cuentas.set(id, {
+      id,
+      email: f.email,
+      rol: f.rol,
+      rolId,
+      activo: Boolean(f.activo),
+      permisos: permisosDelPanel(f.rol, rolId, permisosRol.get(id) ?? []),
+    });
+  }
+  return cuentas;
+}
+
+export async function leerCuenta(id: number, ej: Ejecutor = ejecutorSuelto, bloquear = false): Promise<Cuenta | null> {
+  return (await leerCuentas([id], ej, bloquear)).get(id) ?? null;
+}
+
+/** Un rol del panel por id, con sus permisos; null si no existe. */
+export async function leerRol(
+  id: number,
+  ej: Ejecutor = ejecutorSuelto
+): Promise<{ id: number; nombre: string; permisos: string[] } | null> {
+  const filas = await ej.consulta<{ nombre: string; permiso: string | null }>(
+    `SELECT r.nombre, rp.permiso
+       FROM dmc.rol r
+       LEFT JOIN dmc.rol_permiso rp ON rp.rol_id = r.id
+      WHERE r.id = @id AND r.nombre <> @tecnico`,
+    [
+      ["id", sql.BigInt, id],
+      ["tecnico", sql.NVarChar(60), ROL_TECNICO],
+    ]
+  );
+  if (filas.length === 0) return null;
+  return { id, nombre: filas[0].nombre, permisos: normalizarPermisos(filas.map((f) => f.permiso ?? "")) };
 }

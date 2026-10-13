@@ -1,7 +1,7 @@
 import "server-only";
-import { consulta, consultaCon, ejecutar, num, numONull, sql, F_FECHA, F_TS } from "@/lib/data/sql";
+import { consulta, consultaCon, ejecutar, enTransaccion, num, numONull, sql, F_FECHA, F_TS } from "@/lib/data/sql";
 import { hashearPassword } from "@/lib/password";
-import { faltaMigracionRoles, rolesDeUsuarios } from "@/lib/data/roles";
+import { leerCuenta, leerRol, permisosDelPanel, rolesDeUsuarios, type Cuenta } from "@/lib/data/roles";
 import { fmtRut, rutLimpio } from "@/lib/ui/formato";
 import type { Cliente, Mall, RolUsuario, Sucursal, Tecnico, Usuario } from "@/lib/types";
 
@@ -616,72 +616,102 @@ export interface DatosUsuario {
   password: string;
 }
 
-export async function guardarUsuario(id: number | null, d: DatosUsuario): Promise<number> {
-  // ck_usuario_rol_id: solo las cuentas del panel llevan rol. Si la cuenta deja
-  // de ser del panel, el rol se suelta antes de cambiarle el tipo.
-  const rolId = d.rol === "COORDINADOR" ? d.rolId ?? null : null;
-  if (id !== null && rolId === null) await ponerRol(id, null);
-  const usuarioId = await guardarUsuarioBase(id, d);
-  if (rolId !== null) await ponerRol(usuarioId, rolId);
-  return usuarioId;
-}
-
-async function ponerRol(usuarioId: number, rolId: number | null): Promise<void> {
-  try {
-    await ejecutar(`UPDATE dmc.usuario SET rol_id = @rol WHERE id = @id`, [
-      ["rol", sql.BigInt, rolId],
-      ["id", sql.BigInt, usuarioId],
-    ]);
-  } catch (err) {
-    // Sin la migración 008 no hay columna: el usuario se guarda igual.
-    if (!faltaMigracionRoles(err)) throw err;
+/** La cuenta no se puede guardar así: el mensaje es para quien guarda. */
+export class CuentaNoPermitida extends Error {
+  constructor(motivo: string) {
+    super(motivo);
+    this.name = "CuentaNoPermitida";
   }
 }
 
-async function guardarUsuarioBase(id: number | null, d: DatosUsuario): Promise<number> {
+export interface ControlUsuario {
+  /** Quien guarda. Si pone una clave en una cuenta ajena, el dueño tendrá que cambiarla al entrar. */
+  actorId: number;
+  /**
+   * El último control, ya con la fila de la cuenta tomada: recibe cómo está
+   * (null en un alta) y cómo quedaría. Devuelve el motivo si no se puede.
+   */
+  autorizar: (actual: Cuenta | null, nueva: { rol: RolUsuario; rolId: number | null; permisos: string[] }) => string | null;
+}
+
+/**
+ * Alta o edición de un usuario, con rol, datos y contraseña en una sola
+ * transacción. Devuelve el id y su versión de sesión, que sube —y cierra sus
+ * sesiones abiertas— si cambia la clave, el rol o se desactiva.
+ *
+ * `d.password` vacía al editar = deja la que tenía. No se recorta nunca.
+ */
+export async function guardarUsuario(
+  id: number | null,
+  d: DatosUsuario,
+  control: ControlUsuario
+): Promise<{ id: number; sesionVersion: number }> {
   const email = d.email.trim().toLowerCase();
   // ck_usuario_tecnico: TECNICO exige tecnico_id, el resto lo exige nulo.
   const tecnicoId = d.rol === "TECNICO" ? d.tecnicoId : null;
+  // ck_usuario_rol_id: solo las cuentas del panel llevan rol.
+  const rolId = d.rol === "COORDINADOR" ? d.rolId ?? null : null;
+  // bcrypt tarda: va antes de abrir la transacción, no con las filas tomadas.
+  const hash = id === null || d.password !== "" ? await hashearPassword(d.password) : null;
+  // La clave que pone otra persona es temporal: el dueño la cambia al entrar.
+  const debeCambiar = id === null || id !== control.actorId;
 
-  if (id === null) {
-    const [fila] = await consultaCon<{ id: number }>(
-      `INSERT INTO dmc.usuario (email, password_hash, rol, tecnico_id, activo)
-       OUTPUT INSERTED.id AS id
-       VALUES (@email, @hash, @rol, @tecnico, @activo)`,
+  return enTransaccion(async (ej) => {
+    const actual = id === null ? null : await leerCuenta(id, ej, true);
+    if (id !== null && !actual) throw new CuentaNoPermitida("Esa cuenta ya no existe. Recarga la página.");
+
+    const rol = rolId === null ? null : await leerRol(rolId, ej);
+    if (rolId !== null && !rol) throw new CuentaNoPermitida("Ese rol ya no existe. Recarga la página y elige otro.");
+    const motivo = control.autorizar(actual, {
+      rol: d.rol,
+      rolId,
+      permisos: permisosDelPanel(d.rol, rolId, rol?.permisos ?? []),
+    });
+    if (motivo) throw new CuentaNoPermitida(motivo);
+
+    if (actual === null) {
+      const [fila] = await ej.consulta<{ id: number }>(
+        `INSERT INTO dmc.usuario (email, password_hash, rol, rol_id, tecnico_id, activo, debe_cambiar_password)
+         VALUES (@email, @hash, @rol, @rolId, @tecnico, @activo, @debe);
+         SELECT CAST(SCOPE_IDENTITY() AS bigint) AS id;`,
+        [
+          ["email", sql.NVarChar(160), email],
+          ["hash", sql.NVarChar(200), hash],
+          ["rol", sql.VarChar(12), d.rol],
+          ["rolId", sql.BigInt, rolId],
+          ["tecnico", sql.BigInt, tecnicoId],
+          ["activo", sql.Bit, d.activo],
+          ["debe", sql.Bit, debeCambiar],
+        ]
+      );
+      return { id: num(fila.id), sesionVersion: 0 };
+    }
+
+    const revoca = hash !== null || actual.rol !== d.rol || actual.rolId !== rolId || (actual.activo && !d.activo);
+    // Sin OUTPUT: dmc.usuario tiene trigger de actualización. La versión se
+    // relee en el mismo lote.
+    const [fila] = await ej.consulta<{ sesion_version: number }>(
+      `UPDATE dmc.usuario
+          SET email = @email, rol = @rol, rol_id = @rolId, tecnico_id = @tecnico, activo = @activo,
+              password_hash = COALESCE(@hash, password_hash),
+              debe_cambiar_password = CASE WHEN @hash IS NULL THEN debe_cambiar_password ELSE @debe END,
+              sesion_version = sesion_version + @revoca
+        WHERE id = @id;
+       SELECT sesion_version FROM dmc.usuario WHERE id = @id;`,
       [
         ["email", sql.NVarChar(160), email],
-        ["hash", sql.NVarChar(200), await hashearPassword(d.password)],
         ["rol", sql.VarChar(12), d.rol],
+        ["rolId", sql.BigInt, rolId],
         ["tecnico", sql.BigInt, tecnicoId],
         ["activo", sql.Bit, d.activo],
+        ["hash", sql.NVarChar(200), hash],
+        ["debe", sql.Bit, debeCambiar],
+        ["revoca", sql.Int, revoca ? 1 : 0],
+        ["id", sql.BigInt, actual.id],
       ]
     );
-    return num(fila.id);
-  }
-
-  await ejecutar(
-    `UPDATE dmc.usuario
-        SET email = @email, rol = @rol, tecnico_id = @tecnico, activo = @activo
-      WHERE id = @id`,
-    [
-      ["email", sql.NVarChar(160), email],
-      ["rol", sql.VarChar(12), d.rol],
-      ["tecnico", sql.BigInt, tecnicoId],
-      ["activo", sql.Bit, d.activo],
-      ["id", sql.BigInt, id],
-    ]
-  );
-
-  // La contraseña se toca solo si escribieron una nueva: el formulario llega
-  // vacío cuando no se quiso cambiar, y sobrescribir con eso dejaría al usuario
-  // sin poder entrar.
-  if (d.password.trim()) {
-    await ejecutar(`UPDATE dmc.usuario SET password_hash = @hash WHERE id = @id`, [
-      ["hash", sql.NVarChar(200), await hashearPassword(d.password)],
-      ["id", sql.BigInt, id],
-    ]);
-  }
-  return id;
+    return { id: actual.id, sesionVersion: num(fila.sesion_version) };
+  });
 }
 
 type Parametros = Parameters<typeof consultaCon>[1];

@@ -40,6 +40,17 @@ export interface TokenSesion {
   uid: number;
   /** epoch en segundos */
   exp: number;
+  /**
+   * dmc.usuario.sesion_version al firmar. Si la cuenta la sube (cambio de
+   * clave, de rol, desactivación), el token deja de valer: ver lib/auth.getSesion.
+   */
+  sv: number;
+  /**
+   * El token se firmó antes de que existiera `sv`. Vale como versión 0 —la de
+   * toda cuenta que nunca la subió— y el middleware lo vuelve a firmar con
+   * versión en la primera petición. No viaja en el token.
+   */
+  sinVersion?: boolean;
 }
 
 const codificador = new TextEncoder();
@@ -83,9 +94,9 @@ function deBase64Url(texto: string) {
   return bytes;
 }
 
-/** Firma `{uid, exp}` y devuelve el valor a guardar en la cookie. */
-export async function firmarToken(usuarioId: number, ahora = Date.now()): Promise<string> {
-  const carga: TokenSesion = { uid: usuarioId, exp: Math.floor(ahora / 1000) + VIGENCIA_SESION };
+/** Firma `{uid, exp, sv}` y devuelve el valor a guardar en la cookie. */
+export async function firmarToken(usuarioId: number, sesionVersion: number, ahora = Date.now()): Promise<string> {
+  const carga: TokenSesion = { uid: usuarioId, exp: Math.floor(ahora / 1000) + VIGENCIA_SESION, sv: sesionVersion };
   const cuerpo = aBase64Url(codificador.encode(JSON.stringify(carga)));
   const firma = await crypto.subtle.sign("HMAC", await clave(), codificador.encode(cuerpo));
   return `${cuerpo}.${aBase64Url(new Uint8Array(firma))}`;
@@ -120,10 +131,12 @@ export async function verificarToken(token: string | undefined, ahora = Date.now
       return null;
     }
 
-    const { uid, exp } = carga as TokenSesion;
+    const { uid, exp, sv } = carga as Partial<TokenSesion> & { uid: number; exp: number };
     if (!Number.isInteger(uid) || uid <= 0) return null;
     if (exp * 1000 <= ahora) return null;
-    return { uid, exp };
+    if (sv === undefined) return { uid, exp, sv: 0, sinVersion: true };
+    if (typeof sv !== "number" || !Number.isInteger(sv) || sv < 0) return null;
+    return { uid, exp, sv };
   } catch {
     // Base64 corrupto, JSON inválido o SESSION_SECRET sin definir.
     return null;

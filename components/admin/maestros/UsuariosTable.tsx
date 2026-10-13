@@ -105,10 +105,11 @@ export default function UsuariosTable({
           label: "Contraseña",
           tipo: "password",
           span: 2,
-          ph: "Mínimo 8 caracteres",
+          ph: "Mínimo 10 caracteres",
           // El hash de bcrypt no se puede revertir: la contraseña actual no se
           // muestra nunca, solo se reemplaza.
-          ayuda: "Al editar, déjala vacía para no cambiarla. No hay forma de consultar la contraseña actual.",
+          ayuda:
+            "Al editar, déjala vacía para no cambiarla. No hay forma de consultar la contraseña actual. Si la pones tú, la persona tendrá que cambiarla al entrar.",
         },
         { k: "activo", label: "Estado", tipo: "toggle" },
       ]}

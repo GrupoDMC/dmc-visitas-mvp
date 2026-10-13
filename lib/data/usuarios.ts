@@ -1,6 +1,7 @@
 import "server-only";
 import sql from "mssql";
 import { getPool } from "@/lib/db/pool";
+import { hashearPassword, verificarPassword } from "@/lib/password";
 import type { RolUsuario, Tecnico, Usuario } from "@/lib/types";
 
 // Consultas contra dmc.usuario / dmc.tecnico para el inicio de sesión.
@@ -10,6 +11,10 @@ export interface UsuarioConHash {
   usuario: Usuario;
   tecnico: Tecnico | null;
   passwordHash: string;
+  /** Va dentro del token: si no cuadra, la sesión ya no vale. */
+  sesionVersion: number;
+  /** La clave la puso otra persona: hay que cambiarla antes de seguir. */
+  debeCambiarPassword: boolean;
 }
 
 interface FilaUsuario {
@@ -20,6 +25,8 @@ interface FilaUsuario {
   tecnico_id: number | null;
   activo: boolean;
   ultimo_acceso_en: Date | null;
+  sesion_version: number;
+  debe_cambiar_password: boolean;
   t_id: number | null;
   t_rut: string | null;
   t_nombres: string | null;
@@ -33,6 +40,7 @@ interface FilaUsuario {
 
 const SELECT_USUARIO = `
   SELECT u.id, u.email, u.password_hash, u.rol, u.tecnico_id, u.activo, u.ultimo_acceso_en,
+         u.sesion_version, u.debe_cambiar_password,
          t.id               AS t_id,
          t.rut              AS t_rut,
          t.nombres          AS t_nombres,
@@ -71,7 +79,13 @@ function mapear(fila: FilaUsuario): UsuarioConHash {
           activo: Boolean(fila.t_activo),
         };
 
-  return { usuario, tecnico, passwordHash: fila.password_hash };
+  return {
+    usuario,
+    tecnico,
+    passwordHash: fila.password_hash,
+    sesionVersion: Number(fila.sesion_version),
+    debeCambiarPassword: Boolean(fila.debe_cambiar_password),
+  };
 }
 
 export async function getUsuarioPorEmail(email: string): Promise<UsuarioConHash | null> {
@@ -95,21 +109,30 @@ export async function getUsuarioPorId(id: number): Promise<UsuarioConHash | null
 }
 
 /**
- * Reescribe el hash de un usuario. Se usa para migrar a bcrypt los hashes
- * heredados del DDL de ejemplo la primera vez que el usuario acierta su clave.
- * Un fallo aquí no debe tumbar el login: se reintenta en el siguiente.
+ * La persona cambia su propia clave (el cambio obligatorio tras una clave
+ * temporal). Cierra sus otras sesiones y apaga el aviso de cambio. Devuelve la
+ * versión de sesión nueva, para firmarle el token de esta, o null si la clave
+ * nueva es la misma que ya tenía.
  */
-export async function actualizarPasswordHash(usuarioId: number, hash: string): Promise<void> {
-  try {
-    const pool = await getPool();
-    await pool
-      .request()
-      .input("id", sql.BigInt, usuarioId)
-      .input("hash", sql.NVarChar(200), hash)
-      .query("UPDATE dmc.usuario SET password_hash = @hash WHERE id = @id");
-  } catch (err) {
-    console.error("[dmc] no se pudo migrar el password_hash a bcrypt:", err);
-  }
+export async function cambiarPasswordPropia(usuarioId: number, nueva: string): Promise<number | null> {
+  const actual = await getUsuarioPorId(usuarioId);
+  if (!actual) throw new Error("La cuenta ya no existe.");
+  if (await verificarPassword(nueva, actual.passwordHash)) return null;
+
+  const pool = await getPool();
+  // Sin OUTPUT: dmc.usuario tiene trigger de actualización. La versión se relee
+  // en el mismo lote.
+  const resultado = await pool
+    .request()
+    .input("id", sql.BigInt, usuarioId)
+    .input("hash", sql.NVarChar(200), await hashearPassword(nueva))
+    .query<{ sesion_version: number }>(
+      `UPDATE dmc.usuario
+          SET password_hash = @hash, debe_cambiar_password = 0, sesion_version = sesion_version + 1
+        WHERE id = @id;
+       SELECT sesion_version FROM dmc.usuario WHERE id = @id;`
+    );
+  return Number(resultado.recordset[0].sesion_version);
 }
 
 /** Sella el último acceso. Un fallo aquí no debe tumbar el login. */

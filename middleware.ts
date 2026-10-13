@@ -31,10 +31,12 @@ export async function middleware(req: NextRequest) {
   if (token) {
     const respuesta = NextResponse.next();
     // Sin la cookie de vencimiento (sesiones abiertas antes de que existiera)
-    // también se renueva, para que el navegador sepa cuándo vence.
-    if (tocaRenovar(token) || !req.cookies.get(COOKIE_EXPIRA)) {
+    // también se renueva, para que el navegador sepa cuándo vence. Lo mismo un
+    // token sin versión: se vuelve a firmar con la 0, que es con la que valía.
+    // La versión se copia tal cual; compararla con la base es cosa de getSesion.
+    if (tocaRenovar(token) || !req.cookies.get(COOKIE_EXPIRA) || token.sinVersion) {
       try {
-        const nuevo = await firmarToken(token.uid);
+        const nuevo = await firmarToken(token.uid, token.sv);
         const exp = Math.floor(Date.now() / 1000) + VIGENCIA_SESION;
         respuesta.cookies.set(COOKIE_SESION, nuevo, opcionesCookie(VIGENCIA_SESION));
         respuesta.cookies.set(COOKIE_EXPIRA, String(exp), opcionesCookie(VIGENCIA_SESION, false));

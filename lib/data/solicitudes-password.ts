@@ -1,6 +1,8 @@
 import "server-only";
-import { consulta, consultaCon, ejecutar, num, numONull, sql, F_TS } from "@/lib/data/sql";
-import { hashearPassword } from "@/lib/password";
+import { consulta, consultaCon, enTransaccion, ejecutar, num, numONull, sql, F_TS } from "@/lib/data/sql";
+import { hashearPassword, validarPasswordNueva } from "@/lib/password";
+import { leerCuenta, leerCuentas } from "@/lib/data/roles";
+import { motivoCuentaAjena, puedeAdministrarCuenta } from "@/lib/permisos";
 import type { EstadoSolicitudPassword, RolUsuario, SolicitudPassword } from "@/lib/types";
 
 // "Olvidé mi contraseña" — dmc.solicitud_password.
@@ -14,7 +16,13 @@ import type { EstadoSolicitudPassword, RolUsuario, SolicitudPassword } from "@/l
 // las de correos dados de alta, el tiempo de respuesta del login delataría qué
 // correos existen — que es justo lo que evita el mensaje único de autenticar().
 
+// Frenos contra el spam, todos silenciosos (quien pide ve siempre lo mismo):
+/** Solicitudes por correo y por hora. */
 const MAX_POR_HORA = 5;
+/** Solicitudes por IP y por hora, sea cual sea el correo. */
+const MAX_POR_IP_HORA = 10;
+/** Pendientes en total: más que esto ya no es alguien que olvidó su clave. */
+const MAX_PENDIENTES = 100;
 
 export interface ResultadoSolicitud {
   ok: boolean;
@@ -23,26 +31,48 @@ export interface ResultadoSolicitud {
 }
 
 /** Registra la solicitud. El correo se guarda tal cual, en minúsculas. */
-export async function crearSolicitudPassword(email: string, mensaje: string | null): Promise<ResultadoSolicitud> {
-  const normalizado = email.trim().toLowerCase();
+export async function crearSolicitudPassword(
+  email: string,
+  mensaje: string | null,
+  ip: string | null
+): Promise<ResultadoSolicitud> {
+  const normalizado = email.trim().toLowerCase().slice(0, 160);
 
-  // Freno simple contra el spam: cinco solicitudes por correo y por hora.
-  const [reciente] = await consultaCon<{ n: number }>(
-    `SELECT COUNT(*) AS n FROM dmc.solicitud_password
-      WHERE email = @email AND creado_en > DATEADD(hour, -1, SYSDATETIME())`,
-    [["email", sql.NVarChar(160), normalizado]]
+  const [conteo] = await consultaCon<{ por_correo: number; por_ip: number; pendientes: number }>(
+    `SELECT (SELECT COUNT(*) FROM dmc.solicitud_password
+              WHERE email = @email AND creado_en > DATEADD(hour, -1, SYSDATETIME())) AS por_correo,
+            (SELECT COUNT(*) FROM dmc.solicitud_password
+              WHERE @ip IS NOT NULL AND ip = @ip AND creado_en > DATEADD(hour, -1, SYSDATETIME())) AS por_ip,
+            (SELECT COUNT(*) FROM dmc.solicitud_password WHERE estado = 'PENDIENTE') AS pendientes`,
+    [
+      ["email", sql.NVarChar(160), normalizado],
+      ["ip", sql.VarChar(45), ip],
+    ]
   );
-  if (num(reciente?.n ?? 0) >= MAX_POR_HORA) return { ok: true, limitada: true };
+  if (
+    num(conteo?.por_correo ?? 0) >= MAX_POR_HORA ||
+    num(conteo?.por_ip ?? 0) >= MAX_POR_IP_HORA ||
+    num(conteo?.pendientes ?? 0) >= MAX_PENDIENTES
+  ) {
+    return { ok: true, limitada: true };
+  }
 
   await ejecutar(
-    `INSERT INTO dmc.solicitud_password (email, usuario_id, mensaje)
-     VALUES (@email, (SELECT TOP 1 id FROM dmc.usuario WHERE email = @email), @mensaje)`,
+    `INSERT INTO dmc.solicitud_password (email, usuario_id, mensaje, ip)
+     VALUES (@email, (SELECT TOP 1 id FROM dmc.usuario WHERE email = @email), @mensaje, @ip)`,
     [
       ["email", sql.NVarChar(160), normalizado],
       ["mensaje", sql.NVarChar(400), mensaje?.trim().slice(0, 400) || null],
+      ["ip", sql.VarChar(45), ip],
     ]
   );
   return { ok: true };
+}
+
+/** Quien atiende: lo justo para decidir sobre qué cuentas puede. */
+export interface ActorSolicitud {
+  usuario: { id: number; rol: RolUsuario };
+  permisos: readonly string[];
 }
 
 interface FilaSolicitud {
@@ -58,7 +88,8 @@ interface FilaSolicitud {
   u_activo: boolean | null;
 }
 
-export async function listarSolicitudesPassword(): Promise<SolicitudPassword[]> {
+/** Las solicitudes, con `administrable` según quién las mira. */
+export async function listarSolicitudesPassword(actor: ActorSolicitud): Promise<SolicitudPassword[]> {
   const filas = await consulta<FilaSolicitud>(
     `SELECT s.id, s.email, s.usuario_id, s.mensaje, s.estado, s.atendido_por,
             ${F_TS("s.atendido_en")} AS atendido_en,
@@ -69,18 +100,24 @@ export async function listarSolicitudesPassword(): Promise<SolicitudPassword[]> 
       ORDER BY CASE s.estado WHEN 'PENDIENTE' THEN 0 ELSE 1 END, s.creado_en DESC`
   );
 
-  return filas.map((f) => ({
-    id: num(f.id),
-    email: f.email,
-    usuarioId: numONull(f.usuario_id),
-    mensaje: f.mensaje,
-    estado: f.estado,
-    atendidoPor: numONull(f.atendido_por),
-    atendidoEn: f.atendido_en,
-    creadoEn: f.creado_en,
-    usuarioRol: f.u_rol,
-    usuarioActivo: f.u_activo === null ? null : Boolean(f.u_activo),
-  }));
+  const cuentas = await leerCuentas(filas.flatMap((f) => (f.usuario_id === null ? [] : [num(f.usuario_id)])));
+
+  return filas.map((f) => {
+    const cuenta = f.usuario_id === null ? undefined : cuentas.get(num(f.usuario_id));
+    return {
+      id: num(f.id),
+      email: f.email,
+      usuarioId: numONull(f.usuario_id),
+      mensaje: f.mensaje,
+      estado: f.estado,
+      atendidoPor: numONull(f.atendido_por),
+      atendidoEn: f.atendido_en,
+      creadoEn: f.creado_en,
+      usuarioRol: f.u_rol,
+      usuarioActivo: f.u_activo === null ? null : Boolean(f.u_activo),
+      administrable: !!cuenta && cuenta.id !== actor.usuario.id && puedeAdministrarCuenta(actor, cuenta),
+    };
+  });
 }
 
 export async function contarSolicitudesPendientes(): Promise<number> {
@@ -91,39 +128,62 @@ export async function contarSolicitudesPendientes(): Promise<number> {
 }
 
 /**
- * Le pone la clave temporal al usuario de la solicitud y la marca atendida.
+ * Le pone la clave temporal al usuario de la solicitud y la marca atendida, en
+ * una transacción y con la solicitud y la cuenta tomadas. La cuenta queda con
+ * el cambio de clave pendiente y sus sesiones abiertas, cerradas.
  *
- * Devuelve false si la solicitud no existe o si su correo no corresponde a
- * ningún usuario: en ese caso lo que hay que hacer es crear la cuenta desde
- * Maestros › Usuarios, no asignarle una clave a nadie.
+ * Devuelve por qué no se pudo, o null si quedó hecho. No se puede si la
+ * solicitud ya no está pendiente, si su correo no corresponde a ninguna cuenta
+ * (lo que hay que hacer es crearla desde Maestros › Usuarios), si es la cuenta
+ * de quien atiende, si es una cuenta que puede más que él o si la clave no
+ * cumple la política (validarPasswordNueva).
  */
 export async function atenderSolicitudPassword(
   id: number,
   passwordTemporal: string,
-  usuarioAdminId: number
-): Promise<boolean> {
-  const [solicitud] = await consultaCon<{ usuario_id: number | null; estado: EstadoSolicitudPassword }>(
-    `SELECT usuario_id, estado FROM dmc.solicitud_password WHERE id = @id`,
-    [["id", sql.BigInt, id]]
-  );
-  if (!solicitud?.usuario_id) return false;
-
+  actor: ActorSolicitud
+): Promise<string | null> {
+  // bcrypt tarda: va antes de abrir la transacción, no con las filas tomadas.
   const hash = await hashearPassword(passwordTemporal);
-  await ejecutar(`UPDATE dmc.usuario SET password_hash = @hash WHERE id = @usuario`, [
-    ["hash", sql.NVarChar(200), hash],
-    ["usuario", sql.BigInt, num(solicitud.usuario_id)],
-  ]);
 
-  await ejecutar(
-    `UPDATE dmc.solicitud_password
-        SET estado = 'ATENDIDA', atendido_por = @admin, atendido_en = SYSDATETIME()
-      WHERE id = @id`,
-    [
-      ["admin", sql.BigInt, usuarioAdminId],
-      ["id", sql.BigInt, id],
-    ]
-  );
-  return true;
+  return enTransaccion(async (ej) => {
+    const [solicitud] = await ej.consulta<{ usuario_id: number | null; estado: EstadoSolicitudPassword }>(
+      `SELECT usuario_id, estado FROM dmc.solicitud_password WITH (UPDLOCK, HOLDLOCK) WHERE id = @id`,
+      [["id", sql.BigInt, id]]
+    );
+    if (!solicitud) return "Esa solicitud ya no existe. Recarga la página.";
+    if (solicitud.estado !== "PENDIENTE") return "Esa solicitud ya estaba cerrada.";
+    if (solicitud.usuario_id === null) {
+      return "Ese correo no tiene ninguna cuenta. Créala en Maestros › Usuarios antes de asignarle una clave.";
+    }
+
+    const cuenta = await leerCuenta(num(solicitud.usuario_id), ej, true);
+    if (!cuenta) return "Esa cuenta ya no existe.";
+    if (cuenta.id === actor.usuario.id) return "Tu propia contraseña no se cambia desde acá.";
+    if (!puedeAdministrarCuenta(actor, cuenta)) return motivoCuentaAjena(cuenta);
+    const fallo = validarPasswordNueva(passwordTemporal, cuenta.email);
+    if (fallo) return fallo;
+
+    await ej.ejecutar(
+      `UPDATE dmc.usuario
+          SET password_hash = @hash, debe_cambiar_password = 1, sesion_version = sesion_version + 1
+        WHERE id = @usuario`,
+      [
+        ["hash", sql.NVarChar(200), hash],
+        ["usuario", sql.BigInt, cuenta.id],
+      ]
+    );
+    await ej.ejecutar(
+      `UPDATE dmc.solicitud_password
+          SET estado = 'ATENDIDA', atendido_por = @admin, atendido_en = SYSDATETIME()
+        WHERE id = @id AND estado = 'PENDIENTE'`,
+      [
+        ["admin", sql.BigInt, actor.usuario.id],
+        ["id", sql.BigInt, id],
+      ]
+    );
+    return null;
+  });
 }
 
 /** Cierra la solicitud sin tocar ninguna clave. */

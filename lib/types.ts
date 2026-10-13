@@ -466,6 +466,11 @@ export interface SolicitudPassword {
   /** Sale del join con dmc.usuario; null si el correo no está dado de alta. */
   usuarioRol: RolUsuario | null;
   usuarioActivo: boolean | null;
+  /**
+   * Si quien mira puede asignarle una clave: no a su propia cuenta, ni a una de
+   * administrador o con permisos que él no tiene (ver puedeAdministrarCuenta).
+   */
+  administrable: boolean;
 }
 
 /** Foto de las tres listas del checklist, para el botón Reiniciar. */

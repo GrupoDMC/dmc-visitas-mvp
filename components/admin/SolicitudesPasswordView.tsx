@@ -51,8 +51,10 @@ export default function SolicitudesPasswordView({
 
   async function asignar() {
     if (!dialogo) return;
-    const clave = dialogo.clave.trim();
-    if (clave.length < 8) return aviso("La contraseña temporal debe tener al menos 8 caracteres");
+    // Sin recortar: la clave se guarda tal como se va a entregar.
+    const clave = dialogo.clave;
+    if (!clave.trim()) return aviso("La contraseña temporal no puede quedar vacía");
+    if (clave.length < 10) return aviso("La contraseña temporal debe tener al menos 10 caracteres");
 
     setGuardando(true);
     const res = await atenderSolicitudPasswordAction(dialogo.solicitud.id, clave);
@@ -117,7 +119,7 @@ export default function SolicitudesPasswordView({
                 {entregada.clave}
               </code>
               <p className="mt-2.5 mb-0 text-[13px] opacity-70">
-                Entrégasela por teléfono o en persona y pídele que la cambie apenas entre.
+                Entrégasela por teléfono o en persona. Al entrar, el sistema le va a pedir que la cambie.
               </p>
               <button className="btn btn-secondary mt-3" onClick={() => setEntregada(null)}>
                 Ya la anoté
@@ -162,19 +164,30 @@ export default function SolicitudesPasswordView({
                   </td>
                   <td className="text-right">
                     {s.estado === "PENDIENTE" ? (
-                      <div className="flex gap-2 justify-end">
-                        <button
-                          className="btn btn-primary min-h-9 px-3 text-[13px]"
-                          onClick={() => setDialogo({ solicitud: s, clave: claveSugerida() })}
-                          disabled={s.usuarioId === null}
-                          title={
-                            s.usuarioId === null
-                              ? "Ese correo no tiene cuenta. Créala en la pestaña «Cuentas»."
-                              : undefined
-                          }
-                        >
-                          Asignar clave
-                        </button>
+                      <div className="flex gap-2 justify-end items-center">
+                        {s.usuarioId === null || s.administrable ? (
+                          <button
+                            className="btn btn-primary min-h-9 px-3 text-[13px]"
+                            onClick={() => setDialogo({ solicitud: s, clave: claveSugerida() })}
+                            disabled={s.usuarioId === null}
+                            title={
+                              s.usuarioId === null
+                                ? "Ese correo no tiene cuenta. Créala en la pestaña «Cuentas»."
+                                : undefined
+                            }
+                          >
+                            Asignar clave
+                          </button>
+                        ) : (
+                          // Su propia cuenta, una de administrador o una con más
+                          // permisos: la clave la tiene que poner otra persona.
+                          <span
+                            className="text-[12px] opacity-66"
+                            title="Es tu cuenta, una de administrador o una con permisos que tú no tienes."
+                          >
+                            La atiende un administrador
+                          </span>
+                        )}
                         <button
                           className="btn btn-secondary min-h-9 px-3 text-[13px]"
                           onClick={() =>
@@ -240,8 +253,8 @@ export default function SolicitudesPasswordView({
                   className="input tracking-[.08em]"
                 />
                 <div className="text-[11px] leading-[1.4] opacity-66 mt-1.5">
-                  Mínimo 8 caracteres. Se muestra una sola vez: anótala antes de cerrar. La persona debería cambiarla
-                  apenas entre.
+                  Mínimo 10 caracteres. Se muestra una sola vez: anótala antes de cerrar. Al entrar, el sistema le
+                  pide a la persona que la cambie antes de seguir.
                 </div>
               </div>
               <button

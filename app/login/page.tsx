@@ -1,6 +1,6 @@
 import Image from "next/image";
 import { redirect } from "next/navigation";
-import { getSesion } from "@/lib/auth";
+import { getSesion, getSesionPorCambiarPassword } from "@/lib/auth";
 import { version } from "@/package.json";
 import LoginForm from "./LoginForm";
 
@@ -10,6 +10,8 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
   if (sesion) {
     redirect(sesion.usuario.rol === "TECNICO" ? "/tecnico" : "/admin");
   }
+  // Entró con una clave que le puso otra persona: primero tiene que cambiarla.
+  if (await getSesionPorCambiarPassword()) redirect("/cambiar-password");
 
   return (
     <div className="h-screen overflow-hidden flex justify-center bg-[#c9c7c6]">

@@ -22,7 +22,7 @@ export default async function UsuariosPage({
   const [usuarios, tecnicos, solicitudes, roles, celular] = await Promise.all([
     tiene(sesion.permisos, "usuarios.ver") ? listarUsuarios() : [],
     tiene(sesion.permisos, "tecnicos.ver") ? listarTecnicos() : [],
-    tiene(sesion.permisos, "usuarios.contrasenas") ? listarSolicitudesPassword() : [],
+    tiene(sesion.permisos, "usuarios.contrasenas") ? listarSolicitudesPassword(sesion) : [],
     tiene(sesion.permisos, "usuarios.ver") || verRoles ? listarRoles() : null,
     verRoles ? permisosCelular() : [],
   ]);

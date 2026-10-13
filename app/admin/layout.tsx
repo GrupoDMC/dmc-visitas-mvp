@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { getSesion } from "@/lib/auth";
+import { getSesion, rutaSinSesion } from "@/lib/auth";
 import { cargarReferencias } from "@/lib/data/referencias";
 import { contarProblemasAbiertos, contarReagendasPendientes, contarVisitas } from "@/lib/data/queries";
 import { contarSolicitudesPendientes } from "@/lib/data/solicitudes-password";
@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic";
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const sesion = await getSesion();
-  if (!sesion) redirect("/login");
+  if (!sesion) redirect(await rutaSinSesion());
   if (sesion.usuario.rol === "TECNICO") redirect("/tecnico");
 
   const [referencias, visitas, reagendas, problemasAbiertos, usuarios, accesos] = await Promise.all([

@@ -44,3 +44,77 @@ export async function gastarTiempoDeVerificacion(): Promise<void> {
     // Da igual el resultado: lo único que importa es haber gastado el tiempo.
   }
 }
+
+// ── Política de contraseñas nuevas ──────────────────────────────────────────
+//
+// Vale para todos los caminos que ponen una clave: alta y edición de usuarios,
+// la clave temporal de una solicitud y el cambio obligatorio al entrar. La
+// contraseña NUNCA se recorta: un espacio al final es parte de la clave, y
+// recortarla en un camino y no en otro deja cuentas con una clave que nadie
+// sabe escribir. Solo se rechaza la que queda vacía.
+
+export const LARGO_MINIMO_PASSWORD = 10;
+
+/** bcrypt solo mira los primeros 72 bytes: lo que siga no protege nada. */
+const BYTES_MAXIMOS_PASSWORD = 72;
+
+/** Las más repetidas en filtraciones, más las obvias para este sistema. */
+const PASSWORDS_COMUNES = new Set([
+  "1234567890",
+  "0123456789",
+  "12345678910",
+  "123456789a",
+  "1q2w3e4r5t",
+  "1qaz2wsx3edc",
+  "qwertyuiop",
+  "asdfghjkl1",
+  "password12",
+  "password123",
+  "contraseña",
+  "contraseña1",
+  "contraseña123",
+  "contrasena",
+  "contrasena1",
+  "contrasena123",
+  "iloveyou12",
+  "abcdefghij",
+  "abc1234567",
+  "qwerty1234",
+  "qwerty123456",
+  "aaaaaaaaaa",
+  "1111111111",
+  "0000000000",
+  "bienvenido",
+  "bienvenido1",
+  "bienvenido123",
+  "temporal123",
+  "cambiame123",
+  "dmc1234567",
+  "grupodmc123",
+  "grupodmc2026",
+  "contingencia",
+]);
+
+/**
+ * Devuelve por qué no sirve la contraseña, o null si se puede usar. `email` es
+ * el de la cuenta que la va a tener.
+ */
+export function validarPasswordNueva(password: string, email: string): string | null {
+  if (!password.trim()) return "La contraseña no puede quedar vacía.";
+  if (password.length < LARGO_MINIMO_PASSWORD) {
+    return `La contraseña debe tener al menos ${LARGO_MINIMO_PASSWORD} caracteres.`;
+  }
+  if (new TextEncoder().encode(password).length > BYTES_MAXIMOS_PASSWORD) {
+    return "La contraseña es demasiado larga (máximo 72 caracteres).";
+  }
+  const minuscula = password.toLowerCase();
+  const correo = email.trim().toLowerCase();
+  const usuario = correo.split("@")[0];
+  if (minuscula === correo || (usuario && minuscula === usuario)) {
+    return "La contraseña no puede ser el correo.";
+  }
+  if (PASSWORDS_COMUNES.has(minuscula) || new Set(minuscula).size <= 2) {
+    return "Esa contraseña es demasiado fácil de adivinar. Elige otra.";
+  }
+  return null;
+}

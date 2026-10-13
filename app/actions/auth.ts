@@ -1,8 +1,16 @@
 "use server";
 
 import { redirect } from "next/navigation";
-import { autenticar, cerrarSesion, crearSesion } from "@/lib/auth";
+import {
+  autenticar,
+  cerrarSesion,
+  crearSesion,
+  getSesionPorCambiarPassword,
+  ipDeLaPeticion,
+} from "@/lib/auth";
 import { crearSolicitudPassword } from "@/lib/data/solicitudes-password";
+import { cambiarPasswordPropia } from "@/lib/data/usuarios";
+import { validarPasswordNueva } from "@/lib/password";
 
 export interface LoginState {
   error: string | null;
@@ -12,6 +20,8 @@ export interface LoginState {
 // contraseña incorrecta y cuenta desactivada, para no confirmar qué correos
 // están dados de alta.
 const CREDENCIALES_INVALIDAS = "Correo o contraseña incorrectos.";
+// Sale igual exista o no el correo: el freno corre para cualquiera.
+const DEMASIADOS_INTENTOS = "Demasiados intentos seguidos. Espera 15 minutos y vuelve a intentarlo.";
 
 export async function loginAction(_prev: LoginState, formData: FormData): Promise<LoginState> {
   const email = String(formData.get("email") ?? "").trim();
@@ -21,15 +31,16 @@ export async function loginAction(_prev: LoginState, formData: FormData): Promis
     return { error: "Ingresa tu correo y contraseña." };
   }
 
-  let esTecnico: boolean;
+  let destino: string;
 
   try {
-    const usuario = await autenticar(email, password);
-    if (!usuario) return { error: CREDENCIALES_INVALIDAS };
+    const resultado = await autenticar(email, password, await ipDeLaPeticion());
+    if (!resultado.ok) return { error: resultado.bloqueado ? DEMASIADOS_INTENTOS : CREDENCIALES_INVALIDAS };
+    const { usuario, sesionVersion, debeCambiarPassword } = resultado.registro;
     // Firmar la cookie también puede fallar (SESSION_SECRET sin definir), así
     // que entra en el mismo try.
-    await crearSesion(usuario.id);
-    esTecnico = usuario.rol === "TECNICO";
+    await crearSesion(usuario.id, sesionVersion);
+    destino = debeCambiarPassword ? "/cambiar-password" : usuario.rol === "TECNICO" ? "/tecnico" : "/admin";
   } catch (err) {
     // Entorno mal configurado o base de datos inalcanzable. El detalle va al
     // log del servidor; al usuario solo se le dice que avise, sin filtrar
@@ -39,7 +50,7 @@ export async function loginAction(_prev: LoginState, formData: FormData): Promis
   }
 
   // redirect() lanza por dentro: tiene que quedar fuera del try/catch.
-  redirect(esTecnico ? "/tecnico" : "/admin");
+  redirect(destino);
 }
 
 export interface SolicitudState {
@@ -67,13 +78,47 @@ export async function solicitarPasswordAction(
   }
 
   try {
-    await crearSolicitudPassword(email, mensaje || null);
+    await crearSolicitudPassword(email, mensaje || null, await ipDeLaPeticion());
   } catch (err) {
     console.error("[dmc] no se pudo registrar la solicitud de contraseña:", err);
     return { ok: false, error: "No se pudo registrar la solicitud. Inténtalo otra vez en un momento." };
   }
 
   return { ok: true, error: null };
+}
+
+export interface CambioPasswordState {
+  error: string | null;
+}
+
+/**
+ * El cambio obligatorio después de una clave que puso otra persona. Cierra las
+ * demás sesiones de la cuenta y le firma a esta una con la versión nueva.
+ */
+export async function cambiarPasswordAction(
+  _prev: CambioPasswordState,
+  formData: FormData
+): Promise<CambioPasswordState> {
+  const sesion = await getSesionPorCambiarPassword();
+  if (!sesion) redirect("/login");
+
+  // La contraseña no se recorta: se guarda tal como se escribió.
+  const nueva = String(formData.get("nueva") ?? "");
+  const repetida = String(formData.get("repetida") ?? "");
+  if (nueva !== repetida) return { error: "Las dos contraseñas no coinciden." };
+  const fallo = validarPasswordNueva(nueva, sesion.usuario.email);
+  if (fallo) return { error: fallo };
+
+  try {
+    const version = await cambiarPasswordPropia(sesion.usuario.id, nueva);
+    if (version === null) return { error: "La contraseña nueva tiene que ser distinta de la que te entregaron." };
+    await crearSesion(sesion.usuario.id, version);
+  } catch (err) {
+    console.error("[dmc] no se pudo cambiar la contraseña:", err);
+    return { error: "No se pudo guardar la contraseña. Inténtalo otra vez en un momento." };
+  }
+
+  redirect(sesion.usuario.rol === "TECNICO" ? "/tecnico" : "/admin");
 }
 
 export async function logoutAction() {

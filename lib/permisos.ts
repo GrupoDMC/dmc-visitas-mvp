@@ -177,3 +177,31 @@ export function normalizarPermisos(permisos: readonly string[]): string[] {
   for (const p of [...validos]) validos.add(`${p.split(".")[0]}.${VER}`);
   return TODOS_LOS_PERMISOS.filter((p) => validos.has(p));
 }
+
+/**
+ * ¿Puede `actor` modificar la cuenta `destino` (datos, clave, rol)?
+ *
+ * El administrador puede con todas. Los demás nunca con una de administrador,
+ * y solo con cuentas que no puedan más que ellos: si la cuenta tiene algún
+ * permiso que el actor no tiene, cambiarle la clave sería quedarse con ese
+ * permiso. Las cuentas de técnico no tienen permisos del panel, así que caen
+ * dentro de lo que cualquiera con el permiso del módulo puede tocar.
+ *
+ * Es la misma regla para un rol (eliminarlo, editarlo): `destino` puede ser
+ * cualquier cosa con permisos.
+ */
+export function puedeAdministrarCuenta(
+  actor: { usuario: { rol: string }; permisos: readonly string[] },
+  destino: { rol?: string; permisos: readonly string[] }
+): boolean {
+  if (actor.usuario.rol === "ADMIN") return true;
+  if (actor.usuario.rol === "TECNICO" || destino.rol === "ADMIN") return false;
+  return destino.permisos.every((p) => tiene(actor.permisos, p));
+}
+
+/** Por qué no: el texto que acompaña a un `puedeAdministrarCuenta` negativo. */
+export function motivoCuentaAjena(destino: { rol?: string }): string {
+  return destino.rol === "ADMIN"
+    ? "Solo un administrador puede modificar cuentas de administrador."
+    : "Esa cuenta tiene permisos que tú no tienes: solo la puede modificar un administrador o alguien con al menos esos permisos.";
+}

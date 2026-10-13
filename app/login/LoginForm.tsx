@@ -11,7 +11,7 @@ import {
 const initialState: LoginState = { error: null };
 const initialSolicitud: SolicitudState = { ok: false, error: null };
 
-const CAMPO =
+export const CAMPO =
   "w-full min-h-[54px] px-3.5 py-3 text-base bg-[var(--color-surface)] border border-[var(--color-divider)] text-[var(--color-text)] caret-[var(--color-accent)] focus-visible:border-[var(--color-accent)] focus-visible:outline-none";
 
 export default function LoginForm({ version }: { version: string }) {
@@ -198,7 +198,7 @@ function OlvideMiPassword({ onVolver }: { onVolver: () => void }) {
   );
 }
 
-function Alerta({ children }: { children: React.ReactNode }) {
+export function Alerta({ children }: { children: React.ReactNode }) {
   return (
     <div
       role="alert"

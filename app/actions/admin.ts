@@ -707,17 +707,12 @@ export async function atenderSolicitudPasswordAction(
 ): Promise<ResultadoAdmin> {
   const sesion = await sesionCon("usuarios.contrasenas");
   if (!sesion) return { ok: false, error: "No tienes permiso para asignar contraseñas." };
-  if (passwordTemporal.trim().length < 8) {
-    return { ok: false, error: "La contraseña temporal debe tener al menos 8 caracteres." };
-  }
 
   try {
-    if (!(await atenderSolicitudPassword(id, passwordTemporal.trim(), sesion.usuario.id))) {
-      return {
-        ok: false,
-        error: "Ese correo no tiene ninguna cuenta. Créala en Maestros › Usuarios antes de asignarle una clave.",
-      };
-    }
+    // La clave no se recorta: se guarda tal como se va a entregar. La política
+    // (validarPasswordNueva) se mira adentro, contra el correo de la cuenta.
+    const motivo = await atenderSolicitudPassword(id, passwordTemporal, sesion);
+    if (motivo) return { ok: false, error: motivo };
   } catch (err) {
     return comoError(err, "atenderSolicitudPassword");
   }

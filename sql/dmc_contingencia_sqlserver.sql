@@ -167,6 +167,10 @@ CREATE TABLE dmc.usuario (
     tecnico_id        bigint         NULL,
     activo            bit            NOT NULL CONSTRAINT df_usuario_activo DEFAULT (1),
     ultimo_acceso_en  datetime2(0)   NULL,
+    -- Va dentro del token de sesión: subirlo cierra las sesiones abiertas.
+    sesion_version    int            NOT NULL CONSTRAINT df_usuario_sesion_version DEFAULT (0),
+    -- La clave la puso otra persona: al entrar se pide una nueva.
+    debe_cambiar_password bit        NOT NULL CONSTRAINT df_usuario_debe_cambiar DEFAULT (0),
     creado_en         datetime2(0)   NOT NULL CONSTRAINT df_usuario_creado DEFAULT (SYSDATETIME()),
     actualizado_en    datetime2(0)   NOT NULL CONSTRAINT df_usuario_actualizado DEFAULT (SYSDATETIME()),
     CONSTRAINT pk_usuario         PRIMARY KEY (id),
@@ -975,6 +979,7 @@ CREATE TABLE dmc.solicitud_password (
     email         nvarchar(160) NOT NULL,
     usuario_id    bigint        NULL,
     mensaje       nvarchar(400) NULL,
+    ip            varchar(45)   NULL,
     estado        varchar(10)   NOT NULL CONSTRAINT df_solpass_estado DEFAULT ('PENDIENTE'),
     atendido_por  bigint        NULL,
     atendido_en   datetime2(0)  NULL,
@@ -986,6 +991,27 @@ CREATE TABLE dmc.solicitud_password (
 );
 GO
 CREATE INDEX ix_solpass_pendiente ON dmc.solicitud_password (creado_en DESC) WHERE estado = 'PENDIENTE';
+GO
+CREATE INDEX ix_solpass_ip ON dmc.solicitud_password (ip, creado_en) WHERE ip IS NOT NULL;
+GO
+
+-- Cada intento de entrar, bueno o malo. Frena los intentos repetidos por
+-- cuenta y por origen. Se guarda también el correo que no existe, para que el
+-- freno no delate qué correos están dados de alta.
+CREATE TABLE dmc.intento_login (
+    id         bigint         IDENTITY(1,1) NOT NULL,
+    email      nvarchar(160)  NOT NULL,
+    ip         varchar(45)    NULL,
+    exito      bit            NOT NULL,
+    creado_en  datetime2(3)   NOT NULL CONSTRAINT df_intento_login_creado DEFAULT (SYSDATETIME()),
+    CONSTRAINT pk_intento_login PRIMARY KEY (id)
+);
+GO
+CREATE INDEX ix_intento_login_email ON dmc.intento_login (email, creado_en) INCLUDE (exito);
+GO
+CREATE INDEX ix_intento_login_ip ON dmc.intento_login (ip, creado_en) INCLUDE (exito) WHERE ip IS NOT NULL;
+GO
+CREATE INDEX ix_intento_login_creado ON dmc.intento_login (creado_en);
 GO
 
 /* =====================================================================

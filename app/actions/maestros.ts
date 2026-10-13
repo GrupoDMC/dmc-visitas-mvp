@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { sesionCon } from "@/lib/auth";
+import { crearSesion, sesionCon } from "@/lib/auth";
 import {
   faltaMigracionDetalle,
   faltaMigracionNotas,
@@ -14,6 +14,7 @@ import {
   guardarTecnico,
   guardarUsuario,
   ponerTiendasDeMall,
+  CuentaNoPermitida,
   RutRepetido,
   TiendaEnOtroMall,
   type DatosCliente,
@@ -22,10 +23,10 @@ import {
   type DatosSucursalLote,
   type DatosTecnico,
   type DatosUsuario,
-  listarUsuarios,
 } from "@/lib/data/maestros";
-import { eliminarRol, guardarPermisosCelular, guardarRol, listarRoles, type DatosRol } from "@/lib/data/roles";
-import { normalizarPermisos, tiene } from "@/lib/permisos";
+import { eliminarRol, guardarPermisosCelular, guardarRol, leerRol, type DatosRol } from "@/lib/data/roles";
+import { motivoCuentaAjena, normalizarPermisos, puedeAdministrarCuenta, tiene } from "@/lib/permisos";
+import { validarPasswordNueva } from "@/lib/password";
 import { mensajeRut, rutCompleto } from "@/lib/ui/formato";
 import type { RolUsuario } from "@/lib/types";
 
@@ -47,6 +48,7 @@ function sesionMaestro(modulo: string, id: number | null) {
  * llegar a pantalla como un volcado del driver.
  */
 function mensajeDeError(err: unknown, contexto: string): string {
+  if (err instanceof CuentaNoPermitida) return err.message;
   if (err instanceof RutRepetido) {
     return err.donde === "cliente"
       ? `El RUT ${err.rut} ya está registrado en otra empresa. El RUT es único: busca esa empresa y edítala.`
@@ -196,39 +198,40 @@ export async function guardarUsuarioAction(
   const sesion = await sesionMaestro("usuarios", id);
   if (!sesion) return { ok: false, error: "No tienes permiso para editar usuarios." };
   if (!datos.email.includes("@")) return { ok: false, error: "Escribe un correo válido." };
-
-  // Quien no es administrador no puede fabricarse más acceso del que tiene:
-  // ni tocar cuentas de administrador, ni cambiarse el rol, ni dar un rol que
-  // pueda más que él.
-  if (sesion.usuario.rol !== "ADMIN") {
-    const actual = id === null ? null : (await listarUsuarios()).find((u) => u.id === id) ?? null;
-    if (datos.rol === "ADMIN" || actual?.rol === "ADMIN") {
-      return { ok: false, error: "Solo un administrador puede crear o editar cuentas de administrador." };
-    }
-    const cambiaRol = !actual || actual.rol !== datos.rol || (actual.rolId ?? null) !== (datos.rolId ?? null);
-    if (id === sesion.usuario.id && cambiaRol) {
-      return { ok: false, error: "No puedes cambiar tu propio rol." };
-    }
-    if (cambiaRol && datos.rol === "COORDINADOR") {
-      const rol = (await listarRoles())?.find((r) => r.id === datos.rolId);
-      if (rol && !rol.permisos.every((p) => tiene(sesion.permisos, p))) {
-        return { ok: false, error: `El rol «${rol.nombre}» tiene permisos que tú no tienes: no lo puedes asignar.` };
-      }
-    }
-  }
   if (datos.rol === "TECNICO" && !datos.tecnicoId) {
     return { ok: false, error: "Un usuario TÉCNICO necesita técnico vinculado." };
   }
-  // Al crear, la contraseña es obligatoria: dmc.usuario.password_hash es NOT NULL
-  // y un usuario sin clave no podría entrar nunca.
-  if (id === null && datos.password.trim().length < 8) {
-    return { ok: false, error: "La contraseña es obligatoria y debe tener al menos 8 caracteres." };
+  // Al crear, la contraseña es obligatoria: dmc.usuario.password_hash es NOT
+  // NULL y un usuario sin clave no podría entrar nunca. Al editar, vacía = no
+  // se cambia. No se recorta: se guarda tal como se escribió.
+  if (id === null || datos.password !== "") {
+    const fallo = validarPasswordNueva(datos.password, datos.email);
+    if (fallo) return { ok: false, error: fallo };
   }
-  if (id !== null && datos.password.trim() && datos.password.trim().length < 8) {
-    return { ok: false, error: "La contraseña nueva debe tener al menos 8 caracteres." };
-  }
+
   try {
-    await guardarUsuario(id, datos);
+    const guardado = await guardarUsuario(id, datos, {
+      actorId: sesion.usuario.id,
+      // Quien no es administrador no puede fabricarse más acceso del que
+      // tiene: ni tocar cuentas que pueden más que él, ni cambiarse el rol, ni
+      // dar un rol que pueda más que él.
+      autorizar: (actual, nueva) => {
+        if (actual && !puedeAdministrarCuenta(sesion, actual)) return motivoCuentaAjena(actual);
+        if (!puedeAdministrarCuenta(sesion, nueva)) {
+          return nueva.rol === "ADMIN"
+            ? "Solo un administrador puede crear o editar cuentas de administrador."
+            : "El rol elegido tiene permisos que tú no tienes: no lo puedes asignar.";
+        }
+        const cambiaRol = !actual || actual.rol !== nueva.rol || actual.rolId !== nueva.rolId;
+        if (sesion.usuario.rol !== "ADMIN" && id === sesion.usuario.id && cambiaRol) {
+          return "No puedes cambiar tu propio rol.";
+        }
+        return null;
+      },
+    });
+    // Si se cambió la clave propia, la versión de sesión subió: esta sesión
+    // sigue con un token nuevo y las demás quedan cerradas.
+    if (guardado.id === sesion.usuario.id) await crearSesion(guardado.id, guardado.sesionVersion);
   } catch (err) {
     return { ok: false, error: mensajeDeError(err, "guardarUsuario") };
   }
@@ -251,9 +254,15 @@ export async function guardarRolAction(id: number | null, datos: DatosRol): Prom
   if (permisos.length === 0) return { ok: false, error: "Marca al menos un permiso: un rol vacío no puede ver nada." };
 
   try {
-    // Quien no es administrador solo da o quita los permisos que él tiene.
+    // Quien no es administrador no toca roles que pueden más que él, y solo da
+    // o quita los permisos que él tiene.
     if (sesion.usuario.rol !== "ADMIN") {
-      const previos = id === null ? [] : (await listarRoles())?.find((r) => r.id === id)?.permisos ?? [];
+      const previo = id === null ? null : await leerRol(id);
+      if (id !== null && !previo) return { ok: false, error: "Ese rol ya no existe. Recarga la página." };
+      const previos = previo?.permisos ?? [];
+      if (!puedeAdministrarCuenta(sesion, { permisos: previos })) {
+        return { ok: false, error: `El rol «${previo?.nombre}» tiene permisos que tú no tienes: no lo puedes editar.` };
+      }
       const tocados = [...permisos.filter((p) => !previos.includes(p)), ...previos.filter((p) => !permisos.includes(p))];
       if (tocados.some((p) => !tiene(sesion.permisos, p))) {
         return { ok: false, error: "Solo puedes dar o quitar permisos que tú también tienes." };
@@ -268,8 +277,15 @@ export async function guardarRolAction(id: number | null, datos: DatosRol): Prom
 }
 
 export async function eliminarRolAction(id: number): Promise<ResultadoMaestro> {
-  if (!(await sesionCon("usuarios.roles"))) return { ok: false, error: "No tienes permiso para administrar roles." };
+  const sesion = await sesionCon("usuarios.roles");
+  if (!sesion) return { ok: false, error: "No tienes permiso para administrar roles." };
   try {
+    // Borrar un rol que puede más que uno es quitarles acceso a otros por
+    // encima de lo que uno mismo tiene.
+    const rol = await leerRol(id);
+    if (rol && !puedeAdministrarCuenta(sesion, rol)) {
+      return { ok: false, error: `El rol «${rol.nombre}» tiene permisos que tú no tienes: no lo puedes eliminar.` };
+    }
     const fallo = await eliminarRol(id);
     if (fallo) return { ok: false, error: fallo };
   } catch (err) {
