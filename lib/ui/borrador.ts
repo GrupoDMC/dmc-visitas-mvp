@@ -110,6 +110,8 @@ export interface BorradorActa {
   respNombre: string;
   respRut: string;
   respTel: string;
+  /** Opcional; los borradores viejos no lo traen. */
+  respCargo?: string;
   motivosCodigos: string[];
   obs: string;
   interno: string;

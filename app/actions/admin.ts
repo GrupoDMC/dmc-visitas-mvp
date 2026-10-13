@@ -19,6 +19,7 @@ import { marcarGestionPendiente } from "@/lib/data/pendientes";
 import { marcarGestionProblema } from "@/lib/data/problemas";
 import {
   aplicarPlantilla,
+  FaltaMigracionCargos,
   FaltaMigracionEstadosProblema,
   FaltaMigracionGestionProblemas,
   FaltaMigracionPendientes,
@@ -602,6 +603,9 @@ function revalidarChecklist() {
 function errorChecklist(err: unknown, contexto: string): ResultadoChecklist {
   if (err instanceof FaltaMigracionPendientes) {
     return { ok: false, error: "Para guardar la lista «Gestión de pendientes» falta correr la migración 014 en la base." };
+  }
+  if (err instanceof FaltaMigracionCargos) {
+    return { ok: false, error: "Para guardar la lista «Cargos del responsable» falta correr la migración 022 en la base." };
   }
   if (err instanceof FaltaMigracionEstadosProblema) {
     return { ok: false, error: "Para cambiar la lista «Estados del problema» falta correr la migración 016 en la base." };

@@ -230,6 +230,9 @@ export interface CatalogoPendiente {
  */
 export type CatalogoGestionProblema = CatalogoPendiente;
 
+/** Cargo del responsable de tienda ("Jefe de tienda"). Lista fija del checklist. */
+export type CatalogoCargo = CatalogoPendiente;
+
 export interface VisitaTrabajoSubtrabajo {
   id: number;
   visitaTrabajoId: number;
@@ -269,6 +272,17 @@ export interface Problema {
   items: ProblemaItem[];
 }
 
+/** Alguien que ya recibió o firmó en una tienda (dmc.persona_local). */
+export interface PersonaLocal {
+  id: number;
+  nombre: string;
+  rut: string | null;
+  telefono: string | null;
+  /** "Jefe de tienda", "Encargado de seguridad"… Opcional. */
+  cargo: string | null;
+  ultimaVez: string;
+}
+
 export interface VisitaEjecucion {
   visitaId: number;
   horaInicio: string;
@@ -276,6 +290,8 @@ export interface VisitaEjecucion {
   responsableNombre: string;
   responsableRut: string | null;
   responsableTelefono: string | null;
+  /** El cargo de quien firmó. Opcional; viene del checklist de cargos. */
+  responsableCargo?: string | null;
   motivoRealCodigo: string | null;
   /** Todos los motivos que el técnico confirmó en terreno, no solo el primero. */
   motivosRealesCodigos: string[];
@@ -403,6 +419,8 @@ export interface Visita {
   /** Lo que se supo al agendar. El acta guarda el suyo en VisitaEjecucion. */
   responsableRut: string | null;
   responsableTelefono: string | null;
+  /** El cargo que se anotó al agendar. El del acta, si ya se cerró, está en VisitaEjecucion. */
+  responsableCargo?: string | null;
   /** Por qué la visita quedó PENDIENTE o CANCELADA — lo escribe el técnico. */
   motivoPendiente: string | null;
   problemaOrigenId: number | null;
@@ -461,5 +479,6 @@ export interface ChecklistPlantilla {
   trabajos: number;
   internos: number;
   pendientes: number;
+  cargos?: number;
   gestionProblemas: number;
 }

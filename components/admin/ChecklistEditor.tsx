@@ -21,6 +21,7 @@ import type {
   CatalogoGestionProblema,
   CatalogoInterno,
   CatalogoMotivo,
+  CatalogoCargo,
   CatalogoPendiente,
   CatalogoProblema,
   CatalogoSeccion,
@@ -93,7 +94,7 @@ interface Seccion {
 let contadorClave = 0;
 const nuevaClave = () => `k${(contadorClave += 1)}`;
 
-function aMotivos(lista: (CatalogoMotivo | CatalogoInterno | CatalogoPendiente | CatalogoEstadoProblema)[]): Motivo[] {
+function aMotivos(lista: (CatalogoMotivo | CatalogoInterno | CatalogoPendiente | CatalogoEstadoProblema | CatalogoCargo)[]): Motivo[] {
   return lista.map((m) => ({ key: nuevaClave(), id: m.id, codigo: m.codigo, nombre: m.nombre }));
 }
 
@@ -262,6 +263,8 @@ export default function ChecklistEditor({
   internosIniciales,
   pendientesIniciales,
   gestionDisponible,
+  cargosIniciales,
+  cargosDisponible,
   gestionProblemasIniciales,
   gestionProblemasDisponible,
   estadosProblemaIniciales,
@@ -279,6 +282,9 @@ export default function ChecklistEditor({
   pendientesIniciales: CatalogoPendiente[];
   /** false = falta la migración 014: la Lista 5 se muestra, pero no se puede guardar. */
   gestionDisponible: boolean;
+  cargosIniciales: CatalogoCargo[];
+  /** false = falta la migración 022: la Lista 8 se muestra, pero no se puede guardar. */
+  cargosDisponible: boolean;
   gestionProblemasIniciales: CatalogoGestionProblema[];
   /** false = falta la migración 015: la Lista 6 se muestra, pero no se puede guardar. */
   gestionProblemasDisponible: boolean;
@@ -311,6 +317,7 @@ export default function ChecklistEditor({
   const [trabajos, setTrabajos] = useState<Grupo[]>(inicial.trabajos);
   const [internos, setInternos] = useState<Motivo[]>(() => aMotivos(internosIniciales));
   const [pendientes, setPendientes] = useState<Motivo[]>(() => aMotivos(pendientesIniciales));
+  const [cargos, setCargos] = useState<Motivo[]>(() => aMotivos(cargosIniciales));
   const [gestionProblemas, setGestionProblemas] = useState<Motivo[]>(() => aMotivos(gestionProblemasIniciales));
   const [estadosProblema, setEstadosProblema] = useState<Motivo[]>(() => aMotivos(estadosProblemaIniciales));
   const [plantilla, setPlantilla] = useState(plantillaInicial);
@@ -333,6 +340,7 @@ export default function ChecklistEditor({
     trabajos: trabajosIniciales.length,
     internos: internosIniciales.length,
     pendientes: pendientesIniciales.length,
+    cargos: cargosIniciales.length,
     gestionProblemas: gestionProblemasIniciales.length,
     estadosProblema: estadosProblemaIniciales.length,
   });
@@ -348,6 +356,7 @@ export default function ChecklistEditor({
     setTrabajos(listas.trabajos);
     setInternos(aMotivos(internosIniciales));
     setPendientes(aMotivos(pendientesIniciales));
+    setCargos(aMotivos(cargosIniciales));
     setGestionProblemas(aMotivos(gestionProblemasIniciales));
     setEstadosProblema(aMotivos(estadosProblemaIniciales));
     enBase.current = {
@@ -356,6 +365,7 @@ export default function ChecklistEditor({
       trabajos: trabajosIniciales.length,
       internos: internosIniciales.length,
       pendientes: pendientesIniciales.length,
+      cargos: cargosIniciales.length,
       gestionProblemas: gestionProblemasIniciales.length,
       estadosProblema: estadosProblemaIniciales.length,
     };
@@ -368,6 +378,7 @@ export default function ChecklistEditor({
     trabajosIniciales,
     internosIniciales,
     pendientesIniciales,
+    cargosIniciales,
     gestionProblemasIniciales,
     estadosProblemaIniciales,
   ]);
@@ -425,6 +436,10 @@ export default function ChecklistEditor({
     () => pendientes.map((m, i) => ({ m, i })).filter(({ m }) => coincide(m.nombre)),
     [pendientes, coincide]
   );
+  const cargosVisibles = useMemo(
+    () => cargos.map((m, i) => ({ m, i })).filter(({ m }) => coincide(m.nombre)),
+    [cargos, coincide]
+  );
   const gestionProblemasVisibles = useMemo(
     () => gestionProblemas.map((m, i) => ({ m, i })).filter(({ m }) => coincide(m.nombre)),
     [gestionProblemas, coincide]
@@ -461,6 +476,7 @@ export default function ChecklistEditor({
     })),
     internos: internos.map((m) => ({ id: m.id, nombre: m.nombre })),
     pendientes: pendientes.map((m) => ({ id: m.id, nombre: m.nombre })),
+    cargos: cargos.map((m) => ({ id: m.id, nombre: m.nombre })),
     gestionProblemas: gestionProblemas.map((m) => ({ id: m.id, nombre: m.nombre })),
     estadosProblema: estadosProblema.map((m) => ({ id: m.id, nombre: m.nombre })),
   });
@@ -473,6 +489,7 @@ export default function ChecklistEditor({
     trabajos.filter((t) => !t.nombre.trim()).length +
     internos.filter((m) => !m.nombre.trim()).length +
     pendientes.filter((m) => !m.nombre.trim()).length +
+    cargos.filter((m) => !m.nombre.trim()).length +
     gestionProblemas.filter((m) => !m.nombre.trim()).length +
     estadosProblema.filter((m) => !m.nombre.trim()).length;
 
@@ -482,6 +499,7 @@ export default function ChecklistEditor({
     Math.max(0, enBase.current.trabajos - trabajos.filter((t) => t.id !== null).length) +
     Math.max(0, enBase.current.internos - internos.filter((m) => m.id !== null).length) +
     Math.max(0, enBase.current.pendientes - pendientes.filter((m) => m.id !== null).length) +
+    Math.max(0, enBase.current.cargos - cargos.filter((m) => m.id !== null).length) +
     Math.max(0, enBase.current.gestionProblemas - gestionProblemas.filter((m) => m.id !== null).length) +
     Math.max(0, enBase.current.estadosProblema - estadosProblema.filter((m) => m.codigo !== null).length);
 
@@ -491,6 +509,7 @@ export default function ChecklistEditor({
     trabajos.filter((t) => t.id === null).length +
     internos.filter((m) => m.id === null).length +
     pendientes.filter((m) => m.id === null).length +
+    cargos.filter((m) => m.id === null).length +
     gestionProblemas.filter((m) => m.id === null).length +
     estadosProblema.filter((m) => m.codigo === null).length;
 
@@ -600,6 +619,11 @@ export default function ChecklistEditor({
   function agregarPendiente() {
     editar(setPendientes, (prev) => [...prev, { key: nuevaClave(), id: null, codigo: null, nombre: "" }]);
     aviso("Paso agregado · escribe su nombre y guarda");
+  }
+
+  function agregarCargo() {
+    editar(setCargos, (prev) => [...prev, { key: nuevaClave(), id: null, codigo: null, nombre: "" }]);
+    aviso("Cargo agregado · escribe su nombre y guarda");
   }
 
   function agregarGestionProblema() {
@@ -803,6 +827,7 @@ export default function ChecklistEditor({
   const total =
     motivos.length + tipos.length + trabajos.length + internos.length +
     pendientes.length +
+    cargos.length +
     gestionProblemas.length +
     estadosProblema.length;
 
@@ -1390,6 +1415,45 @@ export default function ChecklistEditor({
           />
           {estadosProblema.length > 0 && estadosProblemaVisibles.length === 0 ? (
             <Vacio>Ningún estado coincide con «{busqueda}».</Vacio>
+          ) : null}
+        </Bloque>
+
+        {/* Lista 8 · Cargos del responsable */}
+        <Bloque
+          numero="Lista 8"
+          titulo="Cargos del responsable"
+          bajada="Los cargos que se ofrecen para quien recibe y firma en la tienda: al agendar la visita y al llenar el acta. Es opcional en cada visita; el que se elige sale en el acta y en el PDF, al lado del nombre."
+          cta="Nuevo cargo"
+          onAgregar={agregarCargo}
+        >
+          {!cargosDisponible ? (
+            <div className="mb-3 px-3.5 py-3 bg-[var(--color-accent-200)] border-l-4 border-[var(--color-accent)] text-[13px] text-[var(--color-accent-800)] max-w-[720px]">
+              Esta lista necesita la migración 022 en la base. Hasta que se corra, lo que agregues acá no se puede
+              guardar.
+            </div>
+          ) : null}
+          <FilasSimples
+            grupo="cargo"
+            lista={cargos}
+            visibles={cargosVisibles}
+            bloqueado={!!filtro}
+            que="cargo"
+            placeholder="Ej: Jefe de tienda"
+            onEditar={(fn) => editar(setCargos, fn)}
+            onPedirQuitar={(m) =>
+              setConfirmar({
+                titulo: "¿Quitar este cargo?",
+                texto: `«${m.nombre || "Sin nombre"}» deja de ofrecerse al agendar y al llenar el acta. No se borra: las actas que ya lo tienen lo siguen mostrando. El cambio se aplica al guardar.`,
+                cta: "Quitar cargo",
+                accion: () => editar(setCargos, (prev) => prev.filter((x) => x.key !== m.key)),
+              })
+            }
+          />
+          {cargos.length === 0 ? (
+            <Vacio>Sin cargos: el formulario no pregunta por el cargo de quien recibe.</Vacio>
+          ) : null}
+          {cargos.length > 0 && cargosVisibles.length === 0 ? (
+            <Vacio>Ningún cargo coincide con «{busqueda}».</Vacio>
           ) : null}
         </Bloque>
 

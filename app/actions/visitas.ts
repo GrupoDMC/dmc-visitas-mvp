@@ -11,8 +11,9 @@ import {
   iniciarVisita,
   type ActaEntrada,
 } from "@/lib/data/visitas";
+import { registrarPersonaLocal } from "@/lib/data/personas-local";
 import { listarSucursales } from "@/lib/data/maestros";
-import { listarMotivos } from "@/lib/data/catalogos";
+import { cargoDelChecklist, listarMotivos } from "@/lib/data/catalogos";
 import { algunoPideHora } from "@/lib/ui/motivos";
 import { participaEnVisita, tomadaPorOtro } from "@/lib/ui/estado";
 import { borrarBorrador } from "@/lib/data/borradores";
@@ -90,6 +91,16 @@ export async function guardarActaAction(entrada: ActaEntrada): Promise<Resultado
       tecnicoId: sesion.tecnico.id,
     });
     if (!res.ok) return { ok: false, error: res.error };
+    // Quien firmó queda en la lista de la tienda para la próxima visita.
+    const cerrada = await getVisitaCompletaPorFolio(entrada.folio).catch(() => null);
+    if (cerrada) {
+      await registrarPersonaLocal(cerrada.sucursalId, {
+        nombre: entrada.responsableNombre,
+        rut: entrada.responsableRut,
+        telefono: entrada.responsableTelefono,
+        cargo: await cargoDelChecklist(entrada.responsableCargo),
+      });
+    }
     // El acta ya está en sus tablas: el respaldo a medio llenar sobra, y si
     // quedara ahí la próxima visita a este folio lo ofrecería para recuperar.
     // Que falle no invalida el guardado.
@@ -169,6 +180,7 @@ export async function crearVisitaTecnicoAction(input: {
   responsableNombre: string;
   responsableRut: string;
   responsableTelefono: string;
+  responsableCargo?: string;
   trabajo: string;
 }): Promise<ResultadoAccion> {
   const sesion = await getSesion();
@@ -206,6 +218,7 @@ export async function crearVisitaTecnicoAction(input: {
         responsableNombre: input.responsableNombre || null,
         responsableRut: input.responsableRut || null,
         responsableTelefono: input.responsableTelefono || null,
+        responsableCargo: input.responsableCargo || null,
         creadaEnTerreno: true,
       },
       sesion.usuario.id

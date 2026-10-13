@@ -106,7 +106,7 @@ export default function ActaView({
     ? `${visita.fechaProgramada} · ${papel ? "informe en papel" : `${hhmm(ejec.horaInicio)}–${hhmm(ejec.horaTermino)}`}`
     : `${visita.fechaProgramada} · sin ejecutar`;
 
-  const resumen: { k: string; v: string; span?: 2 }[] = [
+  const resumen: { k: string; v: string; span?: 2; chip?: string }[] = [
     { k: visita.fechaHasta ? "Margen de días" : "Fecha programada", v: textoFechaVisita(visita) },
     { k: "Hora de llegada", v: visita.horaProgramada ?? "Sin hora · durante el día" },
     { k: "Cliente", v: visita.cliente?.nombreFantasia ?? "—" },
@@ -119,6 +119,8 @@ export default function ActaView({
       v: visita.responsableNombre
         ? `${visita.responsableNombre}${ejec?.responsableRut ? ` · ${ejec.responsableRut}` : ""}`
         : "Sin definir",
+      // El cargo que tenía en esta visita: el del acta si ya se cerró, si no el de la agenda.
+      chip: (ejec ? ejec.responsableCargo : visita.responsableCargo) || undefined,
     },
     { k: "Teléfono", v: visita.responsableTelefono ?? "Sin teléfono" },
     papel
@@ -323,7 +325,10 @@ export default function ActaView({
                     className={`px-4 sm:px-5 py-3.5 border-b border-black/[.2] border-r border-r-black/[.2] min-w-0 ${r.span === 2 ? "sm:col-span-2" : ""}`}
                   >
                     <div className="text-[11px] tracking-[.11em] uppercase opacity-72">{r.k}</div>
-                    <div className="text-[18px] leading-[1.35] mt-1.5">{r.v}</div>
+                    <div className="text-[18px] leading-[1.35] mt-1.5">
+                      {r.v}
+                      {r.chip ? <Tag variant="accent" className="ml-2 align-middle">{r.chip}</Tag> : null}
+                    </div>
                   </div>
                 ))}
               </div>

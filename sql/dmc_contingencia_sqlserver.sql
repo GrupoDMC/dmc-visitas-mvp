@@ -333,6 +333,22 @@ CREATE TABLE dmc.catalogo_pendiente (
 );
 GO
 
+-- Cargos del responsable de tienda ("Jefe de tienda"): la lista fija que se
+-- ofrece al agendar y al llenar el acta (migración 022).
+CREATE TABLE dmc.catalogo_cargo (
+    id              bigint        IDENTITY(1,1) NOT NULL,
+    codigo          varchar(40)   NOT NULL,
+    nombre          nvarchar(80)  NOT NULL,     -- "Jefe de tienda"
+    orden           smallint      NOT NULL CONSTRAINT df_cat_cargo_orden DEFAULT (0),
+    activo          bit           NOT NULL CONSTRAINT df_cat_cargo_activo DEFAULT (1),
+    creado_en       datetime2(0)  NOT NULL CONSTRAINT df_cat_cargo_creado DEFAULT (SYSDATETIME()),
+    actualizado_en  datetime2(0)  NOT NULL CONSTRAINT df_cat_cargo_actualizado DEFAULT (SYSDATETIME()),
+    CONSTRAINT pk_catalogo_cargo        PRIMARY KEY (id),
+    CONSTRAINT uq_catalogo_cargo_codigo UNIQUE (codigo),
+    CONSTRAINT uq_catalogo_cargo_nombre UNIQUE (nombre)
+);
+GO
+
 -- Checklist de gestión de problemas: los pasos que coordinación marca en el
 -- panel mientras lleva una falla hasta cerrarla.
 CREATE TABLE dmc.catalogo_problema_gestion (
@@ -395,6 +411,7 @@ CREATE TABLE dmc.visita (
     responsable_nombre    nvarchar(120) NULL,
     responsable_rut       varchar(12)   NULL,       -- se pide al agendar; llega precargado al acta
     responsable_telefono  varchar(30)   NULL,
+    responsable_cargo     nvarchar(80)  NULL,       -- el cargo que se anotó al agendar (migración 022)
     problema_origen_id    bigint        NULL,       -- visita nacida de un problema abierto
     creada_en_terreno     bit           NOT NULL CONSTRAINT df_visita_terreno DEFAULT (0),
     creada_por            bigint        NULL,
@@ -460,6 +477,7 @@ CREATE TABLE dmc.visita_ejecucion (
     responsable_nombre    nvarchar(120) NOT NULL,
     responsable_rut       varchar(12)   NULL,
     responsable_telefono  varchar(30)   NULL,
+    responsable_cargo     nvarchar(80)  NULL,      -- el cargo de quien firmó; sale en el acta y el PDF (migración 022)
     motivo_real_codigo    varchar(40)   NULL,      -- el motivo que el técnico confirma en terreno
     observaciones         nvarchar(max) NULL,      -- las ve el cliente en el acta
     comentario_interno    nvarchar(max) NULL,      -- solo coordinación
@@ -515,6 +533,25 @@ CREATE TABLE dmc.visita_eliminacion (
 );
 GO
 CREATE INDEX ix_visita_elim_visita ON dmc.visita_eliminacion (visita_id);
+GO
+
+-- Quienes han recibido o firmado en cada tienda (migración 021). Se ofrecen al
+-- agendar y al llenar el acta; la app la alimenta con cada visita. Una persona
+-- por tienda: por RUT cuando lo tiene, por nombre cuando no.
+CREATE TABLE dmc.persona_local (
+    id          bigint        IDENTITY(1,1) NOT NULL,
+    sucursal_id bigint        NOT NULL,
+    nombre      nvarchar(120) NOT NULL,
+    rut         varchar(12)   NULL,
+    telefono    varchar(30)   NULL,
+    cargo       nvarchar(80)  NULL,
+    ultima_vez  datetime2(0)  NOT NULL CONSTRAINT df_persona_local_ultima DEFAULT (SYSDATETIME()),
+    CONSTRAINT pk_persona_local          PRIMARY KEY (id),
+    CONSTRAINT fk_persona_local_sucursal FOREIGN KEY (sucursal_id) REFERENCES dmc.sucursal (id)
+);
+GO
+CREATE UNIQUE INDEX uq_persona_local_rut    ON dmc.persona_local (sucursal_id, rut)    WHERE rut IS NOT NULL;
+CREATE UNIQUE INDEX uq_persona_local_nombre ON dmc.persona_local (sucursal_id, nombre) WHERE rut IS NULL;
 GO
 
 -- Bitácora de cada corrección hecha a un acta después de cerrarla: quién,
@@ -1012,6 +1049,12 @@ CREATE OR ALTER TRIGGER dmc.tg_cat_pendiente_actualizado ON dmc.catalogo_pendien
 BEGIN
     SET NOCOUNT ON;
     UPDATE c SET actualizado_en = SYSDATETIME() FROM dmc.catalogo_pendiente c JOIN inserted i ON i.id = c.id;
+END;
+GO
+CREATE OR ALTER TRIGGER dmc.tg_cat_cargo_actualizado ON dmc.catalogo_cargo AFTER UPDATE AS
+BEGIN
+    SET NOCOUNT ON;
+    UPDATE c SET actualizado_en = SYSDATETIME() FROM dmc.catalogo_cargo c JOIN inserted i ON i.id = c.id;
 END;
 GO
 CREATE OR ALTER TRIGGER dmc.tg_cat_prob_gestion_actualizado ON dmc.catalogo_problema_gestion AFTER UPDATE AS

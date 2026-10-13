@@ -50,7 +50,7 @@ export default function ActaGuardada({
   // El técnico puede corregir su acta hasta un día después de cerrarla.
   const editable = cerrada && puedeEditar && Boolean(ejec?.editablePorTecnico);
 
-  const filas: { k: string; v: string }[] = [
+  const filas: { k: string; v: string; chip?: string }[] = [
     { k: "Motivo", v: textoMotivosReales(visita) },
     { k: "Técnico", v: visita.tecnico?.nombreCompleto ?? "—" },
     ...(visita.tecnicoAyudante ? [{ k: "Ayudante", v: visita.tecnicoAyudante.nombreCompleto }] : []),
@@ -61,6 +61,7 @@ export default function ActaGuardada({
       v: ejec?.responsableNombre
         ? `${ejec.responsableNombre}${ejec.responsableRut ? ` · ${ejec.responsableRut}` : ""}`
         : visita.responsableNombre ?? "—",
+      chip: ejec?.responsableCargo || undefined,
     },
   ];
   if (ejec?.observaciones) filas.push({ k: "Observación", v: ejec.observaciones });
@@ -138,7 +139,10 @@ export default function ActaGuardada({
         {filas.map((f) => (
           <div key={f.k} className="py-2.5 border-b border-black/[.2]">
             <div className="text-[11px] tracking-[.1em] uppercase opacity-66">{f.k}</div>
-            <div className="text-sm mt-1">{f.v || "—"}</div>
+            <div className="text-sm mt-1">
+              {f.v || "—"}
+              {f.chip ? <span className="tag tag-accent ml-2 align-middle">{f.chip}</span> : null}
+            </div>
           </div>
         ))}
 

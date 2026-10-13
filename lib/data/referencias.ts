@@ -1,5 +1,5 @@
 import "server-only";
-import { listarEstadosProblema, listarMotivos, listarProblemas, listarTrabajos } from "@/lib/data/catalogos";
+import { listarCargos, listarEstadosProblema, listarMotivos, listarProblemas, listarTrabajos } from "@/lib/data/catalogos";
 import { listarClientes, listarMalls, listarSucursales, listarTecnicos } from "@/lib/data/maestros";
 import type { RolUsuario } from "@/lib/types";
 import type { Referencias } from "@/lib/ui/referencias";
@@ -9,7 +9,7 @@ import type { Referencias } from "@/lib/ui/referencias";
  * completos. Se carga una vez por petición en el layout y baja por contexto.
  */
 export async function cargarReferencias(rol: RolUsuario, permisos: string[]): Promise<Referencias> {
-  const [clientes, malls, sucursales, tecnicos, motivos, problemas, trabajos, estadosProblema] = await Promise.all([
+  const [clientes, malls, sucursales, tecnicos, motivos, problemas, trabajos, estadosProblema, cargos] = await Promise.all([
     listarClientes(),
     listarMalls(),
     listarSucursales(),
@@ -18,8 +18,9 @@ export async function cargarReferencias(rol: RolUsuario, permisos: string[]): Pr
     listarProblemas(),
     listarTrabajos(),
     listarEstadosProblema(),
+    listarCargos(),
   ]);
-  return { rol, permisos, clientes, malls, sucursales, tecnicos, motivos, problemas, trabajos, estadosProblema };
+  return { rol, permisos, clientes, malls, sucursales, tecnicos, motivos, problemas, trabajos, estadosProblema, cargos };
 }
 
 /**
@@ -28,7 +29,7 @@ export async function cargarReferencias(rol: RolUsuario, permisos: string[]): Pr
  * visita". RUT, correo y teléfono se quedan en el servidor.
  */
 export async function cargarReferenciasTecnico(permisos: string[]): Promise<Referencias> {
-  const [clientes, malls, sucursales, tecnicos, motivos, problemas, trabajos, estadosProblema] = await Promise.all([
+  const [clientes, malls, sucursales, tecnicos, motivos, problemas, trabajos, estadosProblema, cargos] = await Promise.all([
     listarClientes(),
     listarMalls(),
     listarSucursales(),
@@ -37,6 +38,7 @@ export async function cargarReferenciasTecnico(permisos: string[]): Promise<Refe
     listarProblemas(),
     listarTrabajos(),
     listarEstadosProblema(),
+    listarCargos(),
   ]);
   const companeros = tecnicos
     .filter((t) => t.activo)
@@ -62,5 +64,6 @@ export async function cargarReferenciasTecnico(permisos: string[]): Promise<Refe
     problemas,
     trabajos,
     estadosProblema,
+    cargos,
   };
 }

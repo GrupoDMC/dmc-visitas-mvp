@@ -7,6 +7,7 @@ import type {
   CatalogoInterno,
   CatalogoGestionProblema,
   CatalogoMotivo,
+  CatalogoCargo,
   CatalogoPendiente,
   CatalogoProblema,
   CatalogoProblemaOpcion,
@@ -300,6 +301,51 @@ export async function listarPendientes(): Promise<CatalogoPendiente[]> {
   }));
 }
 
+/** La lista de cargos necesita la migración 022. Sin ella el resto del checklist sigue andando. */
+export class FaltaMigracionCargos extends Error {
+  constructor() {
+    super("Falta la migración 022: dmc.catalogo_cargo");
+    this.name = "FaltaMigracionCargos";
+  }
+}
+
+let conCargos = false;
+
+/** ¿Está la migración 022? Una vez que aparece no se vuelve a preguntar. */
+export async function hayCargos(): Promise<boolean> {
+  if (conCargos) return true;
+  const [fila] = await consulta<{ id: number | null }>(`SELECT OBJECT_ID('dmc.catalogo_cargo', 'U') AS id`);
+  conCargos = fila?.id != null;
+  return conCargos;
+}
+
+/** Los cargos que se ofrecen para el responsable de tienda. */
+export async function listarCargos(): Promise<CatalogoCargo[]> {
+  if (!(await hayCargos())) return [];
+  const filas = await consulta<FilaMotivo>(
+    `SELECT id, codigo, nombre, orden, activo
+       FROM dmc.catalogo_cargo WHERE activo = 1 ORDER BY orden, id`
+  );
+  return filas.map((f) => ({
+    id: num(f.id),
+    codigo: f.codigo,
+    nombre: f.nombre,
+    orden: f.orden,
+    activo: Boolean(f.activo),
+  }));
+}
+
+/**
+ * El cargo como está escrito en el checklist, o null si no es uno de la lista
+ * (o no hay migración). Es lo único que se guarda en una visita: así un texto
+ * suelto no se cuela y la mayúscula siempre es la del checklist.
+ */
+export async function cargoDelChecklist(nombre: string | null | undefined): Promise<string | null> {
+  const buscado = nombre?.trim().toLowerCase();
+  if (!buscado) return null;
+  return (await listarCargos()).find((c) => c.nombre.trim().toLowerCase() === buscado)?.nombre ?? null;
+}
+
 /** La Lista 6 necesita la migración 015. Sin ella el resto del checklist sigue andando. */
 export class FaltaMigracionGestionProblemas extends Error {
   constructor() {
@@ -512,6 +558,8 @@ export interface BorradorChecklist {
   internos?: MotivoBorrador[];
   /** Checklist de gestión de reagendas y pendientes. Misma forma que los motivos. */
   pendientes?: MotivoBorrador[];
+  /** Cargos del responsable de tienda. Misma forma que los motivos. */
+  cargos?: MotivoBorrador[];
   /** Checklist de gestión de problemas. Misma forma que los motivos. */
   gestionProblemas?: MotivoBorrador[];
   /** Los estados de un problema. Misma forma que los motivos. */
@@ -524,6 +572,7 @@ export interface ResumenChecklist {
   trabajos: number;
   internos: number;
   pendientes: number;
+  cargos: number;
   gestionProblemas: number;
   estadosProblema: number;
   desactivados: number;
@@ -677,6 +726,20 @@ export async function guardarChecklist(borrador: BorradorChecklist): Promise<Res
     throw new FaltaMigracionPendientes();
   }
 
+  // ── Cargos del responsable ── (misma regla, con la migración 022)
+  let vivosCargo = 0;
+  if (await hayCargos()) {
+    if (borrador.cargos) {
+      const cargos = await guardarListaSimple("dmc.catalogo_cargo", borrador.cargos, "CARGO");
+      vivosCargo = cargos.vivos.length;
+      desactivados += cargos.desactivados;
+    } else {
+      vivosCargo = (await listarCargos()).length;
+    }
+  } else if (borrador.cargos?.some((x) => x.nombre.trim())) {
+    throw new FaltaMigracionCargos();
+  }
+
   // ── Checklist de gestión de problemas ── (misma regla, con la migración 015)
   let vivosGestionProblema = 0;
   if (await hayGestionProblemas()) {
@@ -716,6 +779,7 @@ export async function guardarChecklist(borrador: BorradorChecklist): Promise<Res
     trabajos: vivosTrabajo.length,
     internos: vivosInterno,
     pendientes: vivosPendiente,
+    cargos: vivosCargo,
     gestionProblemas: vivosGestionProblema,
     estadosProblema: vivosEstado,
     desactivados,
@@ -862,6 +926,7 @@ async function guardarListaSimple(
     | "dmc.catalogo_motivo"
     | "dmc.catalogo_interno"
     | "dmc.catalogo_pendiente"
+    | "dmc.catalogo_cargo"
     | "dmc.catalogo_problema_gestion",
   items: MotivoBorrador[],
   respaldo: string
@@ -990,13 +1055,14 @@ async function desactivarSobrantes(tabla: string, vivos: number[], extra = "1 = 
 export const PLANTILLA_PROPIA = "Mi plantilla";
 
 export async function guardarPlantilla(nombre: string, usuarioId: number | null): Promise<ChecklistPlantilla> {
-  const [motivos, problemas, trabajos, internos, pendientes, gestionProblemas, seccionesMotivo, seccionesTrabajo] =
+  const [motivos, problemas, trabajos, internos, pendientes, cargos, gestionProblemas, seccionesMotivo, seccionesTrabajo] =
     await Promise.all([
       listarMotivos(),
       listarProblemas(),
       listarTrabajos(),
       listarInternos(),
       listarPendientes(),
+      listarCargos(),
       listarGestionProblemas(),
       listarSecciones("MOTIVO"),
       listarSecciones("TRABAJO"),
@@ -1033,6 +1099,7 @@ export async function guardarPlantilla(nombre: string, usuarioId: number | null)
     })),
     internos: internos.map((x) => ({ id: null, nombre: x.nombre })),
     pendientes: pendientes.map((x) => ({ id: null, nombre: x.nombre })),
+    cargos: cargos.map((x) => ({ id: null, nombre: x.nombre })),
     gestionProblemas: gestionProblemas.map((x) => ({ id: null, nombre: x.nombre })),
   };
 
@@ -1085,6 +1152,7 @@ async function leerPlantilla(nombre: string): Promise<{ fila: FilaPlantilla; dat
         // Plantillas guardadas antes de que existieran: sin estas listas.
         internos: datos.internos,
         pendientes: datos.pendientes,
+        cargos: datos.cargos,
         gestionProblemas: datos.gestionProblemas,
       },
     };
@@ -1108,6 +1176,7 @@ export async function getPlantilla(nombre: string): Promise<ChecklistPlantilla |
     trabajos: leida.datos.trabajos.length,
     internos: leida.datos.internos?.length ?? 0,
     pendientes: leida.datos.pendientes?.length ?? 0,
+    cargos: leida.datos.cargos?.length ?? 0,
     gestionProblemas: leida.datos.gestionProblemas?.length ?? 0,
   };
 }
@@ -1121,12 +1190,13 @@ export async function aplicarPlantilla(nombre: string): Promise<ResumenChecklist
   const leida = await leerPlantilla(nombre);
   if (!leida) throw new Error("Todavía no has guardado ninguna plantilla.");
 
-  const [motivos, problemas, trabajos, internos, pendientes, gestionProblemas] = await Promise.all([
+  const [motivos, problemas, trabajos, internos, pendientes, cargos, gestionProblemas] = await Promise.all([
     listarMotivos(),
     listarProblemas(),
     listarTrabajos(),
     listarInternos(),
     listarPendientes(),
+    listarCargos(),
     listarGestionProblemas(),
   ]);
 
@@ -1170,6 +1240,7 @@ export async function aplicarPlantilla(nombre: string): Promise<ResumenChecklist
     })),
     internos: leida.datos.internos?.map((x) => ({ id: idPorNombre(internos, x.nombre), nombre: x.nombre })),
     pendientes: leida.datos.pendientes?.map((x) => ({ id: idPorNombre(pendientes, x.nombre), nombre: x.nombre })),
+    cargos: leida.datos.cargos?.map((x) => ({ id: idPorNombre(cargos, x.nombre), nombre: x.nombre })),
     gestionProblemas: leida.datos.gestionProblemas?.map((x) => ({
       id: idPorNombre(gestionProblemas, x.nombre),
       nombre: x.nombre,

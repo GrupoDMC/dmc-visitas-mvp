@@ -10,6 +10,9 @@ import FirmaSheet, { type FirmaGuardada } from "./FirmaSheet";
 import { Toast, useToast } from "./toast";
 import { fmtRut, fmtTel, mensajeRut, rutCompleto, rutDvCorrecto, telCompleto } from "@/lib/ui/formato";
 import { comprimirFoto } from "@/lib/ui/imagen";
+import SelectBuscable from "@/components/ui/SelectBuscable";
+import { cargoVigente } from "@/lib/ui/cargos";
+import { etiquetaPersona, usePersonasLocal } from "@/lib/ui/personas-local";
 import { puede, useReferencias } from "@/lib/ui/referencias";
 import { mb, reloj, repararDuracionPreview, trozoBase64, VIDEO_TROZO_BYTES } from "@/lib/ui/video";
 import { guardarActaAction } from "@/app/actions/visitas";
@@ -129,6 +132,22 @@ export default function FormularioVisita({
     inicial?.respRut ?? fmtRut(visita.ejecucion?.responsableRut ?? visita.responsableRut ?? "")
   );
   const [respTel, setRespTel] = useState(inicial?.respTel ?? fmtTel(visita.responsableTelefono ?? ""));
+  // El cargo es opcional y no vive en la visita: sale de la lista de la tienda.
+  const [respCargo, setRespCargo] = useState(visita.ejecucion?.responsableCargo ?? visita.responsableCargo ?? "");
+  const personasLocal = usePersonasLocal(visita.sucursalId);
+  const cargos = useReferencias().cargos;
+  // Si quien se agendó ya está en la lista de la tienda con su cargo, llega puesto.
+  useEffect(() => {
+    if (respCargo || !personasLocal.length || !cargos.length) return;
+    const rut = respRut.replace(/[^0-9kK]/g, "").toUpperCase();
+    const conocida = personasLocal.find((p) =>
+      rut ? (p.rut ?? "").replace(/[^0-9kK]/g, "").toUpperCase() === rut : p.nombre === respNombre.trim()
+    );
+    const cargo = cargoVigente(cargos, conocida?.cargo);
+    if (cargo) setRespCargo(cargo);
+    // Solo cuando llega la lista: lo que se escriba después no se pisa.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [personasLocal]);
 
   // 2 · Motivo y trabajo realizado. Los que agendó coordinación vienen ya
   // marcados, pero el técnico puede quitarlos si en terreno no correspondían, y
@@ -250,6 +269,7 @@ export default function FormularioVisita({
       respNombre,
       respRut,
       respTel,
+      respCargo,
       motivosCodigos,
       obs,
       interno,
@@ -261,13 +281,14 @@ export default function FormularioVisita({
       guardadas,
       horaInicio,
     }),
-    [visita.folio, respNombre, respRut, respTel, motivosCodigos, obs, interno, internos, trabajos, problemas, fotos, firma, guardadas, horaInicio]
+    [visita.folio, respNombre, respRut, respTel, respCargo, motivosCodigos, obs, interno, internos, trabajos, problemas, fotos, firma, guardadas, horaInicio]
   );
 
   const aplicarBorrador = useCallback((b: BorradorActa) => {
     setRespNombre(b.respNombre ?? "");
     setRespRut(b.respRut ?? "");
     setRespTel(b.respTel ?? "");
+    setRespCargo(b.respCargo ?? "");
     if (b.motivosCodigos?.length) setMotivosCodigos(confirmadosOAgendados(b.motivosCodigos));
     setObs(b.obs ?? "");
     setInterno(b.interno ?? "");
@@ -410,6 +431,7 @@ export default function FormularioVisita({
       responsableNombre: respNombre.trim(),
       responsableRut: respRut.trim() || null,
       responsableTelefono: respTel.trim() || null,
+      responsableCargo: respCargo.trim() || null,
       motivosCodigos,
       observaciones: obs.trim() || null,
       comentarioInterno: interno.trim() || null,
@@ -537,6 +559,7 @@ export default function FormularioVisita({
       responsableNombre: respNombre.trim(),
       responsableRut: respRut.trim() || null,
       responsableTelefono: respTel.trim() || null,
+      responsableCargo: cargos.length || respCargo ? respCargo.trim() || null : undefined,
       motivosCodigos,
       observaciones: obs.trim() || null,
       comentarioInterno: interno.trim() || null,
@@ -817,6 +840,7 @@ export default function FormularioVisita({
       { k: motivosCodigos.length > 1 ? "Motivos de la visita" : "Motivo de la visita", v: nombreMotivos(motivosCodigos) },
       { k: "Nombre", v: respNombre || "—" },
       { k: "Rut", v: respRut || "Sin RUT" },
+      ...(respCargo ? [{ k: "Cargo", v: respCargo }] : []),
       { k: "Teléfono de contacto", v: respTel || "—" },
       { k: "Detalle del trabajo", v: obs || "Sin detalle escrito." },
     ];
@@ -1184,6 +1208,26 @@ export default function FormularioVisita({
         />
         {abierta === "sucursal" ? (
           <Cuerpo>
+            {personasLocal.length > 0 ? (
+              <Campo label="Personas del local" htmlFor="f-per">
+                <SelectBuscable
+                  id="f-per"
+                  valor=""
+                  opciones={personasLocal.map((p) => ({ v: String(p.id), t: etiquetaPersona(p) }))}
+                  onChange={(v) => {
+                    const p = personasLocal.find((x) => String(x.id) === v);
+                    if (!p) return;
+                    setRespNombre(p.nombre);
+                    setRespRut(fmtRut(p.rut ?? ""));
+                    setRespTel(fmtTel(p.telefono ?? ""));
+                    setRespCargo(cargoVigente(cargos, p.cargo));
+                  }}
+                  ariaLabel="Personas del local"
+                  placeholder="Elige a quien recibe, o escribe sus datos abajo…"
+                  claseCampo={entrada}
+                />
+              </Campo>
+            ) : null}
             <Campo label="Responsable de tienda" htmlFor="f-nom">
               <input
                 id="f-nom"
@@ -1226,6 +1270,18 @@ export default function FormularioVisita({
                 />
               </Campo>
             </div>
+            {cargos.length > 0 ? (
+              <Campo label="Cargo (opcional)" htmlFor="f-cargo">
+                <SelectBuscable
+                  id="f-cargo"
+                  valor={respCargo}
+                  opciones={[{ v: "", t: "Sin cargo" }, ...cargos.map((c) => ({ v: c.nombre, t: c.nombre }))]}
+                  onChange={setRespCargo}
+                  ariaLabel="Cargo del responsable"
+                  claseCampo={entrada}
+                />
+              </Campo>
+            ) : null}
             {!sucursalCompleta ? (
               <p className="m-0 text-xs text-[var(--color-accent-800)]">
                 Completa nombre, RUT y teléfono del responsable para poder guardar esta sección.

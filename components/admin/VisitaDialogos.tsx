@@ -20,6 +20,8 @@ import { ESTADO_VISITA_LABEL, nombreDeQuienLaTomo } from "@/lib/ui/estado";
 import { mensajeRut } from "@/lib/ui/formato";
 import { hoyISO } from "@/lib/ui/fecha";
 import { algunoPideHora } from "@/lib/ui/motivos";
+import { cargoVigente } from "@/lib/ui/cargos";
+import { etiquetaPersona, usePersonasLocal } from "@/lib/ui/personas-local";
 import type { Visita } from "@/lib/types";
 
 /** Opciones de los selectores, derivadas de los maestros que baja el layout. */
@@ -117,6 +119,8 @@ function valoresIniciales(opc: Opciones, visita?: Visita, origen?: OrigenProblem
       responsable: visita.responsableNombre ?? "",
       respRut: visita.responsableRut ?? "",
       respTelefono: visita.responsableTelefono ?? "",
+      respCargo: "",
+      persona: "",
       trabajo: visita.trabajoSolicitado,
       acceso: visita.indicacionesAcceso ?? "",
     };
@@ -143,6 +147,8 @@ function valoresIniciales(opc: Opciones, visita?: Visita, origen?: OrigenProblem
       responsable: "",
       respRut: "",
       respTelefono: "",
+      respCargo: "",
+      persona: "",
       trabajo: trabajo.trim(),
       acceso: "",
     };
@@ -162,6 +168,8 @@ function valoresIniciales(opc: Opciones, visita?: Visita, origen?: OrigenProblem
     responsable: "",
     respRut: "",
     respTelefono: "",
+    respCargo: "",
+    persona: "",
     trabajo: "",
     acceso: "",
   };
@@ -193,6 +201,7 @@ export default function VisitaDialogo({
   const opc = useMemo(() => opciones(ref), [ref]);
   const [form, setForm] = useState<FormValores>(() => valoresIniciales(opc, visita, origen));
   const [guardando, setGuardando] = useState(false);
+  const personas = usePersonasLocal(form.sucursalId ? String(form.sucursalId) : "");
 
   // Una visita puede venir por varias cosas a la vez. El primero marcado es el
   // principal: es el que va a dmc.visita.motivo_codigo. La hora es obligatoria
@@ -250,6 +259,22 @@ export default function VisitaDialogo({
         ? "En instalación la hora es obligatoria: la tienda tiene que dejar el acceso libre."
         : "Si la dejas vacía, el técnico la realiza en cualquier momento del día.",
     },
+    ...(personas.length
+      ? [
+          {
+            k: "persona",
+            label: "Personas del local",
+            span: 2,
+            tipo: "select",
+            buscable: true,
+            opciones: [
+              { v: "", t: "Escribir otra persona" },
+              ...personas.map((p) => ({ v: String(p.id), t: etiquetaPersona(p) })),
+            ],
+            ayuda: "Quienes ya recibieron o firmaron en esta tienda. Al elegir una se llenan sus datos abajo.",
+          } satisfies CampoDef,
+        ]
+      : []),
     { k: "responsable", label: "Responsable de tienda", span: 2, ph: "Nombre de quien recibe" },
     {
       k: "respRut",
@@ -259,6 +284,17 @@ export default function VisitaDialogo({
       ayuda: "Opcional al agendar. Si va, el técnico lo encuentra ya escrito en el acta.",
     },
     { k: "respTelefono", label: "Teléfono del responsable", tipo: "tel", ph: "+56 9 8123 4455" },
+    ...(ref.cargos.length
+      ? [
+          {
+            k: "respCargo",
+            label: "Cargo del responsable (opcional)",
+            span: 2,
+            tipo: "select",
+            opciones: [{ v: "", t: "Sin cargo" }, ...ref.cargos.map((c) => ({ v: c.nombre, t: c.nombre }))],
+          } satisfies CampoDef,
+        ]
+      : []),
     {
       k: "trabajo",
       label: "Qué se necesita hacer",
@@ -281,11 +317,28 @@ export default function VisitaDialogo({
       if (valor === true) onPorMall?.(form);
       return;
     }
+    if (k === "persona") {
+      const p = personas.find((x) => String(x.id) === String(valor));
+      setForm((prev) =>
+        p
+          ? {
+              ...prev,
+              persona: valor,
+              responsable: p.nombre,
+              respRut: p.rut ?? "",
+              respTelefono: p.telefono ?? "",
+              respCargo: cargoVigente(ref.cargos, p.cargo),
+            }
+          : { ...prev, persona: "" }
+      );
+      return;
+    }
     setForm((prev) => {
       if (k === "clienteId") {
         const primera = opc.sucursalesDe(String(valor))[0]?.v ?? "";
-        return { ...prev, clienteId: valor, sucursalId: primera };
+        return { ...prev, clienteId: valor, sucursalId: primera, persona: "" };
       }
+      if (k === "sucursalId") return { ...prev, sucursalId: valor, persona: "" };
       // Si el asignado pasa a ser el que iba de ayudante, el ayudante se suelta.
       if (k === "tecnicoId" && String(valor) === String(prev.ayudanteId)) {
         return { ...prev, tecnicoId: valor, ayudanteId: "" };
@@ -330,6 +383,7 @@ export default function VisitaDialogo({
       responsableNombre: String(form.responsable) || null,
       responsableRut: String(form.respRut) || null,
       responsableTelefono: String(form.respTelefono) || null,
+      responsableCargo: String(form.respCargo).trim() || null,
       problemaOrigenId: origen?.problemaId ?? null,
     };
 

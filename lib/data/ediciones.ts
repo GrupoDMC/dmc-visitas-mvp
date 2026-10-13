@@ -16,7 +16,7 @@ import {
   type SubtrabajoActa,
   type TrabajoActa,
 } from "@/lib/data/visitas";
-import { listarInternos, listarMotivos, listarProblemas, listarTrabajos } from "@/lib/data/catalogos";
+import { cargoDelChecklist, hayCargos, listarInternos, listarMotivos, listarProblemas, listarTrabajos } from "@/lib/data/catalogos";
 import { rutLimpio } from "@/lib/ui/formato";
 import type { EstadoVisita, OrigenRegistro, Visita } from "@/lib/types";
 
@@ -56,6 +56,8 @@ export interface EdicionActaEntrada {
   responsableNombre: string;
   responsableRut: string | null;
   responsableTelefono: string | null;
+  /** El cargo del checklist. Sin definir (undefined) = no se toca el que tenía. */
+  responsableCargo?: string | null;
   motivosCodigos: string[];
   observaciones: string | null;
   comentarioInterno: string | null;
@@ -185,6 +187,9 @@ function comparar(antes: Visita, e: EdicionActaEntrada, fotosNuevas: FotoLista[]
   if (cambioTel) {
     anotar(SECCION.responsable, `Teléfono: ${cita(txt(ejec.responsableTelefono))} → ${cita(txt(e.responsableTelefono))}`);
   }
+  const cargoAntes = txt(ejec.responsableCargo);
+  const cambioCargo = e.responsableCargo !== undefined && cargoAntes !== txt(e.responsableCargo);
+  if (cambioCargo) anotar(SECCION.responsable, `Cargo: ${cita(cargoAntes)} → ${cita(txt(e.responsableCargo))}`);
 
   // La firma no se toca. Pero si bajo ella iban el nombre o el RUT del
   // responsable y eso es justo lo que se corrige, el texto se corrige también:
@@ -349,7 +354,7 @@ function comparar(antes: Visita, e: EdicionActaEntrada, fotosNuevas: FotoLista[]
 
   return {
     lineas,
-    ejecucion: cambioNombre || cambioRut || cambioTel || cambioMotivos || obsAntes !== obsAhora || internoAntes !== internoAhora,
+    ejecucion: cambioNombre || cambioRut || cambioTel || cambioCargo || cambioMotivos || obsAntes !== obsAhora || internoAntes !== internoAhora,
     motivos: cambioMotivos,
     trabajos: cambioTrabajos,
     internos: marcados.length > 0 || desmarcados.length > 0,
@@ -417,7 +422,18 @@ export async function editarActa(entrada: EdicionActaEntrada, ctx: ContextoEdici
     interno: buscar(catInternos),
   };
 
-  const cambios = comparar(antes, { ...entrada, motivosCodigos: motivos }, fotosNuevas, nombres);
+  // Un cargo que no cambió se deja como está aunque ya no figure en el checklist;
+  // uno nuevo solo vale si es del checklist.
+  const conCargos = await hayCargos();
+  let cargo: string | null | undefined = undefined;
+  if (conCargos && entrada.responsableCargo !== undefined) {
+    cargo =
+      txt(entrada.responsableCargo) === txt(antes.ejecucion.responsableCargo)
+        ? txt(antes.ejecucion.responsableCargo) || null
+        : await cargoDelChecklist(entrada.responsableCargo);
+  }
+
+  const cambios = comparar(antes, { ...entrada, responsableCargo: cargo, motivosCodigos: motivos }, fotosNuevas, nombres);
   if (!cambios.lineas.length) return { ok: false, error: "No cambiaste nada: el acta quedó como estaba." };
   const secciones = [...new Set(cambios.lineas.map((l) => l.seccion))];
 
@@ -474,6 +490,7 @@ export async function editarActa(entrada: EdicionActaEntrada, ctx: ContextoEdici
               SET responsable_nombre   = @nombre,
                   responsable_rut      = @rut,
                   responsable_telefono = @telefono,
+                  ${cargo !== undefined ? "responsable_cargo = @cargo," : ""}
                   motivo_real_codigo   = @motivo,
                   observaciones        = @obs,
                   comentario_interno   = @interno
@@ -482,6 +499,7 @@ export async function editarActa(entrada: EdicionActaEntrada, ctx: ContextoEdici
             ["nombre", sql.NVarChar(120), txt(entrada.responsableNombre)],
             ["rut", sql.VarChar(12), txt(entrada.responsableRut) || null],
             ["telefono", sql.VarChar(30), txt(entrada.responsableTelefono) || null],
+            ...(cargo !== undefined ? [["cargo", sql.NVarChar(80), cargo] as [string, unknown, unknown]] : []),
             ["motivo", sql.VarChar(40), motivos[0]],
             ["obs", sql.NVarChar(sql.MAX), txt(entrada.observaciones) || null],
             ["interno", sql.NVarChar(sql.MAX), txt(entrada.comentarioInterno) || null],

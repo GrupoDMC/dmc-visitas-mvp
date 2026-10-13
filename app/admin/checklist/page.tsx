@@ -1,11 +1,13 @@
 import ChecklistEditor from "@/components/admin/ChecklistEditor";
 import {
   getPlantilla,
+  hayCargos,
   hayEstadosProblema,
   hayGestionPendientes,
   hayGestionProblemas,
   haySecciones,
   hayTrabajosPorMotivo,
+  listarCargos,
   listarEstadosProblema,
   listarGestionProblemas,
   listarInternos,
@@ -30,6 +32,8 @@ export default async function ChecklistPage() {
     internos,
     pendientes,
     gestionDisponible,
+    cargos,
+    cargosDisponible,
     gestionProblemas,
     gestionProblemasDisponible,
     estadosProblema,
@@ -46,6 +50,8 @@ export default async function ChecklistPage() {
     listarInternos(),
     listarPendientes(),
     hayGestionPendientes(),
+    listarCargos(),
+    hayCargos(),
     listarGestionProblemas(),
     hayGestionProblemas(),
     listarEstadosProblema(),
@@ -65,6 +71,8 @@ export default async function ChecklistPage() {
       internosIniciales={internos}
       pendientesIniciales={pendientes}
       gestionDisponible={gestionDisponible}
+      cargosIniciales={cargos}
+      cargosDisponible={cargosDisponible}
       gestionProblemasIniciales={gestionProblemas}
       gestionProblemasDisponible={gestionProblemasDisponible}
       estadosProblemaIniciales={estadosProblema.filter((e) => e.activo)}

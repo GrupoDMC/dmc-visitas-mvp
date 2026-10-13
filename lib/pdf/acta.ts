@@ -450,7 +450,7 @@ export async function generarPdfActa(d: DatosPdfActa): Promise<Uint8Array> {
     const sucursal = visita.sucursal;
     const hueco = 20;
     const col = (UTIL - hueco) / 2;
-    type Campo = { etiqueta: string; valor: string };
+    type Campo = { etiqueta: string; valor: string; chip?: string };
     const filas: (Campo | [Campo, Campo])[] = [
       [
         { etiqueta: "Cliente", valor: visita.cliente?.nombreFantasia ?? "—" },
@@ -465,7 +465,12 @@ export async function generarPdfActa(d: DatosPdfActa): Promise<Uint8Array> {
         { etiqueta: "Técnico ayudante", valor: visita.tecnicoAyudante?.nombreCompleto ?? "No aplica" },
       ],
       [
-        { etiqueta: "Responsable de tienda", valor: ejec?.responsableNombre ?? visita.responsableNombre ?? "—" },
+        {
+          etiqueta: "Responsable de tienda",
+          valor: ejec?.responsableNombre ?? visita.responsableNombre ?? "—",
+          // El cargo que tenía en esta visita, en una etiqueta pequeña junto al nombre.
+          chip: (ejec ? ejec.responsableCargo : visita.responsableCargo) || undefined,
+        },
         {
           etiqueta: "RUT · Teléfono",
           valor: [ejec?.responsableRut, ejec?.responsableTelefono].filter(Boolean).join("  ·  ") || "—",
@@ -483,6 +488,25 @@ export async function generarPdfActa(d: DatosPdfActa): Promise<Uint8Array> {
         const x = MARGEN + i * (col + hueco);
         h.pagina.drawText(limpio(c.etiqueta.toUpperCase()), { x, y: h.y - 7, size: 6.8, font: negrita, color: GRIS });
         h.escribir(lineas[i], x, h.y - 12, 10, normal, TINTA, 13.5);
+        if (c.chip && lineas[i].length) {
+          const texto = limpio(c.chip);
+          const tam = 7.5;
+          const ancho = negrita.widthOfTextAtSize(texto, tam) + 10;
+          const cx = x + normal.widthOfTextAtSize(limpio(lineas[i][0]), 10) + 8;
+          // Si el nombre ocupa todo el ancho, la etiqueta no cabe a su lado: se omite el recuadro.
+          if (cx + ancho <= x + (Array.isArray(fila) ? col : UTIL)) {
+            h.pagina.drawRectangle({
+              x: cx,
+              y: h.y - 12 - 3,
+              width: ancho,
+              height: 12,
+              color: MARCA_SUAVE,
+              borderColor: MARCA_BORDE,
+              borderWidth: 0.6,
+            });
+            h.pagina.drawText(texto, { x: cx + 5, y: h.y - 12, size: tam, font: negrita, color: MARCA });
+          }
+        }
       });
       h.y -= alto;
       h.pagina.drawLine({ start: { x: MARGEN, y: h.y + 3 }, end: { x: MARGEN + UTIL, y: h.y + 3 }, thickness: 0.5, color: LINEA });

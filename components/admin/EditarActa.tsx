@@ -11,6 +11,7 @@ import { editarActaAdminAction } from "@/app/actions/ediciones";
 import EstadoProblemaTag from "@/components/EstadoProblemaTag";
 import { fechaHoraCorta, formularioDesdeActa } from "@/lib/ui/edicion";
 import { fmtRut, fmtTel, mensajeRut } from "@/lib/ui/formato";
+import { useReferencias } from "@/lib/ui/referencias";
 import { comprimirFoto } from "@/lib/ui/imagen";
 import { trabajosDelMotivo } from "@/lib/ui/motivos";
 import { agruparPorSeccion, hayAlgunaSeccion } from "@/lib/ui/secciones";
@@ -56,6 +57,8 @@ export default function EditarActa({
   const [respNombre, setRespNombre] = useState(inicial.respNombre);
   const [respRut, setRespRut] = useState(inicial.respRut);
   const [respTel, setRespTel] = useState(inicial.respTel);
+  const cargos = useReferencias().cargos;
+  const [respCargo, setRespCargo] = useState(visita.ejecucion?.responsableCargo ?? "");
   const [motivosCodigos, setMotivosCodigos] = useState(inicial.motivosCodigos);
   const [trabajos, setTrabajos] = useState<TrabajoForm[]>(inicial.trabajos);
   const [obs, setObs] = useState(inicial.obs);
@@ -244,6 +247,7 @@ export default function EditarActa({
         responsableNombre: respNombre.trim(),
         responsableRut: respRut.trim() || null,
         responsableTelefono: respTel.trim() || null,
+        responsableCargo: respCargo.trim() || null,
         motivosCodigos: motivosMarcados,
         observaciones: obs.trim() || null,
         comentarioInterno: interno.trim() || null,
@@ -284,7 +288,7 @@ export default function EditarActa({
   // Qué secciones llevan cambios, comparando contra lo que se cargó. Es solo
   // para orientar a quien edita: el registro de verdad lo arma el servidor.
   const huellas = {
-    responsable: JSON.stringify([respNombre.trim(), respRut, respTel]),
+    responsable: JSON.stringify([respNombre.trim(), respRut, respTel, respCargo]),
     trabajo: JSON.stringify([
       motivosMarcados,
       trabajos.map((t) => [t.codigo, motivoDe(t), t.subs.map((x) => [x.etiqueta, x.cantidad]).sort()]),
@@ -422,6 +426,23 @@ export default function EditarActa({
                   autoComplete="off"
                 />
               </div>
+              {cargos.length > 0 || respCargo ? (
+                <div className="field min-w-0">
+                  <label htmlFor="ea-cargo">Cargo (opcional)</label>
+                  <SelectBuscable
+                    id="ea-cargo"
+                    valor={respCargo}
+                    opciones={[
+                      { v: "", t: "Sin cargo" },
+                      ...cargos.map((c) => ({ v: c.nombre, t: c.nombre })),
+                      // Un cargo que ya salió del checklist se conserva mientras no se cambie.
+                      ...(respCargo && !cargos.some((c) => c.nombre === respCargo) ? [{ v: respCargo, t: respCargo }] : []),
+                    ]}
+                    onChange={setRespCargo}
+                    ariaLabel="Cargo del responsable"
+                  />
+                </div>
+              ) : null}
             </div>
           </Seccion>
 

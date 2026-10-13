@@ -13,6 +13,8 @@ import {
   type Ejecutor,
   type Parametro,
 } from "@/lib/data/sql";
+import { cargoDelChecklist, hayCargos } from "@/lib/data/catalogos";
+import { registrarPersonaLocal } from "@/lib/data/personas-local";
 import { cancelarVisitasVencidas, hayMargenDeDias } from "@/lib/data/vencimiento";
 import type {
   EstadoProblema,
@@ -350,6 +352,13 @@ interface FilaMotivoVisita {
   ambito: "PLAN" | "REAL";
 }
 
+/** Los cargos del responsable, el de la agenda y el del acta (migración 022). */
+interface FilaCargo {
+  visita_id: number;
+  agendado: string | null;
+  acta: string | null;
+}
+
 interface FilaReagendamiento {
   id: number;
   visita_id: number;
@@ -385,6 +394,7 @@ async function cargar(filtro: Filtro): Promise<Visita[]> {
     reagendas,
     internos,
     ediciones,
+    cargos,
   ] = await Promise.all([
       consultaCon<FilaVisita>(
         `${selectVisita(conMargen)} WHERE ${filtro.where} ORDER BY v.fecha_programada DESC, v.hora_programada, v.id DESC`,
@@ -484,6 +494,20 @@ async function cargar(filtro: Filtro): Promise<Visita[]> {
         if (faltaMigracionEdicion(err)) return [] as FilaEdicion[];
         throw err;
       }),
+      // Aparte y con su propia red: sin la migración 022 la columna no existe y
+      // el resto de la ficha tiene que seguir cargando.
+      (await hayCargos())
+        ? consultaCon<FilaCargo>(
+            `SELECT v.id AS visita_id, v.responsable_cargo AS agendado, e.responsable_cargo AS acta
+               FROM dmc.visita v
+               LEFT JOIN dmc.visita_ejecucion e ON e.visita_id = v.id
+              WHERE v.id IN (${ids})`,
+            p()
+          ).catch((err) => {
+            console.error("[dmc] cargos del responsable:", err);
+            return [] as FilaCargo[];
+          })
+        : Promise.resolve([] as FilaCargo[]),
     ]);
 
   const subPorTrabajo = agrupar(subtrabajos, (s) => num(s.visita_trabajo_id));
@@ -498,6 +522,7 @@ async function cargar(filtro: Filtro): Promise<Visita[]> {
   const motivosPorVisita = agrupar(motivosVisita, (m) => num(m.visita_id));
   const internosPorVisita = agrupar(internos, (x) => num(x.visita_id));
   const edicionesPorVisita = agrupar(ediciones, (x) => num(x.visita_id));
+  const cargoPorVisita = new Map(cargos.map((c) => [num(c.visita_id), c]));
 
   return visitas.map((v) => {
     const id = num(v.id);
@@ -530,6 +555,7 @@ async function cargar(filtro: Filtro): Promise<Visita[]> {
       responsableNombre: v.responsable_nombre,
       responsableRut: v.responsable_rut,
       responsableTelefono: v.responsable_telefono,
+      responsableCargo: cargoPorVisita.get(id)?.agendado ?? null,
       motivoPendiente: v.motivo_pendiente,
       problemaOrigenId: numONull(v.problema_origen_id),
       creadaEnTerreno: Boolean(v.creada_en_terreno),
@@ -598,6 +624,7 @@ async function cargar(filtro: Filtro): Promise<Visita[]> {
             responsableNombre: ejec.responsable_nombre,
             responsableRut: ejec.responsable_rut,
             responsableTelefono: ejec.responsable_telefono,
+            responsableCargo: cargoPorVisita.get(id)?.acta ?? null,
             motivoRealCodigo: ejec.motivo_real_codigo,
             motivosRealesCodigos: codigosDe("REAL", ejec.motivo_real_codigo),
             observaciones: ejec.observaciones,
@@ -1169,6 +1196,8 @@ export interface DatosVisita {
   responsableNombre: string | null;
   responsableRut: string | null;
   responsableTelefono: string | null;
+  /** Opcional. No vive en la visita: queda en la lista de personas de la tienda. */
+  responsableCargo?: string | null;
   problemaOrigenId?: number | null;
   creadaEnTerreno?: boolean;
 }
@@ -1240,10 +1269,31 @@ export async function crearVisita(datos: DatosVisita, creadaPor: number | null):
   }
 
   await sincronizarMotivos(id, "PLAN", motivosDe(datos));
+  const cargo = await guardarCargoAgendado(id, datos.responsableCargo);
+  await registrarPersonaLocal(datos.sucursalId, {
+    nombre: datos.responsableNombre,
+    rut: datos.responsableRut,
+    telefono: datos.responsableTelefono,
+    cargo,
+  });
 
   const visita = await getVisitaCompleta(id);
   if (!visita) throw new Error(`La visita ${fila.folio} se creó pero no se pudo releer.`);
   return visita;
+}
+
+/**
+ * Deja en la visita el cargo del responsable, si es uno del checklist (vacío lo
+ * borra). Devuelve el que quedó. Sin la migración 022 no hace nada.
+ */
+async function guardarCargoAgendado(visitaId: number, pedido: string | null | undefined): Promise<string | null> {
+  if (!(await hayCargos())) return null;
+  const cargo = await cargoDelChecklist(pedido);
+  await ejecutar(`UPDATE dmc.visita SET responsable_cargo = @cargo WHERE id = @id`, [
+    ["cargo", sql.NVarChar(80), cargo],
+    ["id", sql.BigInt, visitaId],
+  ]);
+  return cargo;
 }
 
 /** El principal siempre primero, sin repetidos y sin vacios. */
@@ -1329,6 +1379,13 @@ export async function editarVisita(folio: string, datos: DatosVisita, usuarioId:
   );
 
   await sincronizarMotivos(id, "PLAN", motivosDe(datos));
+  const cargo = await guardarCargoAgendado(id, datos.responsableCargo);
+  await registrarPersonaLocal(datos.sucursalId, {
+    nombre: datos.responsableNombre,
+    rut: datos.responsableRut,
+    telefono: datos.responsableTelefono,
+    cargo,
+  });
 
   if (visita.estado === "REAGENDADA") {
     await marcarEstado(id, "PROGRAMADA", "Corregida desde coordinación.", "WEB", usuarioId);
@@ -1544,6 +1601,8 @@ export interface ActaEntrada {
   responsableNombre: string;
   responsableRut: string | null;
   responsableTelefono: string | null;
+  /** Opcional: el cargo de quien firma. Queda en la lista de personas de la tienda. */
+  responsableCargo?: string | null;
   /** Los motivos que el técnico confirmó en terreno. El primero es el principal. */
   motivosCodigos: string[];
   observaciones: string | null;
@@ -1620,6 +1679,10 @@ export async function guardarActa(
   if (!entrada.responsableNombre.trim()) return { ok: false, error: "Falta el nombre del responsable de la tienda." };
   if (!entrada.firma) return { ok: false, error: "Falta la firma de la tienda." };
 
+  // Solo vale un cargo del checklist; uno suelto se descarta en vez de frenar el cierre.
+  const cargo = (await hayCargos()) ? await cargoDelChecklist(entrada.responsableCargo) : null;
+  const guardaCargo = await hayCargos();
+
   const firmaImagen = decodificarImagen(entrada.firma.dataUrl);
   if (!firmaImagen) return { ok: false, error: "La firma no se pudo leer. Vuelve a firmar." };
 
@@ -1682,6 +1745,8 @@ export async function guardarActa(
          ELSE DATEADD(second, DATEDIFF(second, SYSUTCDATETIME(), SYSDATETIME()), @capturada)
        END;
 
+       ${guardaCargo ? "UPDATE dmc.visita_ejecucion SET responsable_cargo = @cargo WHERE visita_id = @id;" : ""}
+
        UPDATE dmc.visita_ejecucion
           SET responsable_nombre   = @nombre,
               responsable_rut      = @rut,
@@ -1708,6 +1773,7 @@ export async function guardarActa(
         ["nombre", sql.NVarChar(120), entrada.responsableNombre.trim()],
         ["rut", sql.VarChar(12), entrada.responsableRut || null],
         ["telefono", sql.VarChar(30), entrada.responsableTelefono || null],
+        ...(guardaCargo ? [["cargo", sql.NVarChar(80), cargo] as Parametro] : []),
         ["motivo", sql.VarChar(40), principal],
         ["obs", sql.NVarChar(sql.MAX), entrada.observaciones || null],
         ["interno", sql.NVarChar(sql.MAX), entrada.comentarioInterno || null],

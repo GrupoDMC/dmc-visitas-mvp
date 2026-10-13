@@ -7,6 +7,8 @@ import SelectBuscable from "@/components/ui/SelectBuscable";
 import SeccionPlegable from "@/components/ui/SeccionPlegable";
 import { crearVisitaTecnicoAction } from "@/app/actions/visitas";
 import { useReferencias } from "@/lib/ui/referencias";
+import { cargoVigente } from "@/lib/ui/cargos";
+import { etiquetaPersona, usePersonasLocal } from "@/lib/ui/personas-local";
 import { fmtRut, fmtTel, mensajeRut } from "@/lib/ui/formato";
 import { algunoPideHora } from "@/lib/ui/motivos";
 import { agruparPorSeccion, hayAlgunaSeccion } from "@/lib/ui/secciones";
@@ -55,6 +57,8 @@ export default function NuevaVisitaSheet({
   const [encargado, setEncargado] = useState("");
   const [rut, setRut] = useState("");
   const [telefono, setTelefono] = useState("");
+  const [cargo, setCargo] = useState("");
+  const personas = usePersonasLocal(sucursalId);
   const [trabajo, setTrabajo] = useState("");
   const [guardando, setGuardando] = useState(false);
 
@@ -124,6 +128,7 @@ export default function NuevaVisitaSheet({
       responsableNombre: encargado,
       responsableRut: rut,
       responsableTelefono: telefono,
+      responsableCargo: cargo,
       trabajo,
     });
     setGuardando(false);
@@ -257,6 +262,30 @@ export default function NuevaVisitaSheet({
           </div>
         ) : null}
 
+        {personas.length > 0 ? (
+          <div>
+            <label htmlFor="nv-per" className={LABEL}>
+              Personas del local
+            </label>
+            <SelectBuscable
+              id="nv-per"
+              valor=""
+              opciones={personas.map((p) => ({ v: String(p.id), t: etiquetaPersona(p) }))}
+              onChange={(v) => {
+                const p = personas.find((x) => String(x.id) === v);
+                if (!p) return;
+                setEncargado(p.nombre);
+                setRut(fmtRut(p.rut ?? ""));
+                setTelefono(fmtTel(p.telefono ?? ""));
+                setCargo(cargoVigente(referencias.cargos, p.cargo));
+              }}
+              ariaLabel="Personas del local"
+              placeholder="Elige a quien recibe, o escribe sus datos abajo…"
+              claseCampo={CAMPO}
+            />
+          </div>
+        ) : null}
+
         <div>
           <label htmlFor="nv-enc" className={LABEL}>
             Responsable de tienda
@@ -314,6 +343,22 @@ export default function NuevaVisitaSheet({
             />
           </div>
         </div>
+
+        {referencias.cargos.length > 0 ? (
+          <div>
+            <label htmlFor="nv-cargo" className={LABEL}>
+              Cargo del responsable <span className="opacity-70 normal-case tracking-normal">(opcional)</span>
+            </label>
+            <SelectBuscable
+              id="nv-cargo"
+              valor={cargo}
+              opciones={[{ v: "", t: "Sin cargo" }, ...referencias.cargos.map((c) => ({ v: c.nombre, t: c.nombre }))]}
+              onChange={setCargo}
+              ariaLabel="Cargo del responsable"
+              claseCampo={CAMPO}
+            />
+          </div>
+        ) : null}
 
         <div>
           <label htmlFor="nv-trab" className={LABEL}>

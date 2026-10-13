@@ -9,6 +9,8 @@ import { crearVisitasMasivasAction } from "@/app/actions/admin";
 import { fmtRut, fmtTel, mensajeRut } from "@/lib/ui/formato";
 import { hoyISO } from "@/lib/ui/fecha";
 import { algunoPideHora } from "@/lib/ui/motivos";
+import { cargoVigente } from "@/lib/ui/cargos";
+import { etiquetaPersona, usePersonasLocal } from "@/lib/ui/personas-local";
 import type { DatosVisita } from "@/lib/data/visitas";
 
 /** Un local de la ruta, con lo que es solo suyo. Vacío = usa lo masivo. */
@@ -19,12 +21,13 @@ interface LocalRuta {
   responsable: string;
   respRut: string;
   respTelefono: string;
+  respCargo: string;
   hora: string;
   trabajo: string;
   acceso: string;
 }
 
-const PROPIOS = ["responsable", "respRut", "respTelefono", "hora", "trabajo", "acceso"] as const;
+const PROPIOS = ["responsable", "respRut", "respTelefono", "respCargo", "hora", "trabajo", "acceso"] as const;
 type CampoPropio = (typeof PROPIOS)[number];
 
 /** El campo pone "+56 9 " al enfocarlo: eso solo no es un teléfono. */
@@ -168,6 +171,7 @@ export default function VisitasMasivasDialogo({
       responsable: "",
       respRut: "",
       respTelefono: "",
+      respCargo: "",
       hora: "",
       trabajo: "",
       acceso: "",
@@ -217,6 +221,7 @@ export default function VisitasMasivasDialogo({
       responsableNombre: l.responsable.trim() || null,
       responsableRut: l.respRut || null,
       responsableTelefono: telefono(l) || null,
+      responsableCargo: l.respCargo.trim() || null,
     }));
 
     setGuardando(true);
@@ -373,6 +378,7 @@ export default function VisitasMasivasDialogo({
 
             {l.abierto ? (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 px-3.5 pt-1.5 pb-4 bg-[var(--color-surface-3)]">
+                <PersonasDeLocal local={l} onCambiar={cambiar} />
                 <CampoLocal
                   local={l}
                   k="responsable"
@@ -380,6 +386,18 @@ export default function VisitasMasivasDialogo({
                   ph="Nombre de quien recibe"
                   onCambiar={cambiar}
                 />
+                {ref.cargos.length ? (
+                  <div className="field min-w-0">
+                    <label htmlFor={`vm-${l.sucursalId}-respCargo`}>Cargo del responsable (opcional)</label>
+                    <SelectBuscable
+                      id={`vm-${l.sucursalId}-respCargo`}
+                      valor={l.respCargo}
+                      opciones={[{ v: "", t: "Sin cargo" }, ...ref.cargos.map((c) => ({ v: c.nombre, t: c.nombre }))]}
+                      onChange={(v) => cambiar(l.sucursalId, { respCargo: v })}
+                      ariaLabel="Cargo del responsable"
+                    />
+                  </div>
+                ) : null}
                 <CampoLocal
                   local={l}
                   k="hora"
@@ -425,6 +443,46 @@ export default function VisitasMasivasDialogo({
         ))}
       </div>
     </Dialogo>
+  );
+}
+
+/**
+ * Las personas que ya recibieron o firmaron en este local, para no reescribir
+ * sus datos. No aparece si la tienda todavía no tiene a nadie.
+ */
+function PersonasDeLocal({
+  local,
+  onCambiar,
+}: {
+  local: LocalRuta;
+  onCambiar: (sucursalId: string, cambios: Partial<LocalRuta>) => void;
+}) {
+  const ref = useReferencias();
+  const personas = usePersonasLocal(local.sucursalId);
+  if (personas.length === 0) return null;
+  const id = `vm-${local.sucursalId}-persona`;
+
+  return (
+    <div className="field min-w-0 sm:col-span-2">
+      <label htmlFor={id}>Personas del local</label>
+      <SelectBuscable
+        id={id}
+        valor=""
+        opciones={personas.map((p) => ({ v: String(p.id), t: etiquetaPersona(p) }))}
+        onChange={(v) => {
+          const p = personas.find((x) => String(x.id) === v);
+          if (!p) return;
+          onCambiar(local.sucursalId, {
+            responsable: p.nombre,
+            respRut: p.rut ?? "",
+            respTelefono: p.telefono ?? "",
+            respCargo: cargoVigente(ref.cargos, p.cargo),
+          });
+        }}
+        placeholder="Elige a quien recibe, o escribe los datos abajo…"
+        ariaLabel="Personas del local"
+      />
+    </div>
   );
 }
 
