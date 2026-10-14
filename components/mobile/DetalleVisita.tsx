@@ -7,6 +7,9 @@ import Tag from "@/components/Tag";
 import { Toast, useToast } from "@/components/ui/Toast";
 import { cambiarEstadoVisitaAction, iniciarVisitaAction } from "@/app/actions/visitas";
 import { ESTADO_VISITA_LABEL, ESTADO_VISITA_TAG, nombreDeQuienLaTomo, textoMotivos } from "@/lib/ui/estado";
+import ActaEnCurso from "@/components/mobile/ActaEnCurso";
+import { minutosDelPlazo, type ReservaAjena } from "@/lib/reserva";
+import ActaConservada from "@/components/mobile/ActaConservada";
 import { puede, useReferencias } from "@/lib/ui/referencias";
 import { hayDireccion, urlMapa, urlTel } from "@/lib/ui/formato";
 import type { HistorialVista } from "@/lib/contratos/panel";
@@ -51,14 +54,19 @@ export default function DetalleVisita({
   visita,
   historial,
   esAyudante = false,
-  tomadaPorOtro = false,
+  tecnicoId,
+  reservaAjena = null,
+  reservaPlazoSeg,
 }: {
   visita: Visita;
   historial: HistorialVista;
   /** Quien mira va de ayudante. Puede llenar el acta igual que el asignado. */
   esAyudante?: boolean;
-  /** Está en curso y la inició el otro técnico: acá solo se mira. */
-  tomadaPorOtro?: boolean;
+  /** Quien mira. */
+  tecnicoId: number;
+  /** El otro técnico tiene el acta reservada: acá solo se mira. */
+  reservaAjena?: ReservaAjena | null;
+  reservaPlazoSeg: number;
 }) {
   const router = useRouter();
   const { toast, aviso } = useToast();
@@ -312,6 +320,17 @@ export default function DetalleVisita({
           ) : null}
         </div>
 
+        {/* ── El acta de este celular que el otro técnico dejó sin efecto al cerrar la suya ── */}
+        {visita.estado === "COMPLETADA" && visita.cerradaPorTecnicoId !== null && visita.cerradaPorTecnicoId !== tecnicoId ? (
+          <ActaConservada
+            folio={visita.folio}
+            cerroNombre={
+              (visita.cerradaPorTecnicoId === visita.tecnicoAyudanteId ? visita.tecnicoAyudante : visita.tecnico)
+                ?.nombreCompleto ?? "El otro técnico"
+            }
+          />
+        ) : null}
+
         {/* ── Quedó pendiente ── */}
         {visita.motivoPendiente ? (
           <div className="mt-3 p-3.5 bg-[var(--color-accent-200)] border-l-4 border-[var(--color-accent)]">
@@ -321,13 +340,10 @@ export default function DetalleVisita({
         ) : null}
 
         {/* ── Acción principal ── */}
-        {tomadaPorOtro ? (
+        {reservaAjena ? (
           // Dos personas llenando la misma acta desde dos celulares se pisarían:
-          // el que la inicia se la queda, y el otro espera o pide que la liberen.
-          <div className="mt-4.5 p-3.5 bg-[var(--color-surface)] border-l-4 border-[var(--color-text)] text-sm leading-[1.5]">
-            <b>{nombreDeQuienLaTomo(visita) ?? "El otro técnico"}</b> ya inició esta visita y solo esa persona puede
-            terminarla desde su celular. Si no la va a terminar, pide a coordinación que la libere.
-          </div>
+          // quien la abre la reserva, y el otro la ve hasta que se libere.
+          <ActaEnCurso reserva={reservaAjena} plazoSeg={reservaPlazoSeg} />
         ) : abierta ? (
           <>
             <button
@@ -342,8 +358,8 @@ export default function DetalleVisita({
             </button>
             <p className="mt-2.5 mb-0 text-xs opacity-66">
               Al iniciar se registra la hora en el acta. El formulario guarda sección por sección.
-              {visita.tecnicoAyudante && visita.estado === "PROGRAMADA"
-                ? " Van dos técnicos: quien la inicie es el único que podrá terminarla."
+              {visita.tecnicoAyudante
+                ? ` Van dos técnicos: quien abre el acta la reserva, y si pasan ${minutosDelPlazo(reservaPlazoSeg)} minutos sin actividad la puede tomar el otro.`
                 : ""}
             </p>
 

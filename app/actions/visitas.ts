@@ -17,8 +17,10 @@ import { registrarPersonaLocal } from "@/lib/data/personas-local";
 import { getSucursal } from "@/lib/data/maestros";
 import { cargoDelChecklist, listarMotivos } from "@/lib/data/catalogos";
 import { algunoPideHora } from "@/lib/ui/motivos";
-import { participaEnVisita, tomadaPorOtro } from "@/lib/ui/estado";
+import { participaEnVisita } from "@/lib/ui/estado";
 import { borrarBorrador } from "@/lib/data/borradores";
+import { estadoDeReserva, liberarReserva } from "@/lib/data/reservas";
+import { textoActaEnCurso, type ReservaAjena } from "@/lib/reserva";
 import type { EstadoVisita } from "@/lib/types";
 import { validar } from "@/lib/validacion/comun";
 import { actaEntrada } from "@/lib/validacion/actas";
@@ -32,6 +34,10 @@ export interface ResultadoAccion {
   folio?: string;
   /** Hora con la que quedó sellado el cierre del acta. */
   horaTermino?: string;
+  /** Otro técnico tiene el acta reservada: no se guardó nada y lo del celular sigue ahí. */
+  reservaAjena?: ReservaAjena;
+  /** El otro técnico ya cerró el acta de esta visita: la de este celular se conserva sin enviar. */
+  cerradaPorOtro?: boolean;
 }
 
 /** Solo los técnicos de la visita (asignado y ayudante) pueden tocarla desde el móvil. */
@@ -102,15 +108,21 @@ export async function guardarActaAction(entradaPedida: ActaEntrada): Promise<Res
   if (falta) return { ok: false, error: falta };
   const equipo = await getEquipoDeVisita(entrada.folio);
   if (!equipo) return { ok: false, error: "No encontramos esa visita." };
-  const rechazo = motivoParaNoCerrar(equipo, sesion.tecnico.id);
-  if (rechazo) return { ok: false, error: rechazo };
+  // Quién puede escribir lo decide la reserva, que guardarActa comprueba con la
+  // fila de la visita tomada: acá no se mira quién inició la visita.
+  // Una visita ya cerrada la juzga guardarActa, que distingue si la cerró este
+  // mismo técnico (el acta llegó y se perdió la respuesta) o el otro.
+  const rechazo = motivoParaNoCerrar(equipo, sesion.tecnico.id, { conReserva: true });
+  if (rechazo && equipo.estado !== "COMPLETADA") return { ok: false, error: rechazo };
 
   try {
     const res = await guardarActa(entrada, {
       usuarioId: sesion.usuario.id,
       tecnicoId: sesion.tecnico.id,
     });
-    if (!res.ok) return { ok: false, error: res.error };
+    if (!res.ok) {
+      return { ok: false, error: res.error, reservaAjena: res.reservaAjena, cerradaPorOtro: res.cerradaPorOtro };
+    }
     // Quien firmó queda en la lista de la tienda para la próxima visita. El
     // acta ya está confirmada: si esto falla no puede devolverse "No se pudo
     // guardar", porque el técnico reintentaría sobre una visita ya cerrada.
@@ -166,9 +178,8 @@ export async function cambiarEstadoVisitaAction(pedido: {
   if (!tiene(contexto.sesion.permisos, "celular.estado")) {
     return { ok: false, error: "Tu rol no puede reagendar, dejar pendiente ni cancelar visitas." };
   }
-  if (tomadaPorOtro(contexto.visita, contexto.tecnico.id)) {
-    return { ok: false, error: "El otro técnico ya inició esta visita: solo él puede cambiarla." };
-  }
+  const reserva = await estadoDeReserva(contexto.visita.id, contexto.tecnico.id);
+  if (reserva.estado === "ajena") return { ok: false, error: textoActaEnCurso(reserva), reservaAjena: reserva };
 
   const motivo = input.motivo.trim();
   if (!motivo) return { ok: false, error: "El motivo es obligatorio." };
@@ -190,6 +201,8 @@ export async function cambiarEstadoVisitaAction(pedido: {
   } catch (err) {
     return comoError(err, "cambiarEstadoVisita");
   }
+  // La visita sale de la agenda del técnico: la reserva ya no sirve.
+  await liberarReserva(input.folio, contexto.sesion.usuario.id);
   revalidar(input.folio);
   return { ok: true };
 }

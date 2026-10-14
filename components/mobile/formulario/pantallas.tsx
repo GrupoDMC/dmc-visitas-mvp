@@ -2,6 +2,7 @@
 
 import { Toast } from "@/components/ui/Toast";
 import { reloj } from "@/lib/ui/video";
+import { horaDeMarca, minutosDelPlazo } from "@/lib/reserva";
 import { entrada } from "@/components/mobile/formulario/piezas";
 import type { FormularioVisitaApi } from "@/components/mobile/formulario/useFormularioVisita";
 
@@ -401,6 +402,63 @@ export function PantallaRevision({ fv }: { fv: FormularioVisitaApi }) {
         </p>
       </div>
       <Toast texto={toast} />
+    </div>
+  );
+}
+
+/**
+ * Cubre el formulario cuando el otro técnico tomó el acta mientras este estaba
+ * sin actividad, o cuando ya cerró la visita. No se puede editar ni enviar nada,
+ * y se dice con todas las letras que lo escrito sigue guardado en el celular.
+ */
+export function BloqueoDeActa({ fv }: { fv: FormularioVisitaApi }) {
+  const { bloqueo, visita, router, recuperarReserva, toast } = fv;
+  if (!bloqueo) return null;
+  const detalle = `/tecnico/visitas/${visita.folio}`;
+  return (
+    <div
+      role="alertdialog"
+      aria-modal="true"
+      aria-labelledby="bloqueo-titulo"
+      className="fixed inset-0 z-50 flex justify-center bg-[rgba(32,30,29,.72)]"
+    >
+      <div className="w-full max-w-[460px] bg-[var(--color-bg)] flex flex-col px-4 pt-11 pb-6.5 overflow-y-auto">
+        <h1 id="bloqueo-titulo" className="font-extrabold text-[28px] leading-[1.08] tracking-[-.03em] m-0">
+          {bloqueo.tipo === "reserva" ? "Otro técnico tomó esta acta" : "El otro técnico ya cerró esta visita"}
+        </h1>
+        <div className="h-0.5 bg-[var(--color-divider)] mt-4 mb-4" />
+        <p className="m-0 text-[15px] leading-[1.5]">
+          {bloqueo.tipo === "reserva" ? (
+            <>
+              {bloqueo.reserva.nombre} la tiene en curso desde las {horaDeMarca(bloqueo.reserva.desde)}. Pasaron más de{" "}
+              {minutosDelPlazo(fv.reservaPlazoSeg)} minutos sin actividad en este celular, así que la reserva venció.
+            </>
+          ) : (
+            <>Su acta ya está en el sistema, así que la de este celular no se puede enviar.</>
+          )}
+        </p>
+        <div className="mt-3.5 px-3.5 py-3 bg-[var(--color-accent-200)] border-l-4 border-[var(--color-accent)] text-[13px] leading-[1.5] text-[var(--color-accent-800)]">
+          Lo que escribiste sigue guardado en este celular y no se perdió. No se envía nada y no se puede seguir
+          editando mientras tanto.
+        </div>
+        <div className="mt-auto pt-6.5 flex flex-col gap-2.5">
+          {bloqueo.tipo === "reserva" ? (
+            <button
+              onClick={() => void recuperarReserva()}
+              className="w-full min-h-[54px] px-4.5 bg-[var(--color-accent)] text-[var(--color-bg)] border-0 font-extrabold text-base cursor-pointer text-left hover:bg-[var(--color-accent-hover)]"
+            >
+              Intentar recuperarla
+            </button>
+          ) : null}
+          <button
+            onClick={() => router.push(detalle)}
+            className="w-full min-h-[50px] px-4 bg-transparent border border-[var(--color-divider)] text-[var(--color-text)] font-extrabold text-sm cursor-pointer text-left hover:bg-black/[.07]"
+          >
+            Volver a la visita
+          </button>
+        </div>
+        <Toast texto={toast} />
+      </div>
     </div>
   );
 }

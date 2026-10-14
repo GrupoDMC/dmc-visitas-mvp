@@ -5,11 +5,13 @@ import {
   autenticar,
   cerrarSesion,
   crearSesion,
+  getSesion,
   getSesionPorCambiarPassword,
   ipDeLaPeticion,
 } from "@/lib/auth";
 import { crearSolicitudPassword } from "@/lib/data/solicitudes-password";
 import { auditar } from "@/lib/data/auditoria";
+import { liberarReservasDelUsuario } from "@/lib/data/reservas";
 import { log } from "@/lib/log";
 import { cambiarPasswordPropia } from "@/lib/data/usuarios";
 import { validarPasswordNueva } from "@/lib/password";
@@ -134,6 +136,10 @@ export async function cambiarPasswordAction(
 }
 
 export async function logoutAction() {
+  // Las actas que este técnico tenía reservadas se sueltan al salir: el otro
+  // no tiene que esperar el plazo. Si falla, vencen solas.
+  const sesion = await getSesion().catch(() => null);
+  if (sesion?.tecnico) await liberarReservasDelUsuario(sesion.usuario.id);
   await cerrarSesion();
   redirect("/login");
 }

@@ -5,6 +5,8 @@ import { log } from "@/lib/log";
 import { getVisitaCompletaPorFolio } from "@/lib/data/visitas";
 import { borrarBorrador, guardarBorrador, leerBorrador } from "@/lib/data/borradores";
 import { participaEnVisita } from "@/lib/ui/estado";
+import { tomarReserva } from "@/lib/data/reservas";
+import type { ReservaAjena } from "@/lib/reserva";
 import { validar } from "@/lib/validacion/comun";
 import { entradaGuardarBorrador } from "@/lib/validacion/actas";
 import { entradaFolio } from "@/lib/validacion/visitas";
@@ -21,6 +23,8 @@ export interface ResultadoBorrador {
   /** Contenido del borrador que había en el servidor, si se pidió. */
   payload?: string;
   guardadoEn?: string;
+  /** Otro técnico tiene el acta reservada: el respaldo no se subió. */
+  reservaAjena?: ReservaAjena;
 }
 
 async function tecnicoDeLaVisita(folio: string) {
@@ -28,7 +32,7 @@ async function tecnicoDeLaVisita(folio: string) {
   if (!sesion?.tecnico) return null;
   const visita = await getVisitaCompletaPorFolio(folio);
   if (!visita || !participaEnVisita(visita, sesion.tecnico.id)) return null;
-  return { sesion, visita };
+  return { sesion, tecnico: sesion.tecnico, visita };
 }
 
 /** Sube lo que lleva escrito. Se llama cada tanto, no en cada tecla. */
@@ -41,6 +45,14 @@ export async function guardarBorradorAction(folioPedido: string, payloadPedido: 
   const contexto = await tecnicoDeLaVisita(folio);
   if (!contexto) return { ok: false };
   try {
+    // Subir el respaldo es actividad: renueva la reserva. Si otro técnico la
+    // tiene, el respaldo no se sube y el celular se entera por acá.
+    const reserva = await tomarReserva(folio, { usuarioId: contexto.sesion.usuario.id, tecnicoId: contexto.tecnico.id });
+    if (!reserva.ok) {
+      return reserva.motivo === "ajena"
+        ? { ok: false, reservaAjena: { nombre: reserva.nombre, desde: reserva.desde, liberaEnSeg: reserva.liberaEnSeg } }
+        : { ok: false };
+    }
     const ok = await guardarBorrador(folio, contexto.sesion.usuario.id, payload);
     return { ok };
   } catch (err) {

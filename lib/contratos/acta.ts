@@ -3,6 +3,7 @@
 // recibe de vuelta.
 
 import type { EstadoProblema } from "@/lib/types";
+import type { ReservaAjena } from "@/lib/reserva";
 
 export interface ProblemaEdicion {
   /** Id en dmc.problema si ya estaba en el acta; sin id, es uno nuevo. */
@@ -93,6 +94,10 @@ export interface ResultadoActa {
   /** Por qué no se guardó, en palabras que el técnico entienda. */
   error?: string;
   horaTermino?: string;
+  /** Otro técnico tiene el acta reservada: nada se guardó y el acta sigue en el equipo. */
+  reservaAjena?: ReservaAjena;
+  /** El otro técnico ya cerró el acta de esta visita: la de este celular no se envía ni se descarta. */
+  cerradaPorOtro?: boolean;
 }
 
 export interface EdicionActaEntrada {

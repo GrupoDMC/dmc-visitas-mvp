@@ -15,6 +15,8 @@ import { guardarActaAction } from "@/app/actions/visitas";
 import { editarActaTecnicoAction } from "@/app/actions/ediciones";
 import { formularioDesdeActa } from "@/lib/ui/edicion";
 import { guardarBorradorAction } from "@/app/actions/borradores";
+import { liberarReservaAction, renovarReservaAction } from "@/app/actions/reservas";
+import { debeRenovar, intervaloAvisoMs, PLAZO_RESERVA_SEG, type ReservaAjena } from "@/lib/reserva";
 import { trabajosDelMotivo } from "@/lib/ui/motivos";
 import {
   actasEnCola,
@@ -63,6 +65,15 @@ const CADA_CUANTO_SUBE = 30_000;
 /** Cada cuánto se reintenta sola un acta que quedó esperando cobertura. */
 const CADA_CUANTO_REINTENTA = 20_000;
 
+/**
+ * Por qué este formulario dejó de poder escribir. En los dos casos lo que hay en
+ * el celular (borrador o acta en cola) se conserva tal cual y no se envía nada.
+ *
+ * - reserva: el otro técnico tomó el acta mientras este estaba sin actividad.
+ * - cerrada: el otro técnico ya cerró el acta de la visita.
+ */
+export type BloqueoActa = { tipo: "reserva"; reserva: ReservaAjena } | { tipo: "cerrada" };
+
 export function useFormularioVisita({
   visita,
   motivos,
@@ -71,6 +82,7 @@ export function useFormularioVisita({
   catalogoInterno,
   borradorServidor,
   edicion = false,
+  reservaPlazoSeg = PLAZO_RESERVA_SEG,
 }: {
   visita: Visita;
   motivos: CatalogoMotivo[];
@@ -85,6 +97,8 @@ export function useFormularioVisita({
    * guarda con señal o no se guarda) y al confirmar se pide el porqué.
    */
   edicion?: boolean;
+  /** Plazo de la reserva del acta, en segundos: de ahí sale cada cuánto se avisa que se sigue trabajando. */
+  reservaPlazoSeg?: number;
 }) {
   const router = useRouter();
   // El borrador y la cola del equipo van a nombre del usuario (ver lib/ui/borrador).
@@ -183,12 +197,21 @@ export function useFormularioVisita({
       vigente = false;
     };
   }, [fotos]);
+  // Reserva del acta (ver lib/reserva): si el otro técnico la toma o cierra la
+  // visita, el formulario deja de escribir y de enviar, y lo que hay en el
+  // celular se conserva.
+  const [bloqueo, setBloqueo] = useState<BloqueoActa | null>(null);
+  const bloqueoRef = useRef<BloqueoActa | null>(null);
+  bloqueoRef.current = bloqueo;
+  const perderReserva = useCallback((reserva: ReservaAjena) => setBloqueo({ tipo: "reserva", reserva }), []);
+
   // 5 · Video: vive en su propio hook (subida por partes y reintentos).
   const { videos, setVideos, clipsRef, agregarVideo, reintentarVideo, quitarVideo } = useVideosActa({
     visita,
     edicion,
     aviso,
     setGuardadas,
+    onReservaAjena: perderReserva,
   });
 
   // 6 · Firma
@@ -363,15 +386,129 @@ export function useFormularioVisita({
     if (edicion || !listo || paso === "ok" || paso === "encolada") return;
     const id = setInterval(() => {
       const b = borradorRef.current;
-      if (!b || !hayConexion() || subidoRef.current === b.guardadoEn) return;
+      if (!b || !hayConexion() || subidoRef.current === b.guardadoEn || bloqueoRef.current) return;
       subidoRef.current = b.guardadoEn;
-      void guardarBorradorAction(visita.folio, JSON.stringify({ ...b, fotos: [], sinFotos: true })).catch(() => {
-        // Sin señal o servidor caído: el borrador del celular sigue intacto.
-        subidoRef.current = "";
-      });
+      void guardarBorradorAction(visita.folio, JSON.stringify({ ...b, fotos: [], sinFotos: true }))
+        .then((r) => {
+          if (r.reservaAjena) perderReserva(r.reservaAjena);
+        })
+        .catch(() => {
+          // Sin señal o servidor caído: el borrador del celular sigue intacto.
+          subidoRef.current = "";
+        });
     }, CADA_CUANTO_SUBE);
     return () => clearInterval(id);
-  }, [edicion, listo, paso, visita.folio]);
+  }, [edicion, listo, paso, visita.folio, perderReserva]);
+
+  // ── Reserva del acta ──────────────────────────────────────────────────────
+  //
+  // Abrir el formulario ya tomó la reserva (la toma el servidor al armar la
+  // página). Acá se mantiene: mientras haya actividad —tocar, escribir, subir
+  // un video— se avisa al servidor cada tanto, y al volver a la pantalla se
+  // avisa de inmediato, que es cuando uno se entera de que el otro técnico la
+  // tomó. Una pantalla abierta y olvidada NO renueva: a los 15 minutos sin
+  // actividad la reserva vence sola.
+
+  const ultimaActividadRef = useRef(0);
+  const ultimoAvisoRef = useRef(0);
+  const subiendoRef = useRef(false);
+  subiendoRef.current = videos.some((v) => v.progreso !== null && !v.error);
+
+  /** Cualquier cambio en el formulario o en los videos es actividad. */
+  useEffect(() => {
+    ultimaActividadRef.current = Date.now();
+  }, [construirBorrador, videos]);
+
+  const avisarReserva = useCallback(async () => {
+    if (bloqueoRef.current) return;
+    ultimoAvisoRef.current = Date.now();
+    try {
+      const r = await renovarReservaAction(visita.folio);
+      if (r.reservaAjena) perderReserva(r.reservaAjena);
+    } catch {
+      // Sin señal: se vuelve a avisar en el próximo intento. Nada se pierde.
+    }
+  }, [visita.folio, perderReserva]);
+
+  useEffect(() => {
+    if (edicion || !listo || paso === "ok") return;
+    const cadaCuanto = intervaloAvisoMs(reservaPlazoSeg);
+    const puedeAvisar = () => document.visibilityState === "visible" && hayConexion();
+    // Al abrir: si la reserva se soltó entre el servidor y acá, se vuelve a tomar.
+    void avisarReserva();
+    const marcar = () => {
+      const ahoraMs = Date.now();
+      ultimaActividadRef.current = ahoraMs;
+      // La primera actividad tras una pausa renueva al instante, sin esperar al reloj.
+      if (ahoraMs - ultimoAvisoRef.current >= cadaCuanto && puedeAvisar()) void avisarReserva();
+    };
+    const id = setInterval(() => {
+      if (!puedeAvisar()) return;
+      if (
+        debeRenovar({
+          ultimaActividadMs: ultimaActividadRef.current,
+          ultimoAvisoMs: ultimoAvisoRef.current,
+          subiendo: subiendoRef.current,
+        })
+      ) {
+        void avisarReserva();
+      }
+    }, cadaCuanto);
+    const alVolver = () => {
+      if (document.visibilityState !== "visible") return;
+      ultimaActividadRef.current = Date.now();
+      void avisarReserva();
+    };
+    const eventos = ["pointerdown", "keydown", "touchstart", "scroll", "input"] as const;
+    for (const e of eventos) window.addEventListener(e, marcar, { passive: true, capture: true });
+    document.addEventListener("visibilitychange", alVolver);
+    return () => {
+      clearInterval(id);
+      for (const e of eventos) window.removeEventListener(e, marcar, { capture: true });
+      document.removeEventListener("visibilitychange", alVolver);
+    };
+  }, [edicion, listo, paso, reservaPlazoSeg, avisarReserva]);
+
+  // Salir del formulario suelta la reserva: el otro técnico no espera el plazo.
+  useEffect(() => {
+    if (edicion) return;
+    const folio = visita.folio;
+    return () => {
+      void liberarReservaAction(folio).catch(() => {
+        // Si no se pudo soltar, vence sola.
+      });
+    };
+  }, [edicion, visita.folio]);
+
+  // Al perder el acta se deja a salvo lo escrito al instante, sin esperar al
+  // guardado con pausa de arriba.
+  useEffect(() => {
+    if (!bloqueo || edicion) return;
+    const b = construirBorrador();
+    if (borradorConDatos(b)) escribirBorrador(uid, b);
+    // Solo cuando aparece el bloqueo; después no se vuelve a escribir encima.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bloqueo]);
+
+  /** "Intentar recuperarla": si el otro técnico ya la soltó o venció, vuelve a ser de este. */
+  const recuperarReserva = useCallback(async () => {
+    if (bloqueoRef.current?.tipo !== "reserva") return;
+    try {
+      const r = await renovarReservaAction(visita.folio);
+      if (r.ok) {
+        ultimoAvisoRef.current = Date.now();
+        setBloqueo(null);
+        aviso("Recuperaste el acta");
+      } else if (r.reservaAjena) {
+        setBloqueo({ tipo: "reserva", reserva: r.reservaAjena });
+        aviso("Sigue en curso por el otro técnico");
+      } else {
+        aviso("No se pudo comprobar. Revisa la señal e inténtalo otra vez");
+      }
+    } catch {
+      aviso("Sin señal: no se pudo comprobar");
+    }
+  }, [visita.folio, aviso]);
 
   // Aviso de señal: lo que decide si el acta se manda o se encola.
   useEffect(() => {
@@ -473,6 +610,22 @@ export function useFormularioVisita({
       try {
         const res = await guardarActaAction({ ...entrada, capturadaEn, registradoOffline: offline });
 
+        // El otro técnico tiene el acta reservada o ya cerró la visita: nada se
+        // guardó en el servidor. El borrador y el acta en cola NO se tocan.
+        if (!res.ok && res.reservaAjena) {
+          perderReserva(res.reservaAjena);
+          return false;
+        }
+        if (!res.ok && res.cerradaPorOtro) {
+          // Si el acta salía directo del formulario, queda en el celular igual
+          // que una sin señal para que no dependa solo del borrador.
+          if (!leerActaEnCola(uid, visita.folio)) {
+            encolarActa(uid, { folio: visita.folio, capturadaEn, intentos: 0, ultimoError: res.error ?? null, entrada });
+          }
+          setBloqueo({ tipo: "cerrada" });
+          return false;
+        }
+
         if (!res.ok) {
           // El caso del acta que sí había llegado: se cortó la señal justo al
           // recibir la respuesta, el acta quedó encolada y al reintentar el
@@ -534,7 +687,7 @@ export function useFormularioVisita({
         setEnviando(false);
       }
     },
-    [uid, visita.folio, aviso, router]
+    [uid, visita.folio, aviso, router, perderReserva]
   );
 
   /** La corrección del acta cerrada, tal como viaja al servidor. */
@@ -605,6 +758,7 @@ export function useFormularioVisita({
 
   async function guardarVisita() {
     if (edicion) return guardarEdicion();
+    if (bloqueo) return;
     const entrada = armarEntrada();
     if (!entrada) return aviso("Falta la firma de la tienda");
 
@@ -632,7 +786,7 @@ export function useFormularioVisita({
 
   // Reintento solo: al volver la señal y, si no, cada tanto.
   useEffect(() => {
-    if (!pendiente || enviando) return;
+    if (!pendiente || enviando || bloqueo) return;
     const intentar = () => {
       if (!hayConexion()) return;
       void reintentarPendiente(false);
@@ -643,7 +797,7 @@ export function useFormularioVisita({
       window.removeEventListener("online", intentar);
       clearInterval(id);
     };
-  }, [pendiente, enviando, reintentarPendiente]);
+  }, [pendiente, enviando, bloqueo, reintentarPendiente]);
 
   /**
    * Qué le falta a una sección para darla por lista, o null si no le falta
@@ -838,11 +992,14 @@ export function useFormularioVisita({
     catalogoProblema,
     catalogoInterno,
     borradorServidor,
+    reservaPlazoSeg,
     edicion,
     router,
     uid,
     toast,
     aviso,
+    bloqueo,
+    recuperarReserva,
     puedeVideo,
     inicial,
     paso,

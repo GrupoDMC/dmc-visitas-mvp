@@ -13,7 +13,8 @@ import {
 } from "@/lib/data/sql";
 import { cargoDelChecklist } from "@/lib/data/catalogos";
 import { registrarPersonaLocal } from "@/lib/data/personas-local";
-import { TOMADA_POR_OTRO } from "@/lib/validacion/reglas-acta";
+import { soltarReservaEn, tomarReservaEn, traspasarTomadaEn } from "@/lib/data/reservas";
+import { textoActaEnCurso } from "@/lib/reserva";
 import type { EstadoProblema, EstadoVisita, OrigenRegistro, Visita } from "@/lib/types";
 import type { DatosVisita } from "@/lib/contratos/visitas";
 import { MOTIVO_PENDIENTE, TOMADA_POR, getVisitaCompleta } from "@/lib/data/visitas-lectura";
@@ -27,16 +28,17 @@ import { MOTIVO_PENDIENTE, TOMADA_POR, getVisitaCompleta } from "@/lib/data/visi
  * "Iniciar visita": deja la visita EN_CURSO y abre su ejecución.
  *
  * La puede iniciar el asignado o el ayudante, y el que la inicia se la queda:
- * queda anotado en la bitácora (ver TOMADA_POR) y desde ahí el otro solo la
- * mira, hasta que administración la libere. El UPDLOCK hace que, si los dos
- * aprietan a la vez, gane uno solo.
+ * queda anotado en la bitácora (ver TOMADA_POR) y reserva el acta (ver
+ * lib/data/reservas). Mientras esa reserva esté vigente el otro solo la mira;
+ * si vence sin actividad, el otro puede iniciarla y la marca pasa a él. El
+ * UPDLOCK hace que, si los dos aprietan a la vez, gane uno solo.
  *
  * Devuelve por qué no se pudo, o null si quedó iniciada.
  */
 export async function iniciarVisita(
   folio: string,
   responsable: string | null,
-  ctx: { tecnicoId: number; usuarioId: number | null }
+  ctx: { tecnicoId: number; usuarioId: number }
 ): Promise<{ error: string } | null> {
   return enTransaccion((ej) => iniciarVisitaEn(ej, folio, responsable, ctx));
 }
@@ -46,7 +48,7 @@ async function iniciarVisitaEn(
   ej: Ejecutor,
   folio: string,
   responsable: string | null,
-  ctx: { tecnicoId: number; usuarioId: number | null }
+  ctx: { tecnicoId: number; usuarioId: number }
 ): Promise<{ error: string } | null> {
   {
     const [visita] = await ej.consulta<{
@@ -67,11 +69,14 @@ async function iniciarVisitaEn(
     if (visita.estado !== "PROGRAMADA" && visita.estado !== "EN_CURSO") {
       return { error: "Esta visita ya está cerrada." };
     }
-    if (visita.estado === "EN_CURSO" && numONull(visita.tomada_por) !== ctx.tecnicoId) {
-      return { error: TOMADA_POR_OTRO };
-    }
 
     const id = num(visita.id);
+    const reserva = await tomarReservaEn(ej, id, ctx);
+    if (!reserva.ok) return { error: reserva.motivo === "ajena" ? textoActaEnCurso(reserva) : reserva.error };
+    if (visita.estado === "EN_CURSO" && numONull(visita.tomada_por) !== ctx.tecnicoId) {
+      await traspasarTomadaEn(ej, id, ctx);
+    }
+
     if (visita.estado === "PROGRAMADA") {
       // tg_visita_cambio deja la fila EN_CURSO con el técnico asignado: se le
       // pone el que de verdad la inició, que puede ser el ayudante.
@@ -150,6 +155,8 @@ export async function liberarVisita(input: {
         ["usuario", sql.BigInt, input.usuarioId],
       ]
     );
+    // Liberarla también suelta la reserva: el otro técnico no tiene que esperar el plazo.
+    await soltarReservaEn(ej, id);
     return null;
   });
 }

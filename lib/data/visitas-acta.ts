@@ -14,9 +14,11 @@ import {
 import { decodificarImagen } from "@/lib/imagen";
 import { cargoDelChecklist } from "@/lib/data/catalogos";
 import { motivoParaNoCerrar } from "@/lib/validacion/reglas-acta";
+import { soltarReservaEn, tomarReservaEn, traspasarTomadaEn } from "@/lib/data/reservas";
+import { CERRADA_POR_OTRO, textoActaEnCurso } from "@/lib/reserva";
 import type { EstadoVisita } from "@/lib/types";
 import type { ActaEntrada, ProblemaActa, ResultadoActa, SubtrabajoActa, TrabajoActa } from "@/lib/contratos/acta";
-import { TOMADA_POR } from "@/lib/data/visitas-lectura";
+import { CERRADA_POR, TOMADA_POR } from "@/lib/data/visitas-lectura";
 
 // Visitas: el acta. El envío al cliente, el cierre desde el celular y las
 // escrituras de sus partes, que también usan la edición del acta y las
@@ -128,19 +130,48 @@ export async function guardarActa(
       [["folio", sql.VarChar(16), entrada.folio]]
     );
     if (!visita) return { ok: false, error: "No encontramos esa visita." };
+    const id = num(visita.id);
     // La acción ya autorizó; con la fila tomada se vuelve a aplicar la misma
     // regla, porque entre medio la visita pudo cambiar de manos o de estado.
-    const rechazo = motivoParaNoCerrar(
-      {
-        estado: visita.estado,
-        tecnicoId: num(visita.tecnico_id),
-        tecnicoAyudanteId: numONull(visita.tecnico_ayudante_id),
-        tomadaPorTecnicoId: numONull(visita.tomada_por),
-      },
-      ctx.tecnicoId
-    );
-    if (rechazo) return { ok: false, error: rechazo };
-    const id = num(visita.id);
+    // Quien puede escribir lo decide la reserva: si otro técnico la tiene
+    // vigente no se guarda nada; si venció o es de este técnico, el acta se
+    // cierra y la reserva se suelta más abajo.
+    const equipo = {
+      estado: visita.estado,
+      tecnicoId: num(visita.tecnico_id),
+      tecnicoAyudanteId: numONull(visita.tecnico_ayudante_id),
+      tomadaPorTecnicoId: numONull(visita.tomada_por),
+    };
+    const noEsSuya = motivoParaNoCerrar(equipo, ctx.tecnicoId, { conReserva: true });
+    if (noEsSuya) {
+      // Un acta cerrada por el otro técnico no es la de este celular: se avisa
+      // aparte para que lo escrito aquí no se dé por enviado ni se pierda.
+      if (equipo.estado === "COMPLETADA") {
+        const [cierre] = await ej.consulta<{ cerrada_por: number | null }>(
+          `SELECT ${CERRADA_POR} AS cerrada_por FROM dmc.visita v WHERE v.id = @id`,
+          [["id", sql.BigInt, id]]
+        );
+        const quien = numONull(cierre?.cerrada_por);
+        if (quien !== null && quien !== ctx.tecnicoId) {
+          return { ok: false, error: CERRADA_POR_OTRO, cerradaPorOtro: true };
+        }
+      }
+      return { ok: false, error: noEsSuya };
+    }
+    const reserva = await tomarReservaEn(ej, id, ctx);
+    if (!reserva.ok) {
+      if (reserva.motivo === "ajena") {
+        return {
+          ok: false,
+          error: textoActaEnCurso(reserva),
+          reservaAjena: { nombre: reserva.nombre, desde: reserva.desde, liberaEnSeg: reserva.liberaEnSeg },
+        };
+      }
+      return { ok: false, error: reserva.error };
+    }
+    if (equipo.estado === "EN_CURSO" && equipo.tomadaPorTecnicoId !== ctx.tecnicoId) {
+      await traspasarTomadaEn(ej, id, ctx);
+    }
 
     // 1 · Ejecución: hora de llegada si no estaba, y la de término ahora.
     await ej.ejecutar(
@@ -299,6 +330,9 @@ export async function guardarActa(
         ["tecnico", sql.BigInt, ctx.tecnicoId],
       ]
     );
+
+    // 8 · El acta quedó cerrada: la reserva ya no tiene nada que proteger.
+    await soltarReservaEn(ej, id);
 
     const [cierre] = await ej.consulta<{ hora: string }>(
       `SELECT ${F_HORA("hora_termino")} AS hora FROM dmc.visita_ejecucion WHERE visita_id = @id`,

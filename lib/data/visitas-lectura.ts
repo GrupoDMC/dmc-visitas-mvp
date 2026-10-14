@@ -112,6 +112,7 @@ interface FilaVisita {
   responsable_cargo: string | null;
   motivo_pendiente: string | null;
   tomada_por: number | null;
+  cerrada_por: number | null;
   problema_origen_id: number | null;
   creada_en_terreno: boolean;
   creado_en: string;
@@ -176,6 +177,15 @@ export const TOMADA_POR = `
          ELSE v.tecnico_id END
   END`;
 
+/** El técnico que cerró el acta: el de la última fila COMPLETADA de la bitácora (null si la cerró administración). */
+export const CERRADA_POR = `
+  CASE WHEN v.estado = 'COMPLETADA' THEN
+    (SELECT TOP 1 h.tecnico_id
+       FROM dmc.visita_estado_historial h
+      WHERE h.visita_id = v.id AND h.estado = 'COMPLETADA'
+      ORDER BY h.id DESC)
+  END`;
+
 const SELECT_VISITA = `
   SELECT v.id, v.folio, v.cliente_id, v.sucursal_id, v.tecnico_id, v.tecnico_ayudante_id,
          v.motivo_codigo, v.estado,
@@ -186,6 +196,7 @@ const SELECT_VISITA = `
          v.responsable_rut, v.responsable_telefono, v.responsable_cargo,
          ${MOTIVO_PENDIENTE} AS motivo_pendiente,
          ${TOMADA_POR} AS tomada_por,
+         ${CERRADA_POR} AS cerrada_por,
          v.problema_origen_id, v.creada_en_terreno,
          ${F_TS("v.creado_en")} AS creado_en,
 
@@ -500,6 +511,7 @@ async function cargar(filtro: Filtro): Promise<Visita[]> {
       tecnicoId: num(v.tecnico_id),
       tecnicoAyudanteId: numONull(v.tecnico_ayudante_id),
       tomadaPorTecnicoId: numONull(v.tomada_por),
+      cerradaPorTecnicoId: numONull(v.cerrada_por),
       motivoCodigo: v.motivo_codigo,
       estado: v.estado,
       fechaProgramada: v.fecha_programada,

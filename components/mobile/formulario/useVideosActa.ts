@@ -7,6 +7,7 @@ import { trozoBase64, VIDEO_TROZO_BYTES } from "@/lib/ui/video";
 import type { Seccion, VideoForm } from "@/lib/ui/borrador";
 import type { Visita } from "@/lib/types";
 import { nuevoId } from "@/components/mobile/formulario/ids";
+import type { ReservaAjena } from "@/lib/reserva";
 
 // Los videos del acta: la lista, los clips todavía en el celular y su subida
 // por partes al servidor, con reintento sin regrabar.
@@ -16,11 +17,14 @@ export function useVideosActa({
   edicion,
   aviso,
   setGuardadas,
+  onReservaAjena,
 }: {
   visita: Visita;
   edicion: boolean;
   aviso: (texto: string) => void;
   setGuardadas: React.Dispatch<React.SetStateAction<Partial<Record<Seccion, boolean>>>>;
+  /** El otro técnico tiene el acta reservada: el servidor rechazó el clip. */
+  onReservaAjena: (reserva: ReservaAjena) => void;
 }) {
   // El video no se acumula en el formulario como las fotos: se sube a
   // dmc.visita_video en cuanto se termina de grabar, porque un minuto en 720p
@@ -82,6 +86,7 @@ export function useVideosActa({
       return;
     }
 
+    if (abierto.reservaAjena) onReservaAjena(abierto.reservaAjena);
     if (!abierto.ok || !abierto.videoId) {
       marcar({ progreso: null, error: abierto.error ?? "No se pudo empezar a subir el video." });
       return;
@@ -111,6 +116,7 @@ export function useVideosActa({
         marcar({ progreso: null, error: "Se cortó la subida del video. Vuelve a intentarlo." });
         return;
       }
+      if (res.reservaAjena) onReservaAjena(res.reservaAjena);
       if (!res.ok) {
         marcar({ progreso: null, error: res.error ?? "No se pudo subir el video." });
         return;
@@ -120,6 +126,7 @@ export function useVideosActa({
     }
 
     const cerrado = await cerrarVideoAction(visita.folio, videoId).catch(() => null);
+    if (cerrado?.reservaAjena) onReservaAjena(cerrado.reservaAjena);
     if (!cerrado?.ok) {
       marcar({ progreso: null, error: cerrado?.error ?? "El video no terminó de guardarse." });
       return;

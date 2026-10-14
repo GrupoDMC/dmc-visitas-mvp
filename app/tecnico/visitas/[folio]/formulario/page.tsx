@@ -5,7 +5,9 @@ import { listarInternos, listarMotivos, listarProblemas, listarTrabajos } from "
 import { leerBorrador } from "@/lib/data/borradores";
 import MobileShell from "@/components/mobile/MobileShell";
 import FormularioVisita from "@/components/mobile/FormularioVisita";
-import { participaEnVisita, tomadaPorOtro } from "@/lib/ui/estado";
+import { participaEnVisita } from "@/lib/ui/estado";
+import { plazoReservaSeg, tomarReserva } from "@/lib/data/reservas";
+import ActaEnCurso from "@/components/mobile/ActaEnCurso";
 
 export const dynamic = "force-dynamic";
 
@@ -17,9 +19,21 @@ export default async function FormularioPage({ params }: { params: Promise<{ fol
 
   const visita = await getVisitaCompletaPorFolio(folio);
   if (!visita || !participaEnVisita(visita, sesion.tecnico.id)) notFound();
-  // Si la inició el otro técnico, el formulario es suyo: este vuelve al detalle.
-  if ((visita.estado !== "PROGRAMADA" && visita.estado !== "EN_CURSO") || tomadaPorOtro(visita, sesion.tecnico.id)) {
+  if (visita.estado !== "PROGRAMADA" && visita.estado !== "EN_CURSO") {
     redirect(`/tecnico/visitas/${visita.folio}`);
+  }
+
+  // Abrir el acta la reserva (o la renueva, si ya era de este técnico). Si el
+  // otro técnico la tiene vigente, acá solo se ve quién y desde cuándo.
+  const plazoSeg = plazoReservaSeg();
+  const reserva = await tomarReserva(visita.folio, { usuarioId: sesion.usuario.id, tecnicoId: sesion.tecnico.id });
+  if (!reserva.ok) {
+    if (reserva.motivo !== "ajena") redirect(`/tecnico/visitas/${visita.folio}`);
+    return (
+      <MobileShell titulo="Formulario" volverHref={`/tecnico/visitas/${visita.folio}`}>
+        <ActaEnCurso reserva={reserva} plazoSeg={plazoSeg} destacado />
+      </MobileShell>
+    );
   }
 
   // El borrador respaldado en el servidor: sirve cuando el técnico entra desde
@@ -42,6 +56,7 @@ export default async function FormularioPage({ params }: { params: Promise<{ fol
         catalogoProblema={problemas}
         catalogoInterno={internos}
         borradorServidor={borrador}
+        reservaPlazoSeg={plazoSeg}
       />
     </MobileShell>
   );

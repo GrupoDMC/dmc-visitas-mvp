@@ -62,7 +62,15 @@ export default function VisitasList({
       // Una visita que administración cerró desde el panel también da por
       // cerrada el acta que este celular tenía en cola: ya no hay dónde
       // guardarla y el aviso quedaría pidiendo enviar algo que no se acepta.
-      visitas.filter((v) => v.estado === "COMPLETADA" || estaCancelada(v.estado)).map((v) => v.folio)
+      // Salvo la que cerró el otro técnico: esa acta es distinta de la de este
+      // celular, y la que está en cola no se descarta en silencio.
+      visitas
+        .filter(
+          (v) =>
+            (v.estado === "COMPLETADA" && !(v.cerradaPorTecnicoId !== null && v.cerradaPorTecnicoId !== tecnicoId)) ||
+            estaCancelada(v.estado)
+        )
+        .map((v) => v.folio)
     );
     // Las actas en cola del formato anterior (sin usuario) que corresponden a
     // las visitas de este técnico pasan a su nombre.
@@ -75,7 +83,7 @@ export default function VisitasList({
       if (cerradas.has(acta.folio)) sacarDeCola(uid, acta.folio);
     }
     setPendientes(cola.filter((a) => !cerradas.has(a.folio)));
-  }, [visitas, uid]);
+  }, [visitas, uid, tecnicoId]);
 
   const filtradas = useMemo(() => (estado ? visitas.filter((v) => v.estado === estado) : visitas), [visitas, estado]);
 
@@ -187,11 +195,21 @@ export default function VisitasList({
             {pendientes.map((a) => (
               <button
                 key={a.folio}
-                onClick={() => router.push(`/tecnico/visitas/${a.folio}/formulario`)}
+                onClick={() =>
+                  router.push(
+                    // Si el otro técnico ya cerró la visita no hay formulario: el aviso está en su ficha.
+                    visitas.find((v) => v.folio === a.folio)?.estado === "COMPLETADA"
+                      ? `/tecnico/visitas/${a.folio}`
+                      : `/tecnico/visitas/${a.folio}/formulario`
+                  )
+                }
                 className="w-full min-h-[44px] flex items-center gap-2 px-3 bg-[var(--color-bg)] border border-[var(--color-accent)] text-[var(--color-accent-800)] font-extrabold text-[13px] cursor-pointer text-left"
               >
                 <span className="tabular-nums">{a.folio}</span>
-                <span className="font-normal opacity-70">· cerrada {haceCuanto(a.capturadaEn)}</span>
+                <span className="font-normal opacity-70">
+                  · cerrada {haceCuanto(a.capturadaEn)}
+                  {visitas.find((v) => v.folio === a.folio)?.estado === "COMPLETADA" ? " · ya la cerró el otro técnico" : ""}
+                </span>
                 <svg
                   width="16"
                   height="16"

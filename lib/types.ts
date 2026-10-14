@@ -397,6 +397,12 @@ export interface Visita {
    * administración la libere. Null en cualquier otro estado.
    */
   tomadaPorTecnicoId: number | null;
+  /**
+   * Quién cerró el acta, cuando está COMPLETADA: el técnico del último cierre
+   * en la bitácora. Null si no está cerrada o la cerró administración. Sirve
+   * para que el celular no dé por enviada un acta que cerró el otro técnico.
+   */
+  cerradaPorTecnicoId: number | null;
   motivoCodigo: string;
   /**
    * Todos los motivos agendados. `motivoCodigo` es el principal (el primero de

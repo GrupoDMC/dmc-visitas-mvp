@@ -6,7 +6,12 @@ import VideoSheet from "@/components/mobile/VideoSheet";
 import FirmaSheet from "@/components/mobile/FirmaSheet";
 import { Toast } from "@/components/ui/Toast";
 import { HojaProblema, HojaTrabajo } from "@/components/mobile/formulario/hojas";
-import { PantallaEnEspera, PantallaOk, PantallaRevision } from "@/components/mobile/formulario/pantallas";
+import {
+  BloqueoDeActa,
+  PantallaEnEspera,
+  PantallaOk,
+  PantallaRevision,
+} from "@/components/mobile/formulario/pantallas";
 import {
   BotonRevisar,
   SeccionFirma,
@@ -19,7 +24,7 @@ import {
   SeccionResponsable,
   SeccionTrabajo,
 } from "@/components/mobile/formulario/secciones";
-import { useFormularioVisita } from "@/components/mobile/formulario/useFormularioVisita";
+import { useFormularioVisita, type FormularioVisitaApi } from "@/components/mobile/formulario/useFormularioVisita";
 
 /**
  * El acta del técnico: el formulario en seis secciones, la revisión y la
@@ -28,6 +33,16 @@ import { useFormularioVisita } from "@/components/mobile/formulario/useFormulari
  */
 export default function FormularioVisita(props: Parameters<typeof useFormularioVisita>[0]) {
   const fv = useFormularioVisita(props);
+  return (
+    <>
+      <PantallaDelActa fv={fv} />
+      {/* Si el otro técnico tomó el acta o la cerró, cubre todo: no se edita ni se envía. */}
+      {fv.bloqueo ? <BloqueoDeActa fv={fv} /> : null}
+    </>
+  );
+}
+
+function PantallaDelActa({ fv }: { fv: FormularioVisitaApi }) {
   const {
     visita,
     toast,

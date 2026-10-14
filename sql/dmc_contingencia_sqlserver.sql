@@ -925,6 +925,22 @@ CREATE TABLE dmc.visita_borrador (
 );
 GO
 
+-- Quién tiene el acta de una visita ahora (migración 026). Una fila por visita;
+-- vence a los 15 minutos sin actividad y la vigencia la mide el servidor.
+CREATE TABLE dmc.visita_reserva (
+    visita_id    bigint        NOT NULL,
+    usuario_id   bigint        NOT NULL,
+    tecnico_id   bigint        NOT NULL,
+    tomada_en    datetime2(0)  NOT NULL CONSTRAINT df_reserva_tomada   DEFAULT (SYSDATETIME()),
+    renovada_en  datetime2(0)  NOT NULL CONSTRAINT df_reserva_renovada DEFAULT (SYSDATETIME()),
+    CONSTRAINT pk_visita_reserva  PRIMARY KEY (visita_id),
+    CONSTRAINT fk_reserva_visita  FOREIGN KEY (visita_id)  REFERENCES dmc.visita  (id) ON DELETE CASCADE,
+    CONSTRAINT fk_reserva_usuario FOREIGN KEY (usuario_id) REFERENCES dmc.usuario (id),
+    CONSTRAINT fk_reserva_tecnico FOREIGN KEY (tecnico_id) REFERENCES dmc.tecnico (id)
+);
+CREATE INDEX ix_reserva_usuario ON dmc.visita_reserva (usuario_id);
+GO
+
 CREATE TABLE dmc.sincronizacion_cola (
     id             uniqueidentifier NOT NULL CONSTRAINT df_cola_id DEFAULT (NEWSEQUENTIALID()),
     usuario_id     bigint           NOT NULL,
@@ -1281,9 +1297,9 @@ GO
 /* =====================================================================
    12. VERSIÓN DEL ESQUEMA
    ===================================================================== */
-/* Este archivo ya trae todo hasta la migración 025. */
+/* Este archivo ya trae todo hasta la migración 026. */
 INSERT INTO dmc.schema_version (version, descripcion)
-VALUES (25, N'Esquema base (incluye las migraciones 002 a 025)');
+VALUES (26, N'Esquema base (incluye las migraciones 002 a 026)');
 GO
 
 

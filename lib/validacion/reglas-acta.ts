@@ -23,10 +23,21 @@ export interface EquipoVisita {
   tomadaPorTecnicoId: number | null;
 }
 
-/** Por qué este técnico no puede cerrar el acta, o null si puede. */
-export function motivoParaNoCerrar(v: EquipoVisita, tecnicoId: number): string | null {
+/**
+ * Por qué este técnico no puede cerrar el acta, o null si puede.
+ *
+ * `conReserva`: quién puede escribir lo decide la reserva del acta (lib/reserva),
+ * no la marca de quién inició la visita. Se usa donde la reserva se comprueba
+ * aparte: un acta que esperaba señal sale aunque el otro técnico la haya
+ * iniciado, siempre que él ya no la tenga reservada.
+ */
+export function motivoParaNoCerrar(
+  v: EquipoVisita,
+  tecnicoId: number,
+  opciones: { conReserva?: boolean } = {}
+): string | null {
   if (v.tecnicoId !== tecnicoId && v.tecnicoAyudanteId !== tecnicoId) return NO_ASIGNADA;
-  if (v.estado === "EN_CURSO" && v.tomadaPorTecnicoId !== tecnicoId) return TOMADA_POR_OTRO;
+  if (!opciones.conReserva && v.estado === "EN_CURSO" && v.tomadaPorTecnicoId !== tecnicoId) return TOMADA_POR_OTRO;
   if (v.estado === "COMPLETADA") return "Esta visita ya quedó cerrada.";
   if (v.estado !== "PROGRAMADA" && v.estado !== "EN_CURSO") return "Esta visita ya no se puede cerrar desde el celular.";
   return null;

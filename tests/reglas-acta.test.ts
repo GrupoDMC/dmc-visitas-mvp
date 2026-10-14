@@ -34,6 +34,13 @@ describe("quién puede cerrar el acta", () => {
     expect(motivoParaNoCerrar(equipo(), 3)).toMatch(/no está asignada/);
   });
 
+  it("con la reserva comprobada aparte, no importa quién inició la visita", () => {
+    const enCurso = equipo({ estado: "EN_CURSO", tomadaPorTecnicoId: 2 });
+    expect(motivoParaNoCerrar(enCurso, 1, { conReserva: true })).toBeNull();
+    expect(motivoParaNoCerrar(enCurso, 3, { conReserva: true })).toMatch(/no está asignada/);
+    expect(motivoParaNoCerrar(equipo({ estado: "COMPLETADA" }), 1, { conReserva: true })).toMatch(/ya quedó cerrada/);
+  });
+
   it("en curso, solo quien la inició", () => {
     expect(motivoParaNoCerrar(equipo({ estado: "EN_CURSO", tomadaPorTecnicoId: 2 }), 1)).toBe(TOMADA_POR_OTRO);
     expect(motivoParaNoCerrar(equipo({ estado: "EN_CURSO", tomadaPorTecnicoId: 2 }), 2)).toBeNull();

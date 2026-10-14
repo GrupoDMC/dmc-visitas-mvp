@@ -11,7 +11,9 @@ import {
   pegarTrozo,
   type DatosVideo,
 } from "@/lib/data/videos";
-import { participaEnVisita, tomadaPorOtro } from "@/lib/ui/estado";
+import { participaEnVisita } from "@/lib/ui/estado";
+import { tomarReserva } from "@/lib/data/reservas";
+import { textoActaEnCurso, type ReservaAjena } from "@/lib/reserva";
 import { tiene } from "@/lib/permisos";
 import { validar } from "@/lib/validacion/comun";
 import { datosVideo, entradaVideoId, trozoVideo } from "@/lib/validacion/actas";
@@ -45,35 +47,58 @@ export interface ResultadoVideo {
   recibidos?: number;
   /** Ruta con la que se reproduce el clip ya cerrado. */
   archivoUrl?: string;
+  /** Otro técnico tiene el acta reservada: el clip no se guardó. */
+  reservaAjena?: ReservaAjena;
 }
+
+const NO_ABIERTA = "Esa visita no está abierta para ti.";
 
 /**
  * La visita tiene que ser del técnico (asignado o ayudante), estar todavía
- * abierta y no tenerla tomada el otro; o estar ya cerrada pero dentro del plazo
- * en que el técnico puede editar su acta.
+ * abierta y no tener el acta reservada otro técnico; o estar ya cerrada pero
+ * dentro del plazo en que el técnico puede editar su acta.
  *
  * Se comprueba en cada trozo, no solo al abrir: entre el primero y el último
- * pueden pasar varios minutos, y en el medio el acta se pudo cerrar o
- * administración pudo cancelar la visita.
+ * pueden pasar varios minutos, y en el medio el acta se pudo cerrar,
+ * administración pudo cancelar la visita o el otro técnico pudo tomar la
+ * reserva. Cada comprobación de una visita abierta toma o renueva la reserva
+ * (atómicamente, ver lib/data/reservas): subir un video cuenta como actividad.
  */
-async function visitaAbierta(folio: string) {
+async function visitaAbierta(
+  folio: string
+): Promise<
+  | { ok: true; visita: NonNullable<Awaited<ReturnType<typeof getVisitaParaVideo>>> & { enEdicion: boolean } }
+  | { ok: false; error: string; reservaAjena?: ReservaAjena }
+> {
   const sesion = await getSesion();
-  if (!sesion) return null;
+  if (!sesion) return { ok: false, error: NO_ABIERTA };
   const visita = await getVisitaParaVideo(folio);
-  if (!visita) return null;
+  if (!visita) return { ok: false, error: NO_ABIERTA };
 
   // El panel: solo para editar un acta ya cerrada, y solo con el permiso.
   if (sesion.usuario.rol !== "TECNICO") {
-    if (visita.estado !== "COMPLETADA" || !tiene(sesion.permisos, "visitas.editarActa")) return null;
-    return { ...visita, enEdicion: true };
+    if (visita.estado !== "COMPLETADA" || !tiene(sesion.permisos, "visitas.editarActa")) {
+      return { ok: false, error: NO_ABIERTA };
+    }
+    return { ok: true, visita: { ...visita, enEdicion: true } };
   }
 
-  if (!tiene(sesion.permisos, "celular.video")) return null;
-  if (!sesion.tecnico || !participaEnVisita(visita, sesion.tecnico.id)) return null;
-  if (visita.editablePorTecnico) return { ...visita, enEdicion: true };
-  if (visita.estado !== "PROGRAMADA" && visita.estado !== "EN_CURSO") return null;
-  if (tomadaPorOtro(visita, sesion.tecnico.id)) return null;
-  return { ...visita, enEdicion: false };
+  if (!tiene(sesion.permisos, "celular.video")) return { ok: false, error: NO_ABIERTA };
+  if (!sesion.tecnico || !participaEnVisita(visita, sesion.tecnico.id)) return { ok: false, error: NO_ABIERTA };
+  if (visita.editablePorTecnico) return { ok: true, visita: { ...visita, enEdicion: true } };
+  if (visita.estado !== "PROGRAMADA" && visita.estado !== "EN_CURSO") return { ok: false, error: NO_ABIERTA };
+
+  const reserva = await tomarReserva(folio, { usuarioId: sesion.usuario.id, tecnicoId: sesion.tecnico.id });
+  if (!reserva.ok) {
+    return reserva.motivo === "ajena"
+      ? {
+          ok: false,
+          error: textoActaEnCurso(reserva),
+          reservaAjena: { nombre: reserva.nombre, desde: reserva.desde, liberaEnSeg: reserva.liberaEnSeg },
+        }
+      : { ok: false, error: reserva.error };
+  }
+  return { ok: true, visita: { ...visita, enEdicion: false } };
 }
 
 /** Paso 1: reserva la fila del clip y devuelve su id. */
@@ -81,9 +106,10 @@ export async function abrirVideoAction(folioPedido: string, datosPedidos: DatosV
   // En esta puerta el folio decide qué visita se busca (y con ella el permiso),
   // así que se valida antes de buscarla.
   const folioValido = validar(entradaFolio, folioPedido, "abrirVideo");
-  if (!folioValido.ok) return { ok: false, error: "Esa visita no está abierta para ti." };
-  const visita = await visitaAbierta(folioValido.datos);
-  if (!visita) return { ok: false, error: "Esa visita no está abierta para ti." };
+  if (!folioValido.ok) return { ok: false, error: NO_ABIERTA };
+  const abierta = await visitaAbierta(folioValido.datos);
+  if (!abierta.ok) return abierta;
+  const visita = abierta.visita;
   const valida = validar(datosVideo, datosPedidos, "abrirVideo");
   if (!valida.ok) return { ok: false, error: "El video llegó en un formato que no se puede guardar." };
   const datos: DatosVideo = valida.datos;
@@ -137,8 +163,9 @@ export async function subirTrozoVideoAction(envio: TrozoVideo): Promise<Resultad
   const valido = validar(trozoVideo, envio, "subirTrozoVideo");
   if (!valido.ok) return { ok: false, error: "Un trozo del video llegó dañado." };
   const { folio, videoId, desde, trozoBase64 } = valido.datos;
-  const visita = await visitaAbierta(folio);
-  if (!visita) return { ok: false, error: "Esa visita no está abierta para ti." };
+  const abierta = await visitaAbierta(folio);
+  if (!abierta.ok) return abierta;
+  const visita = abierta.visita;
 
   let trozo: Buffer;
   try {
@@ -163,8 +190,9 @@ export async function cerrarVideoAction(folioPedido: string, videoIdPedido: numb
   const valido = validar(entradaVideoId, { folio: folioPedido, videoId: videoIdPedido }, "cerrarVideo");
   if (!valido.ok) return { ok: false, error: "Ese video no existe." };
   const { folio, videoId } = valido.datos;
-  const visita = await visitaAbierta(folio);
-  if (!visita) return { ok: false, error: "Esa visita no está abierta para ti." };
+  const abierta = await visitaAbierta(folio);
+  if (!abierta.ok) return abierta;
+  const visita = abierta.visita;
 
   try {
     if (!(await cerrarVideo(videoId, visita.id))) {
@@ -185,9 +213,11 @@ export async function borrarVideoAction(folioPedido: string, videoIdPedido: numb
   const valido = validar(entradaVideoId, { folio: folioPedido, videoId: videoIdPedido }, "borrarVideo");
   if (!valido.ok) return { ok: false, error: "Ese video no existe." };
   const { folio, videoId } = valido.datos;
-  const visita = await visitaAbierta(folio);
+  const abierta = await visitaAbierta(folio);
   // Sobre un acta cerrada los clips solo se quitan guardando la edición.
-  if (!visita || visita.enEdicion) return { ok: false, error: "Esa visita no está abierta para ti." };
+  if (!abierta.ok) return abierta;
+  const visita = abierta.visita;
+  if (visita.enEdicion) return { ok: false, error: NO_ABIERTA };
 
   try {
     await desactivarVideo(videoId, visita.id);
