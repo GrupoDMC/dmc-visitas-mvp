@@ -46,12 +46,9 @@ function minutosEntre(a: string, b: string | null): number | null {
 export default function ActaView({
   visita,
   enviada,
-  correoCoordinacion,
 }: {
   visita: Visita;
   enviada: { para: string; cc: string; adjuntos: number } | null;
-  /** Correo que va en copia al enviar el acta; sin él, el CC queda vacío. */
-  correoCoordinacion?: string;
 }) {
   const router = useRouter();
   const ref = useReferencias();
@@ -848,7 +845,7 @@ export default function ActaView({
       </div>
 
       {dialogo === "correo" ? (
-        <CorreoDialogo visita={visita} correoCoordinacion={correoCoordinacion} onCerrar={() => setDialogo(null)} onHecho={aviso} />
+        <CorreoDialogo visita={visita} onCerrar={() => setDialogo(null)} onHecho={aviso} />
       ) : null}
       {dialogo === "editar" ? (
         <VisitaDialogo
@@ -932,12 +929,10 @@ export default function ActaView({
 /** "Enviar por correo" — destinatarios, cuerpo editable y qué se adjunta. */
 function CorreoDialogo({
   visita,
-  correoCoordinacion,
   onCerrar,
   onHecho,
 }: {
   visita: Visita;
-  correoCoordinacion?: string;
   onCerrar: () => void;
   onHecho: (mensaje: string) => void;
 }) {
@@ -948,7 +943,7 @@ function CorreoDialogo({
 
   const [form, setForm] = useState<Record<string, string | boolean>>({
     para: "",
-    cc: correoCoordinacion ?? "",
+    cc: "",
     asunto: `${visita.sucursal?.nombre} · ${textoMotivos(visita)} · ${visita.fechaProgramada}`,
     cuerpo:
       `Estimados,\n\n` +
