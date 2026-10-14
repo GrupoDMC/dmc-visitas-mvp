@@ -118,14 +118,15 @@ reales.
 Para trabajar sin tocar producción, levanta una instancia propia de SQL Server (local, en un
 contenedor o la edición Developer) y prepárala así:
 
-1. Crea la base y el esquema con una cuenta con permisos de DDL. El script ya incluye todas las
+1. Crea una base vacía y, con una cuenta con permisos de DDL, el esquema dentro de ella (el script no
+   elige la base: se la das con `-d`). El script ya incluye todas las
    migraciones numeradas hasta su fecha: en una base nueva no se aplica ninguna aparte.
 
    ```bash
-   sqlcmd -S <servidor> -U <usuario> -P <clave> -i sql/dmc_contingencia_sqlserver.sql
+   sqlcmd -S <servidor> -d <base> -U <usuario> -P <clave> -i sql/dmc_contingencia_sqlserver.sql
    ```
 
-2. (Opcional) Carga los datos de demostración ficticios: `sql/semillas-demo.sql`. Sin ellos el
+2. (Opcional) Carga los datos de demostración ficticios con `sqlcmd ... -d <base> -i sql/semillas-demo.sql`. Sin ellos el
    checklist arranca vacío y hay que cargar los motivos desde el panel antes de agendar visitas.
 
 3. Crea el primer administrador. La contraseña se pide por consola y no queda en ningún archivo:

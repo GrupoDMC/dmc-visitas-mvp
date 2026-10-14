@@ -7,7 +7,7 @@
    Después de este archivo se aplican, en orden, las migraciones posteriores
    a esta versión (sql/migracion-NNN-*.sql).
 
-   Uso:   sqlcmd -S servidor -d DMC_Contingencia -i dmc_contingencia_sqlserver.sql
+   Uso:   sqlcmd -S servidor -d <base vacía> -i dmc_contingencia_sqlserver.sql
    Notas: singular, snake_case, uq_/ck_/fk_/ix_/df_, esquema dmc,
           FKs NO ACTION en maestros y CASCADE en tablas hijas de visita.
    ===================================================================== */
@@ -19,11 +19,9 @@ GO
 /* ---------------------------------------------------------------------
    0. BASE DE DATOS Y ESQUEMA
    --------------------------------------------------------------------- */
-IF DB_ID('DMC_Contingencia') IS NULL
-    CREATE DATABASE DMC_Contingencia;
-GO
-USE DMC_Contingencia;
-GO
+-- No elige la base: corre en la que la conexión tenga abierta (sqlcmd -d, o la
+-- lista de bases de SSMS). Créala antes y comprueba el nombre: este script
+-- crea el esquema dmc en la base equivocada si te confundes.
 ALTER DATABASE CURRENT SET READ_COMMITTED_SNAPSHOT ON WITH ROLLBACK IMMEDIATE;
 GO
 IF SCHEMA_ID('dmc') IS NULL EXEC ('CREATE SCHEMA dmc');

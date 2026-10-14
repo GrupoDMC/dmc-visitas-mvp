@@ -17,29 +17,33 @@
    Requisitos: el esquema (sql/dmc_contingencia_sqlserver.sql) y todas las
    migraciones posteriores a ese archivo ya aplicadas.
 
-   Uso:  sqlcmd -S servidor -d DMC_Contingencia -i sql/semillas-demo.sql
+   Uso:  sqlcmd -S servidor -d <tu base de desarrollo> -i sql/semillas-demo.sql
+   Es re-ejecutable: no duplica catálogos, clientes ni técnicos que ya existan.
    ===================================================================== */
 
 SET NOCOUNT ON;
 SET XACT_ABORT ON;
 GO
 
-USE DMC_Contingencia;
-GO
-
 /* =====================================================================
    1. CHECKLIST DE EJEMPLO (los tres checklists del panel)
    ===================================================================== */
-INSERT INTO dmc.catalogo_motivo (codigo, nombre, orden) VALUES
+INSERT INTO dmc.catalogo_motivo (codigo, nombre, orden)
+SELECT v.codigo, v.nombre, v.orden
+FROM (VALUES
  ('CALIBRACION',     N'Calibración de las antenas',    1),
  ('INSTALACION',     N'Instalación de las antenas',    2),
  ('RE_INSTALACION',  N'Reinstalación de las antenas',  3),
  ('DES_INSTALACION', N'Desinstalación de las antenas', 4),
  ('VISITA',          N'Visita preventiva',             5),
- ('REVISION',        N'Revisión de condiciones',       6);
+ ('REVISION',        N'Revisión de condiciones',       6)
+) AS v(codigo, nombre, orden)
+WHERE NOT EXISTS (SELECT 1 FROM dmc.catalogo_motivo t WHERE t.codigo = v.codigo);
 GO
 
-INSERT INTO dmc.catalogo_problema (codigo, nombre, grupo_label, singular, ayuda, orden) VALUES
+INSERT INTO dmc.catalogo_problema (codigo, nombre, grupo_label, singular, ayuda, orden)
+SELECT v.codigo, v.nombre, v.grupo_label, v.singular, v.ayuda, v.orden
+FROM (VALUES
  ('ANTENA_NO_DETECTA',   N'Antena no detecta etiquetas',      N'Antena afectada',              N'antena', N'Marca las antenas que no están detectando.',        1),
  ('FALSA_ALARMA',        N'Falsa alarma / falso positivo',    N'Dónde suena la falsa alarma',  N'punto',  N'Marca los puntos donde ocurre.',                    2),
  ('SIN_ENERGIA',         N'Sin alimentación eléctrica',       N'Qué quedó sin energía',        N'equipo', N'Marca los equipos sin alimentación.',               3),
@@ -48,7 +52,9 @@ INSERT INTO dmc.catalogo_problema (codigo, nombre, grupo_label, singular, ayuda,
  ('DESCALIBRACION',      N'Antena descalibrada',              N'Antena a calibrar',            N'antena', N'Marca las antenas descalibradas.',                  6),
  ('CONTADOR_FALLA',      N'Contador de personas con falla',   N'Parte con falla',              N'parte',  N'Marca la parte del contador con falla.',            7),
  ('ETIQUETA_DEFECTUOSA', N'Etiqueta AM defectuosa',           N'Tipo de etiqueta',             N'tipo',   N'Marca el tipo de etiqueta y la cantidad revisada.', 8),
- ('OTRO',                N'Otro',                             NULL,                            NULL,      N'Describe el problema en el detalle escrito.',       9);
+ ('OTRO',                N'Otro',                             NULL,                            NULL,      N'Describe el problema en el detalle escrito.',       9)
+) AS v(codigo, nombre, grupo_label, singular, ayuda, orden)
+WHERE NOT EXISTS (SELECT 1 FROM dmc.catalogo_problema t WHERE t.codigo = v.codigo);
 GO
 
 INSERT INTO dmc.catalogo_problema_opcion (problema_id, etiqueta, orden)
@@ -70,16 +76,21 @@ FROM (VALUES
  ('ETIQUETA_DEFECTUOSA', N'Etiqueta AM dura',1),('ETIQUETA_DEFECTUOSA',N'Etiqueta AM blanda',2),
  ('ETIQUETA_DEFECTUOSA', N'Etiqueta RF',3)
 ) AS x(codigo, etiqueta, orden)
-JOIN dmc.catalogo_problema cp ON cp.codigo = x.codigo;
+JOIN dmc.catalogo_problema cp ON cp.codigo = x.codigo
+WHERE NOT EXISTS (SELECT 1 FROM dmc.catalogo_problema_opcion o WHERE o.problema_id = cp.id AND o.etiqueta = x.etiqueta);
 GO
 
-INSERT INTO dmc.catalogo_trabajo (codigo, nombre, grupo_label, singular, orden) VALUES
+INSERT INTO dmc.catalogo_trabajo (codigo, nombre, grupo_label, singular, orden)
+SELECT v.codigo, v.nombre, v.grupo_label, v.singular, v.orden
+FROM (VALUES
  ('CALIBRACION_ANTENAS', N'Calibración de antenas',    N'Antena calibrada',     N'antena',   1),
  ('CAMBIO_REPUESTO',     N'Cambio de repuesto',        N'Repuesto cambiado',    N'repuesto', 2),
  ('INSTALACION_EQUIPO',  N'Instalación de equipo',     N'Equipo instalado',     N'equipo',   3),
  ('MANTENCION',          N'Mantención preventiva',     N'Tarea de mantención',  N'tarea',    4),
  ('RETIRO_EQUIPO',       N'Retiro de equipo',          N'Equipo retirado',      N'equipo',   5),
- ('CAPACITACION',        N'Capacitación al personal',  NULL,                    NULL,        6);
+ ('CAPACITACION',        N'Capacitación al personal',  NULL,                    NULL,        6)
+) AS v(codigo, nombre, grupo_label, singular, orden)
+WHERE NOT EXISTS (SELECT 1 FROM dmc.catalogo_trabajo t WHERE t.codigo = v.codigo);
 GO
 
 INSERT INTO dmc.catalogo_trabajo_subtrabajo (trabajo_id, etiqueta, orden)
@@ -97,18 +108,23 @@ FROM (VALUES
  ('RETIRO_EQUIPO',       N'Pórtico completo',1),('RETIRO_EQUIPO',N'Desactivador',2),
  ('RETIRO_EQUIPO',       N'Contador de personas',3)
 ) AS x(codigo, etiqueta, orden)
-JOIN dmc.catalogo_trabajo ct ON ct.codigo = x.codigo;
+JOIN dmc.catalogo_trabajo ct ON ct.codigo = x.codigo
+WHERE NOT EXISTS (SELECT 1 FROM dmc.catalogo_trabajo_subtrabajo o WHERE o.trabajo_id = ct.id AND o.etiqueta = x.etiqueta);
 GO
 
 /* =====================================================================
    2. CLIENTES, TIENDAS Y TÉCNICOS (ficticios)
    ===================================================================== */
-INSERT INTO dmc.cliente (rut, razon_social, nombre_fantasia, activo) VALUES
+INSERT INTO dmc.cliente (rut, razon_social, nombre_fantasia, activo)
+SELECT v.rut, v.razon_social, v.nombre_fantasia, v.activo
+FROM (VALUES
  ('99.000.001-8', N'Comercial Sol y Mar SpA',  N'Sol y Mar', 1),
  ('99.000.002-6', N'Deportes Andes Ltda.',           N'Deportes Andes',  1),
  ('99.000.003-4', N'Comercializadora Moda Central S.A.', N'Moda Central',        1),
  ('99.000.004-2', N'Belleza Plus S.A.',                 N'Belleza Plus',       1),
- ('99.000.005-0', N'Deportes del Sur SpA',          N'Deportes del Sur',        0);
+ ('99.000.005-0', N'Deportes del Sur SpA',          N'Deportes del Sur',        0)
+) AS v(rut, razon_social, nombre_fantasia, activo)
+WHERE NOT EXISTS (SELECT 1 FROM dmc.cliente t WHERE t.rut = v.rut);
 GO
 
 INSERT INTO dmc.sucursal (cliente_id, nombre, codigo, direccion, comuna, region, telefono, activo)
@@ -129,15 +145,20 @@ FROM (VALUES
  (N'Deportes del Sur',       N'Mall Plaza Egaña',     'SP-160', N'Av. Larraín 5862',                       N'La Reina',         N'Metropolitana', '+56 2 2000 0013', 1),
  (N'Belleza Plus',      N'Mall Arauco Estación', 'PR-140', N'Av. Libertador Bernardo O''Higgins 3470',N'Estación Central', N'Metropolitana', '+56 2 2000 0014', 1)
 ) AS x(cliente, nombre, codigo, direccion, comuna, region, telefono, activo)
-JOIN dmc.cliente c ON c.nombre_fantasia = x.cliente;
+JOIN dmc.cliente c ON c.nombre_fantasia = x.cliente
+WHERE NOT EXISTS (SELECT 1 FROM dmc.sucursal q WHERE q.cliente_id = c.id AND q.codigo = x.codigo);
 GO
 
-INSERT INTO dmc.tecnico (rut, nombres, apellido_paterno, apellido_materno, email, telefono, activo) VALUES
+INSERT INTO dmc.tecnico (rut, nombres, apellido_paterno, apellido_materno, email, telefono, activo)
+SELECT v.rut, v.nombres, v.apellido_paterno, v.apellido_materno, v.email, v.telefono, v.activo
+FROM (VALUES
  ('10.000.001-6', N'Alicia', N'Demo', N'Uno',    N'tecnico1@example.com', '+56 9 0000 1001', 1),
  ('10.000.002-4', N'Bruno',  N'Demo', N'Dos',    N'tecnico2@example.com', '+56 9 0000 1002', 1),
  ('10.000.003-2', N'Carla',  N'Demo', N'Tres',   N'tecnico3@example.com', '+56 9 0000 1003', 1),
  ('10.000.004-0', N'Diego',  N'Demo', N'Cuatro', N'tecnico4@example.com', '+56 9 0000 1004', 1),
- ('10.000.005-9', N'Elena',  N'Demo', N'Cinco',  N'tecnico5@example.com', '+56 9 0000 1005', 0);
+ ('10.000.005-9', N'Elena',  N'Demo', N'Cinco',  N'tecnico5@example.com', '+56 9 0000 1005', 0)
+) AS v(rut, nombres, apellido_paterno, apellido_materno, email, telefono, activo)
+WHERE NOT EXISTS (SELECT 1 FROM dmc.tecnico t WHERE t.rut = v.rut);
 GO
 
 /* =====================================================================
@@ -169,7 +190,13 @@ FROM (VALUES
 JOIN dmc.sucursal s ON s.nombre = x.sucursal
 JOIN dmc.tecnico  t ON t.nombre_completo = x.tecnico;
 GO
-ALTER SEQUENCE dmc.seq_folio_visita RESTART WITH 16;
+-- Reinicia la secuencia de folios; pide ALTER, que una cuenta solo db_datawriter no tiene.
+BEGIN TRY
+    ALTER SEQUENCE dmc.seq_folio_visita RESTART WITH 16;
+END TRY
+BEGIN CATCH
+    PRINT N'Aviso: no se pudo reiniciar dmc.seq_folio_visita (' + ERROR_MESSAGE() + N').';
+END CATCH;
 GO
 
 -- Ejecución en terreno de las visitas que el técnico sí abrió
