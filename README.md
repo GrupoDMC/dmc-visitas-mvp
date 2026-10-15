@@ -9,7 +9,7 @@ dar seguimiento, y una vista móvil para que el técnico registre el trabajo y c
 > (infraestructura, credenciales, datos y procedimientos) se mantiene fuera del repositorio y se
 > entrega solo al equipo autorizado.
 
----
+----
 
 ## Índice
 
