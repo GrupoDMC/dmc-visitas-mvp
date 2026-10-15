@@ -1,6 +1,8 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
+import { descargarArchivos, extensionDe } from "@/lib/ui/descarga";
 import VisorFotos, { useVisorFotos } from "@/components/ui/VisorFotos";
 import EstadoProblemaTag from "@/components/EstadoProblemaTag";
 import { textoMotivosReales } from "@/lib/ui/estado";
@@ -42,6 +44,24 @@ export default function ActaGuardada({
   const fotosInternas = (visita.fotos ?? []).filter((f) => f.interno);
   const fotos = [...fotosTrabajo, ...fotosInternas];
   const videosInternos = (visita.videos ?? []).filter((v) => v.interno);
+  const videosTrabajo = (visita.videos ?? []).filter((v) => !v.interno);
+  const [bajando, setBajando] = useState<"fotos" | "videos" | null>(null);
+  const [aviso, setAviso] = useState<string | null>(null);
+
+  async function bajarTodo(tipo: "fotos" | "videos") {
+    const archivos =
+      tipo === "fotos"
+        ? fotosTrabajo.map((f, i) => ({ url: f.archivoUrl, nombre: `${visita.folio} - foto ${i + 1}.jpg` }))
+        : videosTrabajo.map((v, i) => ({
+            url: v.archivoUrl,
+            nombre: `${visita.folio} - video ${i + 1}.${extensionDe(v.mime, "mp4")}`,
+          }));
+    setBajando(tipo);
+    setAviso(null);
+    const n = await descargarArchivos(archivos);
+    setBajando(null);
+    setAviso(n === archivos.length ? `Se descargaron ${n} archivos` : `Se descargaron ${n} de ${archivos.length} archivos`);
+  }
   const internos = visita.internos ?? [];
   const firma = visita.firmas?.[0];
   const nombreMotivo = (codigo: string) => motivos.find((m) => m.codigo === codigo)?.nombre ?? codigo;
@@ -239,6 +259,39 @@ export default function ActaGuardada({
           ) : (
             <div className="text-[13px] opacity-66">No se tomaron fotos en esta visita.</div>
           )}
+          {fotosTrabajo.length > 0 || videosTrabajo.length > 0 ? (
+            <div className="flex flex-col gap-2 mt-3">
+              {fotosTrabajo.length > 0 ? (
+                <button
+                  type="button"
+                  onClick={() => bajarTodo("fotos")}
+                  disabled={bajando !== null}
+                  className="btn btn-secondary min-h-11 px-3.5 gap-2 text-[14px]"
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                    <path d="M12 4v11M7 11l5 5 5-5M4 20h16" />
+                  </svg>
+                  <span>{bajando === "fotos" ? "Descargando…" : "Descargar todas las fotos"}</span>
+                </button>
+              ) : null}
+              {videosTrabajo.length > 0 ? (
+                <button
+                  type="button"
+                  onClick={() => bajarTodo("videos")}
+                  disabled={bajando !== null}
+                  className="btn btn-secondary min-h-11 px-3.5 gap-2 text-[14px]"
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                    <path d="M12 4v11M7 11l5 5 5-5M4 20h16" />
+                  </svg>
+                  <span>
+                    {bajando === "videos" ? "Descargando…" : `Descargar todos los videos (${videosTrabajo.length})`}
+                  </span>
+                </button>
+              ) : null}
+              {aviso ? <div className="text-[13px] opacity-66">{aviso}</div> : null}
+            </div>
+          ) : null}
         </div>
 
         {/* Comentario interno: lo ve coordinación, no el cliente ni el PDF. */}

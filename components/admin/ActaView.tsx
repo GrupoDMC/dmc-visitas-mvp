@@ -20,6 +20,7 @@ import { ESTADO_VISITA_LABEL, ESTADO_VISITA_TAG, nombreDeQuienLaTomo, textoMotiv
 import { textoFechaVisita } from "@/lib/ui/fecha";
 import { nombreProblema, nombreTrabajo, puede, useReferencias } from "@/lib/ui/referencias";
 import { reloj } from "@/lib/ui/video";
+import { descargarArchivos, extensionDe, type ArchivoADescargar } from "@/lib/ui/descarga";
 import { resumenEdicion } from "@/lib/ui/edicion";
 import { esInformePapel } from "@/lib/ui/papel";
 import type { Visita } from "@/lib/types";
@@ -62,6 +63,7 @@ export default function ActaView({
   >(null);
   const [agendarProblema, setAgendarProblema] = useState<OrigenProblema | null>(null);
   const visor = useVisorFotos();
+  const [bajando, setBajando] = useState<"fotos" | "videos" | null>(null);
 
   const ejec = visita.ejecucion;
   const ejecutada = visita.estado !== "PROGRAMADA";
@@ -99,6 +101,22 @@ export default function ActaView({
     Boolean(ejec?.comentarioInterno) || internos.length > 0 || fotosInternas.length > 0 || videosInternos.length > 0;
   // El visor recorre primero las fotos del trabajo y después las internas.
   const fotosVisor = [...fotosCliente, ...fotosInternas];
+  async function bajarTodo(tipo: "fotos" | "videos") {
+    const archivos: ArchivoADescargar[] =
+      tipo === "fotos"
+        ? fotosCliente.map((f, i) => ({
+            url: f.archivoUrl,
+            nombre: `${visita.folio} - foto ${i + 1}.jpg`,
+          }))
+        : videosCliente.map((v, i) => ({
+            url: v.archivoUrl,
+            nombre: `${visita.folio} - video ${i + 1}.${extensionDe(v.mime, "mp4")}`,
+          }));
+    setBajando(tipo);
+    const n = await descargarArchivos(archivos);
+    setBajando(null);
+    aviso(n === archivos.length ? `Se descargaron ${n} archivos` : `Se descargaron ${n} de ${archivos.length} archivos`);
+  }
   const nombreMotivo = (codigo: string | null) =>
     codigo ? ref.motivos.find((m) => m.codigo === codigo)?.nombre ?? codigo : null;
 
@@ -566,8 +584,23 @@ export default function ActaView({
                 <div className="text-[15px] opacity-66">Sin problemas registrados en esta visita.</div>
               )}
 
-              <div className="text-[11px] tracking-[.11em] uppercase opacity-66 mt-6.5 mb-3">
-                Fotos del trabajo ({fotosCliente.length})
+              <div className="flex items-center gap-3 flex-wrap mt-6.5 mb-3">
+                <div className="text-[11px] tracking-[.11em] uppercase opacity-66">
+                  Fotos del trabajo ({fotosCliente.length})
+                </div>
+                {fotosCliente.length > 0 ? (
+                  <button
+                    type="button"
+                    onClick={() => bajarTodo("fotos")}
+                    disabled={bajando !== null}
+                    className="btn btn-secondary min-h-[34px] px-3 gap-2 text-[13px] ml-auto"
+                  >
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                      <path d="M12 4v11M7 11l5 5 5-5M4 20h16" />
+                    </svg>
+                    <span>{bajando === "fotos" ? "Descargando…" : "Descargar todas las fotos"}</span>
+                  </button>
+                ) : null}
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
                 {fotosCliente.map((f, i) => (
@@ -602,8 +635,23 @@ export default function ActaView({
               {/* Los clips salen de dmc.visita_video vía /api/visita/video/<id>,
                   que responde por rangos: por eso se pueden adelantar sin que
                   el navegador se baje los 11 MB completos. */}
-              <div className="text-[11px] tracking-[.11em] uppercase opacity-66 mt-6.5 mb-3">
-                Videos del trabajo ({videosCliente.length})
+              <div className="flex items-center gap-3 flex-wrap mt-6.5 mb-3">
+                <div className="text-[11px] tracking-[.11em] uppercase opacity-66">
+                  Videos del trabajo ({videosCliente.length})
+                </div>
+                {videosCliente.length > 0 ? (
+                  <button
+                    type="button"
+                    onClick={() => bajarTodo("videos")}
+                    disabled={bajando !== null}
+                    className="btn btn-secondary min-h-[34px] px-3 gap-2 text-[13px] ml-auto"
+                  >
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                      <path d="M12 4v11M7 11l5 5 5-5M4 20h16" />
+                    </svg>
+                    <span>{bajando === "videos" ? "Descargando…" : "Descargar todos los videos"}</span>
+                  </button>
+                ) : null}
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                 {videosCliente.map((v) => (
