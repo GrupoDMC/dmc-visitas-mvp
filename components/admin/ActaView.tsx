@@ -20,7 +20,7 @@ import { ESTADO_VISITA_LABEL, ESTADO_VISITA_TAG, nombreDeQuienLaTomo, textoMotiv
 import { textoFechaVisita } from "@/lib/ui/fecha";
 import { nombreProblema, nombreTrabajo, puede, useReferencias } from "@/lib/ui/referencias";
 import { reloj } from "@/lib/ui/video";
-import { descargarArchivos, extensionDe, type ArchivoADescargar } from "@/lib/ui/descarga";
+import { descargarZip, extensionDe, type ArchivoADescargar } from "@/lib/ui/descarga";
 import { resumenEdicion } from "@/lib/ui/edicion";
 import { esInformePapel } from "@/lib/ui/papel";
 import type { Visita } from "@/lib/types";
@@ -63,7 +63,7 @@ export default function ActaView({
   >(null);
   const [agendarProblema, setAgendarProblema] = useState<OrigenProblema | null>(null);
   const visor = useVisorFotos();
-  const [bajando, setBajando] = useState<"fotos" | "videos" | null>(null);
+  const [bajando, setBajando] = useState<"fotos" | "videos" | "multimedia" | null>(null);
 
   const ejec = visita.ejecucion;
   const ejecutada = visita.estado !== "PROGRAMADA";
@@ -101,19 +101,18 @@ export default function ActaView({
     Boolean(ejec?.comentarioInterno) || internos.length > 0 || fotosInternas.length > 0 || videosInternos.length > 0;
   // El visor recorre primero las fotos del trabajo y después las internas.
   const fotosVisor = [...fotosCliente, ...fotosInternas];
-  async function bajarTodo(tipo: "fotos" | "videos") {
-    const archivos: ArchivoADescargar[] =
-      tipo === "fotos"
-        ? fotosCliente.map((f, i) => ({
-            url: f.archivoUrl,
-            nombre: `${visita.folio} - foto ${i + 1}.jpg`,
-          }))
-        : videosCliente.map((v, i) => ({
-            url: v.archivoUrl,
-            nombre: `${visita.folio} - video ${i + 1}.${extensionDe(v.mime, "mp4")}`,
-          }));
+  async function bajarTodo(tipo: "fotos" | "videos" | "multimedia") {
+    const fotosZip: ArchivoADescargar[] = fotosCliente.map((f, i) => ({
+      url: f.archivoUrl,
+      nombre: `${visita.folio} - foto ${i + 1}.jpeg`,
+    }));
+    const videosZip: ArchivoADescargar[] = videosCliente.map((v, i) => ({
+      url: v.archivoUrl,
+      nombre: `${visita.folio} - video ${i + 1}.${extensionDe(v.mime, "mp4")}`,
+    }));
+    const archivos = tipo === "fotos" ? fotosZip : tipo === "videos" ? videosZip : [...fotosZip, ...videosZip];
     setBajando(tipo);
-    const n = await descargarArchivos(archivos);
+    const n = await descargarZip(archivos, `${visita.folio} - ${tipo}.zip`);
     setBajando(null);
     aviso(n === archivos.length ? `Se descargaron ${n} archivos` : `Se descargaron ${n} de ${archivos.length} archivos`);
   }
@@ -223,6 +222,19 @@ export default function ActaView({
             </svg>
             <span>Trazabilidad</span>
           </button>
+          {fotosCliente.length + videosCliente.length > 0 ? (
+            <button
+              type="button"
+              onClick={() => bajarTodo("multimedia")}
+              disabled={bajando !== null}
+              className="btn btn-secondary min-h-10 px-3.5"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                <path d="M12 4v11M7 11l5 5 5-5M4 20h16" />
+              </svg>
+              <span>{bajando === "multimedia" ? "Descargando…" : "Descargar toda la multimedia"}</span>
+            </button>
+          ) : null}
           {/* El PDF es el acta que va al cliente: sin comentario interno. */}
           {cerrada && !eliminada ? (
             <a

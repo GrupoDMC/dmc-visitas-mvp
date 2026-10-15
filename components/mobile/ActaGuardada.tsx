@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { descargarArchivos, extensionDe } from "@/lib/ui/descarga";
+import { descargarZip, extensionDe } from "@/lib/ui/descarga";
 import VisorFotos, { useVisorFotos } from "@/components/ui/VisorFotos";
 import EstadoProblemaTag from "@/components/EstadoProblemaTag";
 import { textoMotivosReales } from "@/lib/ui/estado";
@@ -45,20 +45,19 @@ export default function ActaGuardada({
   const fotos = [...fotosTrabajo, ...fotosInternas];
   const videosInternos = (visita.videos ?? []).filter((v) => v.interno);
   const videosTrabajo = (visita.videos ?? []).filter((v) => !v.interno);
-  const [bajando, setBajando] = useState<"fotos" | "videos" | null>(null);
+  const [bajando, setBajando] = useState<"fotos" | "videos" | "multimedia" | null>(null);
   const [aviso, setAviso] = useState<string | null>(null);
 
-  async function bajarTodo(tipo: "fotos" | "videos") {
-    const archivos =
-      tipo === "fotos"
-        ? fotosTrabajo.map((f, i) => ({ url: f.archivoUrl, nombre: `${visita.folio} - foto ${i + 1}.jpg` }))
-        : videosTrabajo.map((v, i) => ({
-            url: v.archivoUrl,
-            nombre: `${visita.folio} - video ${i + 1}.${extensionDe(v.mime, "mp4")}`,
-          }));
+  async function bajarTodo(tipo: "fotos" | "videos" | "multimedia") {
+    const fotosZip = fotosTrabajo.map((f, i) => ({ url: f.archivoUrl, nombre: `${visita.folio} - foto ${i + 1}.jpeg` }));
+    const videosZip = videosTrabajo.map((v, i) => ({
+      url: v.archivoUrl,
+      nombre: `${visita.folio} - video ${i + 1}.${extensionDe(v.mime, "mp4")}`,
+    }));
+    const archivos = tipo === "fotos" ? fotosZip : tipo === "videos" ? videosZip : [...fotosZip, ...videosZip];
     setBajando(tipo);
     setAviso(null);
-    const n = await descargarArchivos(archivos);
+    const n = await descargarZip(archivos, `${visita.folio} - ${tipo}.zip`);
     setBajando(null);
     setAviso(n === archivos.length ? `Se descargaron ${n} archivos` : `Se descargaron ${n} de ${archivos.length} archivos`);
   }
@@ -287,6 +286,19 @@ export default function ActaGuardada({
                   <span>
                     {bajando === "videos" ? "Descargando…" : `Descargar todos los videos (${videosTrabajo.length})`}
                   </span>
+                </button>
+              ) : null}
+              {fotosTrabajo.length > 0 && videosTrabajo.length > 0 ? (
+                <button
+                  type="button"
+                  onClick={() => bajarTodo("multimedia")}
+                  disabled={bajando !== null}
+                  className="btn btn-primary min-h-11 px-3.5 gap-2 text-[14px]"
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                    <path d="M12 4v11M7 11l5 5 5-5M4 20h16" />
+                  </svg>
+                  <span>{bajando === "multimedia" ? "Descargando…" : "Descargar toda la multimedia"}</span>
                 </button>
               ) : null}
               {aviso ? <div className="text-[13px] opacity-66">{aviso}</div> : null}
