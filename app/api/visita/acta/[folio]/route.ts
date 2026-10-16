@@ -31,11 +31,17 @@ export async function GET(_req: Request, { params }: { params: Promise<{ folio: 
 
   try {
     const firmaTienda = visita.firmas?.find((f) => f.rol === "TIENDA") ?? visita.firmas?.[0];
+    const fotosAbiertas = (visita.fotos ?? []).filter((f) => !f.interno);
     const [motivos, trabajos, problemas, fotos, firma] = await Promise.all([
       listarMotivos(),
       listarTrabajos(),
       listarProblemas(),
-      Promise.all((visita.fotos ?? []).filter((f) => !f.interno).map((f) => getFotoBinaria(f.id))),
+      Promise.all(
+        fotosAbiertas.map(async (f) => {
+          const bin = await getFotoBinaria(f.id);
+          return bin ? { ...bin, etiqueta: f.etiqueta } : null;
+        })
+      ),
       firmaTienda ? getFirmaBinaria(firmaTienda.id) : Promise.resolve(null),
     ]);
 
@@ -44,7 +50,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ folio: 
       motivos,
       trabajos,
       problemas,
-      fotos: fotos.filter((f) => f !== null).map((f) => ({ bytes: new Uint8Array(f.bytes), mime: f.mime })),
+      fotos: fotos.filter((f) => f !== null).map((f) => ({ bytes: new Uint8Array(f.bytes), mime: f.mime, etiqueta: f.etiqueta })),
       firma: firma ? { bytes: new Uint8Array(firma.bytes), mime: firma.mime } : null,
     });
 

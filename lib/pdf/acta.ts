@@ -2,6 +2,7 @@ import "server-only";
 import { log } from "@/lib/log";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
+import fontkit from "@pdf-lib/fontkit";
 import { PDFDocument, StandardFonts, rgb, type Color, type PDFFont, type PDFImage, type PDFPage } from "pdf-lib";
 import type { CatalogoMotivo, CatalogoProblema, CatalogoTrabajo, Visita } from "@/lib/types";
 import { esInformePapel } from "@/lib/ui/papel";
@@ -13,13 +14,20 @@ import { esInformePapel } from "@/lib/ui/papel";
  * problemas, fotos y firma. El comentario interno —texto, checklist, fotos y
  * clips marcados como internos— NO entra: es solo para coordinación.
  *
- * Se arma con pdf-lib y las fuentes estándar del PDF (Helvetica), así que no
- * depende de ningún archivo de fuentes ni de un navegador en el servidor.
+ * Se arma con pdf-lib. La tipografía es Inter (public/fonts); si los archivos
+ * no están en el despliegue, cae a Helvetica para no perder el documento.
+ *
+ * El diseño sigue la maqueta de referencia: nombre de la tienda grande, barra
+ * de datos con reglas, secciones numeradas, la primera foto junto al trabajo
+ * y el resto en una grilla que se acomoda a la proporción de cada foto y
+ * pagina sola, así que crece con las fotos que se agreguen.
  */
 
 export interface ImagenActa {
   bytes: Uint8Array;
   mime: string;
+  /** Pie de la foto ("Placa receptora de antena"). */
+  etiqueta?: string | null;
 }
 
 export interface DatosPdfActa {
@@ -35,33 +43,40 @@ export interface DatosPdfActa {
 // ── Medidas (A4 en puntos) ──────────────────────────────────────────────────
 const ANCHO = 595.28;
 const ALTO = 841.89;
-const MARGEN = 44;
+const MARGEN = 43.5;
 const UTIL = ANCHO - MARGEN * 2;
-/** Alto reservado para el pie de página por encima del margen inferior. */
-const PIE = 30;
+const DERECHA = MARGEN + UTIL;
+/** Línea bajo el encabezado, medida desde arriba. */
+const REGLA_ENCABEZADO = 58.5;
+/** Por debajo de esta altura (y de PDF) no se escribe: ahí va el pie. */
+const FONDO_UTIL = 56;
+/** Columna del texto cuando la primera foto va a su lado, y la de la foto. */
+const COL_TEXTO = 303;
+const COL_FOTO = 187.5;
+const COL_HUECO = UTIL - COL_TEXTO - COL_FOTO;
 
-// ── Paleta: el morado del logo como marca, grises cálidos para el resto ─────
+// ── Paleta: tinta casi negra, el morado del logo como acento ────────────────
 function hex(h: string): Color {
   const n = parseInt(h.slice(1), 16);
   return rgb(((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255);
 }
 const TINTA = hex("#201e1d");
-const TEXTO = hex("#444141");
-const GRIS = hex("#7d7979");
-const LINEA = hex("#e4e0e0");
-const FONDO = hex("#f7f5f5");
-const MARCA = hex("#762282");
-const MARCA_SUAVE = hex("#f5eef6");
-const MARCA_BORDE = hex("#e6d3e8");
+const TEXTO = hex("#3d3a39");
+const GRIS = hex("#7f7b7b");
+const REGLA = hex("#a6a4a4");
+const FILA = hex("#d7d3d3");
+const MARCA = hex("#6f2c91");
+const MARCA_OSCURO = hex("#4f1d6c");
+const CHIP = hex("#f1e7f4");
 const ALERTA = hex("#c2410c");
 const ALERTA_SUAVE = hex("#fff5ee");
-const BLANCO = rgb(1, 1, 1);
+const ALERTA_BORDE = hex("#f3cdb6");
 
 /**
  * Las fuentes estándar del PDF codifican en WinAnsi (Latin-1 y unos pocos
- * signos más). Acentos, ñ, ¿, ¡, «», ·, – y × entran; un emoji o un signo
- * raro que el técnico haya pegado haría fallar todo el documento, así que se
- * omite.
+ * signos más). Un emoji o un signo raro que el técnico haya pegado haría
+ * fallar todo el documento —también con Inter, que no trae esos glifos—, así
+ * que se omite.
  */
 const WIN_ANSI_EXTRA = new Set("€‚ƒ„…†‡ˆ‰Š‹ŒŽ‘’“”•–—˜™š›œžŸ");
 function limpio(texto: string | null | undefined): string {
@@ -82,20 +97,22 @@ function limpio(texto: string | null | undefined): string {
  * anchas de lo calculado y se pasan del margen. Se suma glifo por glifo.
  */
 const anchos = new WeakMap<PDFFont, Map<string, number>>();
-function anchoDe(fuente: PDFFont, texto: string, tam: number): number {
+function anchoDe(fuente: PDFFont, texto: string, tam: number, espaciado = 0): number {
   let tabla = anchos.get(fuente);
   if (!tabla) anchos.set(fuente, (tabla = new Map()));
   let total = 0;
+  let n = 0;
   for (const c of texto) {
     let w = tabla.get(c);
     if (w === undefined) tabla.set(c, (w = fuente.widthOfTextAtSize(c, 1000)));
     total += w;
+    n++;
   }
-  return (total * tam) / 1000;
+  return (total * tam) / 1000 + n * espaciado;
 }
 
 // ── Fechas: vienen de SQL como texto local ('YYYY-MM-DD' y 'YYYY-MM-DDTHH:mm:ss') ──
-const MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
+const MESES_CORTOS = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
 const DIAS = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
 
 function partesFecha(iso: string | null | undefined) {
@@ -105,10 +122,10 @@ function partesFecha(iso: string | null | undefined) {
   return { a, me, d, hh, mm, dia: new Date(Date.UTC(a, me - 1, d)).getUTCDay() };
 }
 
-/** '2026-09-28' → '28 de septiembre de 2026'. */
-function fechaLarga(iso: string | null | undefined): string {
+/** '2026-10-13' → '13 oct 2026'. */
+function fechaCorta(iso: string | null | undefined): string {
   const p = partesFecha(iso);
-  return p ? `${p.d} de ${MESES[p.me - 1]} de ${p.a}` : iso || "—";
+  return p ? `${p.d} ${MESES_CORTOS[p.me - 1]} ${p.a}` : iso || "—";
 }
 
 /** '2026-09-28' → 'Lunes'. */
@@ -117,12 +134,12 @@ function diaSemana(iso: string | null | undefined): string {
   return p ? DIAS[p.dia] : "";
 }
 
-/** '2026-09-28T12:45:00' → '28-09-2026 12:45'. */
+/** '2026-09-28T12:45:00' → '28-09-2026 · 12:45'. */
 function fechaHora(iso: string | null | undefined): string {
   const p = partesFecha(iso);
   if (!p) return "";
   const dos = (n: number) => String(n).padStart(2, "0");
-  return `${dos(p.d)}-${dos(p.me)}-${p.a} ${dos(p.hh)}:${dos(p.mm)}`;
+  return `${dos(p.d)}-${dos(p.me)}-${p.a} · ${dos(p.hh)}:${dos(p.mm)}`;
 }
 
 function hhmm(iso: string | null | undefined): string {
@@ -142,27 +159,10 @@ function duracion(inicio: string | null | undefined, termino: string | null | un
   return h ? `${h} h ${String(min % 60).padStart(2, "0")} min` : `${min} min`;
 }
 
-/** Rectángulo con esquinas redondeadas; (x, y) es la esquina superior izquierda. */
-function caja(
-  p: PDFPage,
-  x: number,
-  y: number,
-  w: number,
-  h: number,
-  opc: { r?: number; fondo?: Color; borde?: Color; grosor?: number } = {}
-) {
-  const r = Math.min(opc.r ?? 5, w / 2, h / 2);
-  // drawSvgPath invierte el eje Y: dentro del trazado, +y va hacia abajo.
-  const d =
-    `M ${r} 0 H ${w - r} Q ${w} 0 ${w} ${r} V ${h - r} Q ${w} ${h} ${w - r} ${h} ` +
-    `H ${r} Q 0 ${h} 0 ${h - r} V ${r} Q 0 0 ${r} 0 Z`;
-  p.drawSvgPath(d, {
-    x,
-    y,
-    color: opc.fondo,
-    borderColor: opc.borde,
-    borderWidth: opc.borde ? (opc.grosor ?? 0.6) : 0,
-  });
+interface Fuentes {
+  normal: PDFFont;
+  semi: PDFFont;
+  negrita: PDFFont;
 }
 
 interface Chip {
@@ -170,7 +170,7 @@ interface Chip {
   ancho: number;
 }
 
-/** Escritor con salto de página automático. */
+/** Escritor con salto de página automático. `y` es el borde superior libre. */
 class Hoja {
   pagina!: PDFPage;
   y = 0;
@@ -179,17 +179,15 @@ class Hoja {
 
   constructor(
     private doc: PDFDocument,
-    readonly normal: PDFFont,
-    readonly negrita: PDFFont,
-    private encabezado: (p: PDFPage, indice: number) => number
+    readonly f: Fuentes,
+    private encabezado: (p: PDFPage) => number
   ) {
     this.nueva();
   }
 
   nueva() {
-    const indice = this.doc.getPageCount();
     this.pagina = this.doc.addPage([ANCHO, ALTO]);
-    this.y = this.tope = this.encabezado(this.pagina, indice);
+    this.y = this.tope = this.encabezado(this.pagina);
   }
 
   get alInicio() {
@@ -198,12 +196,47 @@ class Hoja {
 
   /** Lo que cabe de alto en una página vacía. */
   get altoPagina() {
-    return this.tope - (MARGEN + PIE);
+    return this.tope - FONDO_UTIL;
   }
 
   /** Asegura `alto` puntos libres antes del pie; si no, página nueva. */
   espacio(alto: number) {
-    if (this.y - alto < MARGEN + PIE) this.nueva();
+    if (this.y - alto < FONDO_UTIL) this.nueva();
+  }
+
+  /** Texto en una sola línea con la parte de arriba en `top`; `sp` separa las letras. */
+  linea(
+    texto: string,
+    x: number,
+    top: number,
+    tam: number,
+    fuente: PDFFont,
+    color: Color,
+    sp = 0,
+    pagina: PDFPage = this.pagina
+  ) {
+    const t = limpio(texto);
+    const base = top - tam * 0.97;
+    if (!sp) {
+      pagina.drawText(t, { x, y: base, size: tam, font: fuente, color });
+      return;
+    }
+    let cx = x;
+    for (const c of t) {
+      pagina.drawText(c, { x: cx, y: base, size: tam, font: fuente, color });
+      cx += anchoDe(fuente, c, tam) + sp;
+    }
+  }
+
+  /** Igual que `linea`, pero alineada a la derecha en `derecha`. */
+  lineaDer(texto: string, derecha: number, top: number, tam: number, fuente: PDFFont, color: Color, sp = 0) {
+    const t = limpio(texto);
+    this.linea(t, derecha - anchoDe(fuente, t, tam, sp) + sp, top, tam, fuente, color, sp);
+  }
+
+  /** Etiqueta pequeña en mayúsculas y letras separadas. */
+  rotulo(texto: string, x: number, top: number, color: Color = TINTA, tam = 8.2) {
+    this.linea(texto.toUpperCase(), x, top, tam, this.f.semi, color, 0.85);
   }
 
   lineas(texto: string, fuente: PDFFont, tam: number, ancho: number): string[] {
@@ -237,98 +270,67 @@ class Hoja {
     return salida;
   }
 
-  /** Dibuja líneas ya cortadas desde `y` hacia abajo, sin paginar. */
-  escribir(lineas: string[], x: number, y: number, tam: number, fuente: PDFFont, color: Color, alto = tam * 1.4) {
+  /** Dibuja líneas ya cortadas desde `top` hacia abajo, sin paginar. Devuelve lo que ocupan. */
+  escribir(lineas: string[], x: number, top: number, tam: number, fuente: PDFFont, color: Color, alto = tam * 1.45) {
     lineas.forEach((l, i) => {
-      if (l) this.pagina.drawText(l, { x, y: y - tam - i * alto, size: tam, font: fuente, color });
+      if (l) this.linea(l, x, top - i * alto, tam, fuente, color);
     });
     return lineas.length * alto;
   }
 
-  texto(
-    texto: string,
-    opc: { tam?: number; negrita?: boolean; color?: Color; x?: number; ancho?: number; interlineado?: number } = {}
-  ) {
-    const tam = opc.tam ?? 10;
-    const fuente = opc.negrita ? this.negrita : this.normal;
-    const x = opc.x ?? MARGEN;
-    const ancho = opc.ancho ?? UTIL - (x - MARGEN);
-    const alto = tam * (opc.interlineado ?? 1.4);
-    for (const linea of this.lineas(texto, fuente, tam, ancho)) {
-      this.espacio(alto);
-      if (linea) this.pagina.drawText(linea, { x, y: this.y - tam, size: tam, font: fuente, color: opc.color ?? TINTA });
-      this.y -= alto;
-    }
+  /** Regla horizontal de `grosor` puntos con su borde superior en `top`. */
+  regla(x1: number, x2: number, top: number, grosor = 1.5, color: Color = REGLA, pagina: PDFPage = this.pagina) {
+    pagina.drawRectangle({ x: x1, y: top - grosor, width: x2 - x1, height: grosor, color });
   }
 
   /**
-   * Título de sección con su barra de marca. `reserva` es lo mínimo del
-   * contenido que tiene que caber debajo, para que el título nunca quede solo
-   * al pie de una página.
+   * Título de sección: regla, número en morado y nombre en mayúsculas.
+   * `reserva` es lo mínimo del contenido que tiene que caber debajo, para que
+   * el título nunca quede solo al pie de una página.
    */
-  titulo(texto: string, reserva = 40, contador?: number) {
-    const hueco = this.alInicio ? 0 : 20;
-    this.espacio(hueco + 20 + reserva);
-    if (!this.alInicio) this.y -= hueco;
-    const t = limpio(texto);
-    this.pagina.drawRectangle({ x: MARGEN, y: this.y - 12, width: 3, height: 13, color: MARCA });
-    this.pagina.drawText(t, { x: MARGEN + 10, y: this.y - 11, size: 11.5, font: this.negrita, color: TINTA });
-    if (contador !== undefined) {
-      const c = String(contador);
-      const x = MARGEN + 10 + anchoDe(this.negrita, t, 11.5) + 7;
-      const w = Math.max(16, anchoDe(this.negrita, c, 8) + 10);
-      caja(this.pagina, x, this.y - 0.5, w, 13, { r: 6.5, fondo: MARCA_SUAVE });
-      this.pagina.drawText(c, {
-        x: x + (w - anchoDe(this.negrita, c, 8)) / 2,
-        y: this.y - 9.5,
-        size: 8,
-        font: this.negrita,
-        color: MARCA,
-      });
-    }
-    this.y -= 22;
+  titulo(numero: number, texto: string, reserva = 40) {
+    const hueco = this.alInicio ? 7 : 22;
+    this.espacio(hueco + 40 + reserva);
+    if (this.alInicio) this.y = this.tope - 7;
+    else this.y -= hueco;
+    this.regla(MARGEN, DERECHA, this.y);
+    const n = String(numero).padStart(2, "0");
+    this.linea(n, MARGEN, this.y - 13, 10.5, this.f.negrita, MARCA);
+    this.linea(texto.toUpperCase(), MARGEN + anchoDe(this.f.negrita, n, 10.5) + 7, this.y - 13, 10.5, this.f.negrita, TINTA, 0.5);
+    this.y -= 40;
   }
 
   /** Reparte etiquetas en filas de "píldoras" que caben en `ancho`. */
-  chips(textos: string[], ancho: number, tam = 8.5, negrita = false): Chip[][] {
-    const fuente = negrita ? this.negrita : this.normal;
+  chips(textos: string[], ancho: number, tam = 9.8): Chip[][] {
     const filas: Chip[][] = [];
     let fila: Chip[] = [];
     let ocupado = 0;
     for (const t of textos.map(limpio).filter(Boolean)) {
-      const w = Math.min(ancho, anchoDe(fuente, t, tam) + 14);
-      if (fila.length && ocupado + 5 + w > ancho) {
+      const w = Math.min(ancho, anchoDe(this.f.semi, t, tam) + 16);
+      if (fila.length && ocupado + 4.5 + w > ancho) {
         filas.push(fila);
         fila = [];
         ocupado = 0;
       }
-      ocupado += (fila.length ? 5 : 0) + w;
+      ocupado += (fila.length ? 4.5 : 0) + w;
       fila.push({ texto: t, ancho: w });
     }
     if (fila.length) filas.push(fila);
     return filas;
   }
 
-  static altoChips(filas: Chip[][], tam = 8.5) {
-    return filas.length ? filas.length * (tam + 9) + (filas.length - 1) * 4 : 0;
+  static altoChips(filas: Chip[][], alto = 21) {
+    return filas.length ? filas.length * alto + (filas.length - 1) * 4.5 : 0;
   }
 
-  dibujarChips(
-    filas: Chip[][],
-    x: number,
-    y: number,
-    opc: { tam?: number; fondo?: Color; borde?: Color; color?: Color; negrita?: boolean } = {}
-  ) {
-    const tam = opc.tam ?? 8.5;
-    const alto = tam + 9;
-    const fuente = opc.negrita ? this.negrita : this.normal;
+  dibujarChips(filas: Chip[][], x: number, top: number, tam = 9.8, alto = 21, fondo: Color = CHIP, color: Color = MARCA_OSCURO) {
     filas.forEach((fila, i) => {
       let cx = x;
-      const cy = y - i * (alto + 4);
+      const cy = top - i * (alto + 4.5);
       for (const c of fila) {
-        caja(this.pagina, cx, cy, c.ancho, alto, { r: alto / 2, fondo: opc.fondo ?? FONDO, borde: opc.borde });
-        this.pagina.drawText(c.texto, { x: cx + 7, y: cy - alto + 5.2, size: tam, font: fuente, color: opc.color ?? TEXTO });
-        cx += c.ancho + 5;
+        this.pagina.drawRectangle({ x: cx, y: cy - alto, width: c.ancho, height: alto, color: fondo });
+        this.linea(c.texto, cx + 8, cy - (alto - tam) / 2 + 0.3, tam, this.f.semi, color);
+        cx += c.ancho + 4.5;
       }
     });
   }
@@ -357,6 +359,27 @@ async function logo(doc: PDFDocument): Promise<PDFImage | null> {
   }
 }
 
+/** Inter en tres pesos; sin los archivos, Helvetica. */
+async function cargarFuentes(doc: PDFDocument): Promise<Fuentes> {
+  try {
+    doc.registerFontkit(fontkit);
+    const leer = (nombre: string) => readFile(path.join(process.cwd(), "public", "fonts", nombre));
+    const [r, s, b] = await Promise.all([leer("Inter_400Regular.ttf"), leer("Inter_600SemiBold.ttf"), leer("Inter_700Bold.ttf")]);
+    // Sin ligaduras ni alternativas contextuales: el ancho que se mide es el que se dibuja.
+    const opc = { subset: false, features: { liga: false, clig: false, calt: false } };
+    return {
+      normal: await doc.embedFont(r, opc),
+      semi: await doc.embedFont(s, opc),
+      negrita: await doc.embedFont(b, opc),
+    };
+  } catch (err) {
+    log.error("no se pudo cargar Inter para el PDF; se usa Helvetica", { err });
+    const normal = await doc.embedFont(StandardFonts.Helvetica);
+    const negrita = await doc.embedFont(StandardFonts.HelveticaBold);
+    return { normal, semi: negrita, negrita };
+  }
+}
+
 export async function generarPdfActa(d: DatosPdfActa): Promise<Uint8Array> {
   const { visita } = d;
   const ejec = visita.ejecucion;
@@ -364,103 +387,306 @@ export async function generarPdfActa(d: DatosPdfActa): Promise<Uint8Array> {
   const papel = esInformePapel(ejec);
   const doc = await PDFDocument.create();
   doc.setTitle(`Acta ${visita.folio}`);
-  doc.setAuthor("Grupo dMC");
+  doc.setAuthor("Grupo DMC");
   doc.setSubject(`Visita técnica · ${visita.sucursal?.nombre ?? ""}`);
 
-  const normal = await doc.embedFont(StandardFonts.Helvetica);
-  const negrita = await doc.embedFont(StandardFonts.HelveticaBold);
+  const f = await cargarFuentes(doc);
+  const { normal, semi, negrita } = f;
   const imgLogo = await logo(doc);
   const problemas = visita.problemas ?? [];
+  const sucursal = visita.sucursal;
 
-  const derecha = (p: PDFPage, t: string, y: number, tam: number, f: PDFFont, c: Color) =>
-    p.drawText(limpio(t), { x: MARGEN + UTIL - anchoDe(f, limpio(t), tam), y, size: tam, font: f, color: c });
-
-  // ── Encabezado: completo en la primera página, compacto en las siguientes ──
-  const encabezado = (p: PDFPage, indice: number): number => {
-    const primera = indice === 0;
-    let y = ALTO - 40;
-    const altoLogo = primera ? 38 : 24;
+  // ── Encabezado: igual en todas las páginas ──
+  const encabezado = (p: PDFPage): number => {
+    const altoLogo = 27;
     if (imgLogo) {
       const ancho = (imgLogo.width / imgLogo.height) * altoLogo;
-      p.drawImage(imgLogo, { x: MARGEN, y: y - altoLogo, width: ancho, height: altoLogo });
+      p.drawImage(imgLogo, { x: MARGEN, y: ALTO - 21 - altoLogo, width: ancho, height: altoLogo });
     } else {
-      p.drawText("Grupo dMC", { x: MARGEN, y: y - altoLogo + 6, size: primera ? 18 : 13, font: negrita, color: MARCA });
+      p.drawText("Grupo DMC", { x: MARGEN, y: ALTO - 42, size: 15, font: negrita, color: MARCA });
     }
-    if (primera) {
-      derecha(p, "ACTA DE VISITA TÉCNICA", y - 9, 7.5, negrita, MARCA);
-      derecha(p, visita.folio, y - 29, 19, negrita, TINTA);
-      derecha(p, visita.sucursal?.nombre ?? "", y - 42, 8.5, normal, GRIS);
-    } else {
-      derecha(p, `Acta ${visita.folio}`, y - 11, 9.5, negrita, TINTA);
-      derecha(p, "Acta de visita técnica", y - 23, 7.5, normal, GRIS);
+    const t = limpio(`ACTA DE VISITA TÉCNICA · ${visita.folio}`);
+    const sp = 0.9;
+    let cx = DERECHA - anchoDe(semi, t, 8.6, sp) + sp;
+    for (const c of t) {
+      p.drawText(c, { x: cx, y: ALTO - 36, size: 8.6, font: semi, color: TINTA });
+      cx += anchoDe(semi, c, 8.6) + sp;
     }
-    y -= altoLogo + 12;
-    p.drawLine({ start: { x: MARGEN, y }, end: { x: MARGEN + UTIL, y }, thickness: 0.6, color: LINEA });
-    p.drawLine({ start: { x: MARGEN, y }, end: { x: MARGEN + 56, y }, thickness: 2.2, color: MARCA });
-    return y - 18;
+    p.drawRectangle({ x: 0, y: ALTO - REGLA_ENCABEZADO, width: ANCHO, height: 1.5, color: REGLA });
+    return ALTO - REGLA_ENCABEZADO - 1.5;
   };
 
-  const h = new Hoja(doc, normal, negrita, encabezado);
+  const h = new Hoja(doc, f, encabezado);
+  let seccion = 0;
 
-  // ── Resumen: la fecha, el horario y lo encontrado, de un vistazo ──
+  // ── Portada: nombre de la tienda, folio y la barra de datos ──
   {
-    const alto = 58;
+    h.y = ALTO - 107;
+    h.rotulo("Acta de visita técnica", MARGEN, h.y, MARCA_OSCURO, 9.8);
+
+    const nombre = limpio(sucursal?.nombre ?? "Visita técnica");
+    const anchoNombre = UTIL - 130;
+    let tam = 30;
+    while (tam > 20 && anchoDe(negrita, nombre, tam) > anchoNombre) tam -= 1;
+    const lineasNombre = h.lineas(nombre, negrita, tam, anchoNombre).slice(0, 2);
+    const altoNombre = lineasNombre.length * (tam + 4);
+    h.escribir(lineasNombre, MARGEN, h.y - 23, tam, negrita, TINTA, tam + 4);
+
+    const subtitulo = [visita.cliente?.nombreFantasia, sucursal?.codigo ? `Sucursal ${sucursal.codigo}` : ""]
+      .filter(Boolean)
+      .join(" · ");
+    h.linea(subtitulo, MARGEN, h.y - 23 - altoNombre - 3, 11.2, normal, TINTA);
+
+    h.lineaDer("N° DE ACTA", DERECHA, h.y - 37, 9, semi, TINTA, 0.85);
+    h.lineaDer(visita.folio, DERECHA, h.y - 52, 16.5, negrita, MARCA);
+
+    // La barra empieza 91 puntos bajo el rótulo, o más si el nombre ocupó dos líneas.
+    h.y -= 91 + Math.max(0, altoNombre - (30 + 4));
+
     // Con margen de días, la fecha del acta es el día en que se hizo, no el
     // primero del margen.
     const dia = visita.fechaHasta && ejec ? ejec.horaInicio.slice(0, 10) : visita.fechaProgramada;
     const celdas: { etiqueta: string; valor: string; sub: string; color?: Color }[] = [
-      { etiqueta: "FECHA DE LA VISITA", valor: fechaLarga(dia), sub: diaSemana(dia) },
+      { etiqueta: "Fecha", valor: fechaCorta(dia), sub: diaSemana(dia) },
       {
-        etiqueta: "HORARIO EN TIENDA",
+        etiqueta: "Horario en tienda",
         valor: ejec && !papel ? `${hhmm(ejec.horaInicio)} – ${hhmm(ejec.horaTermino)}` : "—",
         sub: papel ? "Informe en papel" : "Llegada y salida",
       },
-      { etiqueta: "DURACIÓN", valor: (papel ? null : duracion(ejec?.horaInicio, ejec?.horaTermino)) ?? "—", sub: "En tienda" },
+      { etiqueta: "Duración", valor: (papel ? null : duracion(ejec?.horaInicio, ejec?.horaTermino)) ?? "—", sub: "En tienda" },
       {
-        etiqueta: "PROBLEMAS",
+        etiqueta: "Problemas",
         valor: problemas.length ? String(problemas.length) : "Ninguno",
         sub: problemas.length ? (problemas.length === 1 ? "Detectado" : "Detectados") : "Sin observaciones",
-        color: problemas.length ? ALERTA : undefined,
+        color: problemas.length ? ALERTA : MARCA_OSCURO,
       },
     ];
-    // La fecha larga necesita más aire que el resto.
-    const pesos = [1.55, 1.15, 0.95, 0.95];
-    const total = pesos.reduce((a, b) => a + b, 0);
-    caja(h.pagina, MARGEN, h.y, UTIL, alto, { r: 6, fondo: MARCA_SUAVE, borde: MARCA_BORDE });
-    let x = MARGEN;
+    const alto = 67.5;
+    const w = UTIL / celdas.length;
+    h.regla(MARGEN, DERECHA, h.y);
+    h.regla(MARGEN, DERECHA, h.y - alto + 1.5);
     celdas.forEach((c, i) => {
-      const w = (UTIL * pesos[i]) / total;
-      if (i > 0) {
-        h.pagina.drawLine({ start: { x, y: h.y - 12 }, end: { x, y: h.y - alto + 12 }, thickness: 0.6, color: MARCA_BORDE });
-      }
-      const px = x + 14;
-      const anchoTexto = w - 20;
-      let tam = 12;
-      while (tam > 8 && anchoDe(negrita, limpio(c.valor), tam) > anchoTexto) tam -= 0.5;
-      h.pagina.drawText(limpio(c.etiqueta), { x: px, y: h.y - 17, size: 6.8, font: negrita, color: MARCA });
-      h.pagina.drawText(limpio(c.valor), { x: px, y: h.y - 34, size: tam, font: negrita, color: c.color ?? TINTA });
-      h.pagina.drawText(limpio(c.sub), { x: px, y: h.y - 47, size: 7.5, font: normal, color: GRIS });
-      x += w;
+      const x = MARGEN + i * w;
+      if (i > 0) h.pagina.drawRectangle({ x: x - 0.75, y: h.y - alto + 1.5, width: 1.5, height: alto - 1.5, color: REGLA });
+      const px = i === 0 ? x : x + 11;
+      const maxTexto = w - (i === 0 ? 8 : 19);
+      let tamValor = 12;
+      while (tamValor > 8 && anchoDe(semi, limpio(c.valor), tamValor) > maxTexto) tamValor -= 0.5;
+      h.rotulo(c.etiqueta, px, h.y - 11);
+      h.linea(c.valor, px, h.y - 30, tamValor, semi, c.color ?? TINTA);
+      h.linea(c.sub, px, h.y - 48, 9, normal, TINTA);
     });
-    h.y -= alto + 4;
+    h.y -= alto + 22;
+  }
+
+  // ── Fotos: la primera va junto al trabajo, el resto en la grilla ──
+  const fotos: { img: PDFImage; pie: string }[] = [];
+  {
+    const incrustadas = await Promise.all(d.fotos.map(async (x) => ({ img: await incrustar(doc, x), etiqueta: x.etiqueta })));
+    let n = 0;
+    for (const x of incrustadas) {
+      if (!x.img) continue;
+      n++;
+      const et = limpio(x.etiqueta).trim();
+      fotos.push({ img: x.img, pie: et ? `Foto ${n} · ${et}` : `Foto ${n}` });
+    }
+  }
+
+  /** Foto con su pie; devuelve el alto que ocupa. */
+  const dibujarFoto = (foto: { img: PDFImage; pie: string }, x: number, top: number, ancho: number, altoMax: number) => {
+    const escala = Math.min(ancho / foto.img.width, altoMax / foto.img.height);
+    const w = foto.img.width * escala;
+    const hh = foto.img.height * escala;
+    h.pagina.drawImage(foto.img, { x, y: top - hh, width: w, height: hh });
+    const pie = h.lineas(foto.pie, normal, 9, ancho);
+    h.escribir(pie, x, top - hh - 6, 9, normal, GRIS, 12);
+    return hh + 6 + pie.length * 12;
+  };
+
+  // ── 01 · Trabajo realizado ──
+  {
+    const trabajos = visita.trabajos ?? [];
+    const lateral = fotos[0] ?? null;
+    h.titulo(++seccion, "Trabajo realizado", 90);
+
+    // La foto lateral se dibuja de una vez al comienzo de la sección y el texto
+    // la rodea; pasado su borde inferior (o en otra página) usa todo el ancho.
+    let fotoPagina: PDFPage | null = null;
+    let fotoBase = 0;
+    if (lateral) {
+      const altoMax = Math.min(250, h.y - FONDO_UTIL - 24);
+      const alto = dibujarFoto(lateral, DERECHA - COL_FOTO, h.y, COL_FOTO, altoMax);
+      fotoPagina = h.pagina;
+      fotoBase = h.y - alto;
+    }
+    const anchoCol = () => (fotoPagina === h.pagina && h.y > fotoBase - 4 ? COL_TEXTO : UTIL);
+
+    // Los motivos que confirmó el técnico en terreno; si no hay, los agendados.
+    const codigosMotivo = ejec?.motivosRealesCodigos?.length ? ejec.motivosRealesCodigos : visita.motivosCodigos;
+    const nombreMotivo = (c: string) => d.motivos.find((m) => m.codigo === c)?.nombre ?? c;
+    const nombres = codigosMotivo.map(nombreMotivo);
+    if (nombres.length) {
+      const filas = h.chips(nombres, anchoCol());
+      h.espacio(14 + Hoja.altoChips(filas));
+      h.rotulo("Motivo de la visita", MARGEN, h.y);
+      h.dibujarChips(filas, MARGEN, h.y - 20);
+      h.y -= 20 + Hoja.altoChips(filas) + 17;
+    }
+
+    // Tabla de tareas: una fila por trabajo, con sus subtareas y su detalle debajo.
+    if (trabajos.length) {
+      const nombreTrabajo = (c: string) => d.trabajos.find((t) => t.codigo === c)?.nombre ?? c;
+      const variosMotivos = new Set(trabajos.map((t) => t.motivoCodigo ?? "")).size > 1;
+      const xTarea = MARGEN + 30;
+      const cabecera = () => {
+        h.espacio(31 + 40);
+        h.linea("#", MARGEN, h.y - 5, 10.5, negrita, TINTA);
+        h.linea("Tarea", xTarea, h.y - 5, 10.5, negrita, TINTA);
+        h.y -= 31;
+        h.regla(MARGEN, MARGEN + anchoCol(), h.y + 1.5, 1.5, TINTA);
+      };
+      cabecera();
+      trabajos.forEach((t, i) => {
+        const ancho = anchoCol() - 30;
+        const nombre = h.lineas(nombreTrabajo(t.trabajoCodigo), normal, 10.5, ancho);
+        const subs = t.subtrabajos.map((s) => (s.cantidad > 1 ? `${s.etiqueta} × ${s.cantidad}` : s.etiqueta));
+        const lineasSubs = subs.length ? h.lineas(subs.join("  ·  "), normal, 9, ancho) : [];
+        const lineasMotivo = variosMotivos && t.motivoCodigo ? [limpio(nombreMotivo(t.motivoCodigo))] : [];
+        const lineasDetalle = t.detalle ? h.lineas(t.detalle, normal, 9, ancho) : [];
+        const extra = lineasSubs.length + lineasMotivo.length + lineasDetalle.length;
+        const alto = Math.max(30, 9 + nombre.length * 15 + (extra ? 2 + extra * 12 : 0) + 9);
+        if (h.y - alto < FONDO_UTIL) {
+          h.nueva();
+          cabecera();
+        }
+        const col = anchoCol();
+        h.linea(String(i + 1), MARGEN, h.y - 9, 10.5, negrita, MARCA_OSCURO);
+        let y = h.y - 9;
+        y -= h.escribir(nombre, xTarea, y, 10.5, normal, TINTA, 15);
+        if (extra) {
+          y -= 2;
+          if (lineasMotivo.length) y -= h.escribir(lineasMotivo, xTarea, y, 9, semi, MARCA_OSCURO, 12);
+          if (lineasSubs.length) y -= h.escribir(lineasSubs, xTarea, y, 9, normal, GRIS, 12);
+          if (lineasDetalle.length) h.escribir(lineasDetalle, xTarea, y, 9, normal, TEXTO, 12);
+        }
+        h.y -= alto;
+        h.regla(MARGEN, MARGEN + col, h.y + 0.75, 0.75, FILA);
+      });
+      h.y -= 17;
+    }
+
+    // Detalle del trabajo: texto libre en un recuadro que puede cruzar páginas.
+    if (ejec?.observaciones?.trim()) {
+      const pad = 14;
+      const alto = 16;
+      let lineas = h.lineas(ejec.observaciones.trim(), semi, 11, anchoCol() - pad * 2 - 3);
+      let primero = true;
+      while (lineas.length) {
+        const caben = Math.floor((h.y - FONDO_UTIL - pad * 2 - (primero ? 14 : 0)) / alto);
+        if (caben < 1 || (caben < 2 && lineas.length > 1 && h.y - FONDO_UTIL < 80)) {
+          h.nueva();
+          continue;
+        }
+        const col = anchoCol();
+        const tramo = lineas.slice(0, caben);
+        lineas = lineas.slice(caben);
+        const cabeza = primero ? 14 : 0;
+        const altoCaja = tramo.length * alto + pad * 2 - 4 + cabeza;
+        h.pagina.drawRectangle({
+          x: MARGEN + 0.75,
+          y: h.y - altoCaja,
+          width: col - 1.5,
+          height: altoCaja,
+          borderColor: TINTA,
+          borderWidth: 1.5,
+        });
+        if (primero) h.rotulo("Detalle del trabajo", MARGEN + pad, h.y - pad + 1);
+        h.escribir(tramo, MARGEN + pad, h.y - pad - cabeza + 2, 11, semi, TINTA, alto);
+        h.y -= altoCaja;
+        primero = false;
+        if (lineas.length) h.nueva();
+      }
+      h.y -= 12;
+    }
+
+    // Si la foto de al lado es más alta que el texto, la sección termina donde ella.
+    if (fotoPagina === h.pagina && h.y > fotoBase) h.y = fotoBase;
+    h.y -= 6;
+  }
+
+  // ── Problemas detectados ──
+  if (problemas.length) {
+    h.titulo(++seccion, "Problemas detectados", 80);
+    for (const [i, p] of problemas.entries()) {
+      const pad = 13;
+      const x = MARGEN + 3 + pad;
+      const ancho = UTIL - 3 - pad * 2;
+      const titulo = h.lineas(d.problemas.find((x2) => x2.codigo === p.tipoCodigo)?.nombre ?? p.tipoCodigo, negrita, 10.5, ancho - 26);
+      const filasChips = h.chips(p.items.map((it) => `${it.etiqueta} × ${it.cantidad}`), ancho);
+      const bloques = [
+        p.descripcion ? { etiqueta: "Descripción", lineas: h.lineas(p.descripcion, normal, 9.5, ancho) } : null,
+        p.solucion ? { etiqueta: "Solución sugerida", lineas: h.lineas(p.solucion, normal, 9.5, ancho) } : null,
+      ].filter((b): b is { etiqueta: string; lineas: string[] } => b !== null);
+      const alto =
+        pad + titulo.length * 15 + (filasChips.length ? 8 + Hoja.altoChips(filasChips) : 0) +
+        bloques.reduce((s, b) => s + 9 + 12 + b.lineas.length * 13.3, 0) + pad - 2;
+
+      if (alto > h.altoPagina) {
+        // No cabe ni en una página vacía: texto corrido para no cortarse.
+        h.espacio(60);
+        let y = h.y;
+        for (const l of titulo) {
+          h.espacio(15);
+          h.linea(l, MARGEN, h.y, 10.5, negrita, TINTA);
+          h.y -= 15;
+        }
+        y = h.y;
+        for (const b of bloques) {
+          for (const l of h.lineas(`${b.etiqueta}: ${b.lineas.join(" ")}`, normal, 9.5, UTIL)) {
+            h.espacio(13.3);
+            h.linea(l, MARGEN, h.y, 9.5, normal, TEXTO);
+            h.y -= 13.3;
+          }
+        }
+        h.y = Math.min(h.y, y) - 10;
+        continue;
+      }
+
+      h.espacio(alto);
+      h.pagina.drawRectangle({ x: MARGEN, y: h.y - alto, width: UTIL, height: alto, color: ALERTA_SUAVE, borderColor: ALERTA_BORDE, borderWidth: 0.75 });
+      h.pagina.drawRectangle({ x: MARGEN, y: h.y - alto, width: 3, height: alto, color: ALERTA });
+      let y = h.y - pad;
+      h.pagina.drawRectangle({ x, y: y - 16, width: 17, height: 17, color: ALERTA });
+      h.linea(String(i + 1), x + (17 - anchoDe(negrita, String(i + 1), 8.5)) / 2, y - 4, 8.5, negrita, rgb(1, 1, 1));
+      y -= h.escribir(titulo, x + 26, y - 1, 10.5, negrita, TINTA, 15);
+      if (filasChips.length) {
+        y -= 8;
+        h.dibujarChips(filasChips, x, y, 9.8, 21, rgb(1, 1, 1), ALERTA);
+        y -= Hoja.altoChips(filasChips);
+      }
+      for (const b of bloques) {
+        y -= 9;
+        h.rotulo(b.etiqueta, x, y, GRIS, 7.5);
+        y -= 12;
+        y -= h.escribir(b.lineas, x, y, 9.5, normal, TEXTO, 13.3);
+      }
+      h.y -= alto + 9;
+    }
   }
 
   // ── Datos de la visita, en dos columnas ──
   {
-    h.titulo("Datos de la visita", 60);
-    const sucursal = visita.sucursal;
+    h.titulo(++seccion, "Datos de la visita", 200);
     const hueco = 20;
     const col = (UTIL - hueco) / 2;
-    type Campo = { etiqueta: string; valor: string; chip?: string };
+    type Campo = { etiqueta: string; valor: string };
+    const cargo = (ejec ? ejec.responsableCargo : visita.responsableCargo) || "";
     const filas: (Campo | [Campo, Campo])[] = [
       [
         { etiqueta: "Cliente", valor: visita.cliente?.nombreFantasia ?? "—" },
-        { etiqueta: "Sucursal", valor: [sucursal?.nombre, sucursal?.codigo ? `(${sucursal.codigo})` : ""].filter(Boolean).join(" ") },
+        { etiqueta: "Sucursal", valor: [sucursal?.nombre, sucursal?.codigo ? `(${sucursal.codigo})` : ""].filter(Boolean).join(" ") || "—" },
       ],
-      {
-        etiqueta: "Dirección",
-        valor: [sucursal?.direccion, sucursal?.comuna, sucursal?.region].filter(Boolean).join(", "),
-      },
+      { etiqueta: "Dirección", valor: [sucursal?.direccion, sucursal?.comuna, sucursal?.region].filter(Boolean).join(", ") || "—" },
       [
         { etiqueta: "Técnico a cargo", valor: visita.tecnico?.nombreCompleto ?? "—" },
         { etiqueta: "Técnico ayudante", valor: visita.tecnicoAyudante?.nombreCompleto ?? "No aplica" },
@@ -468,9 +694,7 @@ export async function generarPdfActa(d: DatosPdfActa): Promise<Uint8Array> {
       [
         {
           etiqueta: "Responsable de tienda",
-          valor: ejec?.responsableNombre ?? visita.responsableNombre ?? "—",
-          // El cargo que tenía en esta visita, en una etiqueta pequeña junto al nombre.
-          chip: (ejec ? ejec.responsableCargo : visita.responsableCargo) || undefined,
+          valor: [ejec?.responsableNombre ?? visita.responsableNombre ?? "—", cargo].filter(Boolean).join("  ·  "),
         },
         {
           etiqueta: "RUT · Teléfono",
@@ -478,314 +702,103 @@ export async function generarPdfActa(d: DatosPdfActa): Promise<Uint8Array> {
         },
       ],
     ];
-    const medir = (c: Campo, ancho: number) => h.lineas(c.valor || "—", normal, 10, ancho);
     for (const fila of filas) {
       const campos = Array.isArray(fila) ? fila : [fila];
       const ancho = Array.isArray(fila) ? col : UTIL;
-      const lineas = campos.map((c) => medir(c, ancho));
-      const alto = 14 + Math.max(...lineas.map((l) => l.length)) * 13.5 + 8;
+      const lineas = campos.map((c) => h.lineas(c.valor || "—", normal, 10.5, ancho));
+      const alto = 17 + Math.max(...lineas.map((l) => l.length)) * 14.5 + 11;
       h.espacio(alto);
       campos.forEach((c, i) => {
         const x = MARGEN + i * (col + hueco);
-        h.pagina.drawText(limpio(c.etiqueta.toUpperCase()), { x, y: h.y - 7, size: 6.8, font: negrita, color: GRIS });
-        h.escribir(lineas[i], x, h.y - 12, 10, normal, TINTA, 13.5);
-        if (c.chip && lineas[i].length) {
-          const texto = limpio(c.chip);
-          const tam = 7.5;
-          const ancho = negrita.widthOfTextAtSize(texto, tam) + 10;
-          const cx = x + normal.widthOfTextAtSize(limpio(lineas[i][0]), 10) + 8;
-          // Si el nombre ocupa todo el ancho, la etiqueta no cabe a su lado: se omite el recuadro.
-          if (cx + ancho <= x + (Array.isArray(fila) ? col : UTIL)) {
-            h.pagina.drawRectangle({
-              x: cx,
-              y: h.y - 12 - 3,
-              width: ancho,
-              height: 12,
-              color: MARCA_SUAVE,
-              borderColor: MARCA_BORDE,
-              borderWidth: 0.6,
-            });
-            h.pagina.drawText(texto, { x: cx + 5, y: h.y - 12, size: tam, font: negrita, color: MARCA });
-          }
-        }
+        h.rotulo(c.etiqueta, x, h.y);
+        h.escribir(lineas[i], x, h.y - 17, 10.5, normal, TINTA, 14.5);
       });
       h.y -= alto;
-      h.pagina.drawLine({ start: { x: MARGEN, y: h.y + 3 }, end: { x: MARGEN + UTIL, y: h.y + 3 }, thickness: 0.5, color: LINEA });
-      h.y -= 6;
+      h.regla(MARGEN, DERECHA, h.y + 0.75, 0.75, FILA);
+      h.y -= 0.75;
     }
-
-    // Los motivos que confirmó el técnico en terreno; si no hay, los agendados.
-    const codigosMotivo = ejec?.motivosRealesCodigos?.length ? ejec.motivosRealesCodigos : visita.motivosCodigos;
-    const nombres = codigosMotivo.map((c) => d.motivos.find((m) => m.codigo === c)?.nombre ?? c);
-    if (nombres.length) {
-      const filasChips = h.chips(nombres, UTIL, 8.5, true);
-      const alto = 14 + Hoja.altoChips(filasChips) + 6;
-      h.espacio(alto);
-      h.pagina.drawText("MOTIVO DE LA VISITA", { x: MARGEN, y: h.y - 7, size: 6.8, font: negrita, color: GRIS });
-      h.dibujarChips(filasChips, MARGEN, h.y - 13, { fondo: MARCA_SUAVE, borde: MARCA_BORDE, color: MARCA, negrita: true });
-      h.y -= alto;
-    }
+    h.y -= 8;
   }
 
-  /**
-   * Tarjeta con barra de color a la izquierda: título, píldoras y texto.
-   * Si no cabe ni en una página vacía, cae a texto corrido para no cortarse.
-   */
-  const tarjeta = (opc: {
-    titulo: string;
-    insignia?: string;
-    chips: string[];
-    textos: { etiqueta?: string; texto: string }[];
-    acento: Color;
-    fondo: Color;
-  }) => {
-    const pad = 12;
-    const x = MARGEN + 3 + pad;
-    const ancho = UTIL - 3 - pad * 2;
-    const anchoInsignia = opc.insignia ? 24 : 0;
-    const lineasTitulo = h.lineas(opc.titulo, negrita, 10.5, ancho - anchoInsignia);
-    const filasChips = h.chips(opc.chips, ancho);
-    const bloques = opc.textos.map((t) => ({
-      etiqueta: t.etiqueta,
-      lineas: h.lineas(t.texto, normal, 9.5, ancho),
-    }));
-    const altoTitulo = lineasTitulo.length * 14;
-    const altoChips = filasChips.length ? 7 + Hoja.altoChips(filasChips) : 0;
-    const altoBloques = bloques.reduce((s, b) => s + 7 + (b.etiqueta ? 11 : 0) + b.lineas.length * 13.3, 0);
-    const alto = pad + altoTitulo + altoChips + altoBloques + pad - 2;
-
-    if (alto > h.altoPagina) {
-      h.texto(opc.titulo, { tam: 10.5, negrita: true });
-      if (opc.chips.length) h.texto(opc.chips.join("  ·  "), { tam: 9, color: GRIS });
-      for (const t of opc.textos) h.texto(t.etiqueta ? `${t.etiqueta}: ${t.texto}` : t.texto, { tam: 9.5, color: TEXTO });
-      h.y -= 10;
-      return;
-    }
-
-    h.espacio(alto);
-    caja(h.pagina, MARGEN, h.y, UTIL, alto, { r: 5, fondo: opc.fondo, borde: LINEA });
-    h.pagina.drawRectangle({ x: MARGEN, y: h.y - alto + 4, width: 3, height: alto - 8, color: opc.acento });
-    let y = h.y - pad;
-    let tx = x;
-    if (opc.insignia) {
-      caja(h.pagina, x, y + 1, 17, 15, { r: 7.5, fondo: opc.acento });
-      h.pagina.drawText(opc.insignia, {
-        x: x + (17 - anchoDe(negrita, opc.insignia, 8.5)) / 2,
-        y: y - 10.5,
-        size: 8.5,
-        font: negrita,
-        color: BLANCO,
-      });
-      tx += anchoInsignia;
-    }
-    y -= h.escribir(lineasTitulo, tx, y + 1, 10.5, negrita, TINTA, 14);
-    if (filasChips.length) {
-      y -= 7;
-      h.dibujarChips(filasChips, x, y);
-      y -= Hoja.altoChips(filasChips);
-    }
-    for (const b of bloques) {
-      y -= 7;
-      if (b.etiqueta) {
-        h.pagina.drawText(limpio(b.etiqueta.toUpperCase()), { x, y: y - 7, size: 6.8, font: negrita, color: GRIS });
-        y -= 11;
-      }
-      y -= h.escribir(b.lineas, x, y + 1, 9.5, normal, TEXTO, 13.3);
-    }
-    h.y -= alto + 8;
-  };
-
-  // ── Trabajo realizado, agrupado por motivo ──
-  const trabajos = visita.trabajos ?? [];
-  if (trabajos.length) {
-    h.titulo("Trabajo realizado", 60, trabajos.length);
-    const nombreTrabajo = (c: string) => d.trabajos.find((t) => t.codigo === c)?.nombre ?? c;
-    const nombreMotivo = (c: string) => d.motivos.find((m) => m.codigo === c)?.nombre ?? c;
-    const grupos = new Map<string, typeof trabajos>();
-    for (const t of trabajos) {
-      const k = t.motivoCodigo ?? "";
-      grupos.set(k, [...(grupos.get(k) ?? []), t]);
-    }
-    for (const [motivo, lista] of grupos) {
-      if (motivo && grupos.size > 1) {
-        h.espacio(70);
-        if (!h.alInicio) h.y -= 4;
-        h.pagina.drawText(limpio(nombreMotivo(motivo).toUpperCase()), {
-          x: MARGEN,
-          y: h.y - 8,
-          size: 7.5,
-          font: negrita,
-          color: MARCA,
-        });
-        h.y -= 16;
-      }
-      for (const t of lista) {
-        tarjeta({
-          titulo: nombreTrabajo(t.trabajoCodigo),
-          chips: t.subtrabajos.map((s) => (s.cantidad > 1 ? `${s.etiqueta}  × ${s.cantidad}` : s.etiqueta)),
-          textos: t.detalle ? [{ texto: t.detalle }] : [],
-          acento: MARCA,
-          fondo: BLANCO,
-        });
-      }
-    }
-  }
-
-  // ── Detalle del trabajo: texto libre en un recuadro que puede cruzar páginas ──
-  if (ejec?.observaciones?.trim()) {
-    h.titulo("Detalle del trabajo", 50);
-    const pad = 12;
-    const alto = 14;
-    let lineas = h.lineas(ejec.observaciones.trim(), normal, 10, UTIL - pad * 2);
-    while (lineas.length) {
-      const caben = Math.floor((h.y - (MARGEN + PIE) - pad * 2) / alto);
-      if (caben < 2) {
-        h.nueva();
-        continue;
-      }
-      const tramo = lineas.slice(0, caben);
-      lineas = lineas.slice(caben);
-      const altoCaja = tramo.length * alto + pad * 2 - 3;
-      caja(h.pagina, MARGEN, h.y, UTIL, altoCaja, { r: 5, fondo: FONDO });
-      h.escribir(tramo, MARGEN + pad, h.y - pad + 1, 10, normal, TEXTO, alto);
-      h.y -= altoCaja;
-      if (lineas.length) h.nueva();
-    }
-    h.y -= 4;
-  }
-
-  // ── Problemas ──
-  if (problemas.length) {
-    h.titulo("Problemas detectados", 70, problemas.length);
-    for (const [i, p] of problemas.entries()) {
-      const textos: { etiqueta?: string; texto: string }[] = [];
-      if (p.descripcion) textos.push({ etiqueta: "Descripción", texto: p.descripcion });
-      if (p.solucion) textos.push({ etiqueta: "Solución sugerida", texto: p.solucion });
-      tarjeta({
-        titulo: d.problemas.find((x) => x.codigo === p.tipoCodigo)?.nombre ?? p.tipoCodigo,
-        insignia: String(i + 1),
-        chips: p.items.map((it) => `${it.etiqueta}  × ${it.cantidad}`),
-        textos,
-        acento: ALERTA,
-        fondo: ALERTA_SUAVE,
-      });
-    }
-  }
-
-  // ── Fotos: tres por fila, cada una ajustada a su celda y numerada ──
-  const fotos = (await Promise.all(d.fotos.map((f) => incrustar(doc, f)))).filter((x): x is PDFImage => Boolean(x));
-  if (fotos.length) {
+  // ── Registro fotográfico adicional: tres por fila, cada una a su proporción ──
+  const resto = fotos.slice(1);
+  if (resto.length) {
     const cols = 3;
-    const hueco = 10;
+    const hueco = 14;
     const lado = (UTIL - hueco * (cols - 1)) / cols;
-    const altoCelda = lado * 0.75;
-    const altoFila = altoCelda + 16;
-    h.titulo("Registro fotográfico", altoFila, fotos.length);
-    for (let i = 0; i < fotos.length; i += cols) {
-      h.espacio(altoFila);
-      fotos.slice(i, i + cols).forEach((img, j) => {
-        const escala = Math.min(lado / img.width, altoCelda / img.height);
-        const w = img.width * escala;
-        const hh = img.height * escala;
-        const x = MARGEN + j * (lado + hueco);
-        h.pagina.drawRectangle({ x, y: h.y - altoCelda, width: lado, height: altoCelda, color: FONDO });
-        h.pagina.drawImage(img, { x: x + (lado - w) / 2, y: h.y - altoCelda + (altoCelda - hh) / 2, width: w, height: hh });
-        h.pagina.drawRectangle({
-          x,
-          y: h.y - altoCelda,
-          width: lado,
-          height: altoCelda,
-          borderColor: LINEA,
-          borderWidth: 0.6,
-        });
-        h.pagina.drawText(`Foto ${i + j + 1}`, { x, y: h.y - altoCelda - 10, size: 7.5, font: normal, color: GRIS });
-      });
-      h.y -= altoFila + 4;
+    const altoMax = lado * 1.25;
+    const altoDe = (fila: typeof resto) =>
+      Math.max(
+        ...fila.map((x) => {
+          const hh = x.img.height * Math.min(lado / x.img.width, altoMax / x.img.height);
+          return hh + 6 + h.lineas(x.pie, normal, 9, lado).length * 12;
+        })
+      );
+    // El título nunca queda solo: lleva consigo al menos la primera fila.
+    h.titulo(++seccion, "Registro fotográfico adicional", altoDe(resto.slice(0, cols)) + 14);
+    for (let i = 0; i < resto.length; i += cols) {
+      const fila = resto.slice(i, i + cols);
+      const altoFila = altoDe(fila);
+      h.espacio(altoFila + 14);
+      fila.forEach((x, j) => dibujarFoto(x, MARGEN + j * (lado + hueco), h.y, lado, altoMax));
+      h.y -= altoFila + 14;
     }
   }
 
-  // ── Firma: recuadro con la firma a la izquierda y los datos a la derecha ──
+  // ── Conformidad: la firma a la izquierda y los datos a la derecha ──
   {
-    const alto = 128;
-    h.titulo("Conformidad de la tienda", alto);
-    const firma = visita.firmas?.find((f) => f.rol === "TIENDA") ?? visita.firmas?.[0];
+    const alto = 120;
+    h.titulo(++seccion, "Conformidad de la tienda", alto + 30);
+    const firma = visita.firmas?.find((fm) => fm.rol === "TIENDA") ?? visita.firmas?.[0];
     const imgFirma = d.firma ? await incrustar(doc, d.firma) : null;
-    const anchoFirma = UTIL * 0.48;
-    caja(h.pagina, MARGEN, h.y, anchoFirma, alto, { r: 6, borde: LINEA });
-    const base = h.y - alto + 34;
+    const anchoFirma = 250;
+    const base = h.y - 78;
     if (imgFirma) {
-      const escala = Math.min((anchoFirma - 40) / imgFirma.width, 70 / imgFirma.height);
-      const w = imgFirma.width * escala;
+      const escala = Math.min((anchoFirma - 20) / imgFirma.width, 64 / imgFirma.height);
       h.pagina.drawImage(imgFirma, {
-        x: MARGEN + (anchoFirma - w) / 2,
-        y: base + 4,
-        width: w,
+        x: MARGEN,
+        y: base + 6,
+        width: imgFirma.width * escala,
         height: imgFirma.height * escala,
       });
     } else {
-      const t = papel ? "Firmado en papel" : "Sin firma";
-      h.pagina.drawText(t, {
-        x: MARGEN + (anchoFirma - anchoDe(normal, t, 10)) / 2,
-        y: base + 30,
-        size: 10,
-        font: normal,
-        color: GRIS,
-      });
+      h.linea(papel ? "Firmado en papel" : "Sin firma", MARGEN, base + 34, 10.5, normal, GRIS);
     }
-    h.pagina.drawLine({ start: { x: MARGEN + 20, y: base }, end: { x: MARGEN + anchoFirma - 20, y: base }, thickness: 0.7, color: TINTA });
-    const pieFirma = "Firma del responsable de tienda";
-    h.pagina.drawText(pieFirma, {
-      x: MARGEN + (anchoFirma - anchoDe(normal, pieFirma, 7.5)) / 2,
-      y: base - 14,
-      size: 7.5,
-      font: normal,
-      color: GRIS,
-    });
+    h.regla(MARGEN, MARGEN + anchoFirma, base, 1.5, REGLA);
+    h.rotulo("Firma del responsable de tienda", MARGEN, base - 10);
 
-    // Columna de datos.
-    const x = MARGEN + anchoFirma + 22;
-    const ancho = UTIL - anchoFirma - 22;
-    let y = h.y - 4;
-    const dato = (etiqueta: string, valor: string, fuente = normal) => {
-      h.pagina.drawText(limpio(etiqueta.toUpperCase()), { x, y: y - 7, size: 6.8, font: negrita, color: GRIS });
-      y -= 12;
-      y -= h.escribir(h.lineas(valor, fuente, 10, ancho), x, y, 10, fuente, TINTA, 13.5) + 8;
-    };
-    dato("Nombre", firma?.nombre || "—", negrita);
-    dato("RUT", firma?.rut || "—");
-    if (firma?.firmadoEn) dato("Firmado el", papel ? fechaLarga(firma.firmadoEn.slice(0, 10)) : fechaHora(firma.firmadoEn));
-    h.escribir(
-      h.lineas("Con su firma, la tienda deja constancia de la visita y de los trabajos descritos en esta acta.", normal, 7.5, ancho),
-      x,
-      y + 2,
-      7.5,
+    // Columna de datos, con la etiqueta a la izquierda y el valor a la derecha.
+    const xEt = MARGEN + anchoFirma + 14;
+    const xVal = xEt + 70;
+    const datos: [string, string, PDFFont][] = [
+      ["Nombre", firma?.nombre || "—", semi],
+      ["RUT", firma?.rut || "—", normal],
+    ];
+    if (firma?.firmadoEn) datos.push(["Firmado el", papel ? fechaCorta(firma.firmadoEn.slice(0, 10)) : fechaHora(firma.firmadoEn), normal]);
+    datos.forEach(([et, valor, fuente], i) => {
+      const top = base - 10 + (datos.length - 1 - i) * 22;
+      h.rotulo(et, xEt, top, TINTA, 8.2);
+      h.linea(valor, xVal, top + 1.5, 10.5, fuente, TINTA);
+    });
+    h.y = base - 38;
+    for (const l of h.lineas(
+      "Con su firma, la tienda deja constancia de la visita y de los trabajos descritos en esta acta.",
       normal,
-      GRIS,
-      10
-    );
-    h.y -= alto;
+      10,
+      UTIL
+    )) {
+      h.linea(l, MARGEN, h.y, 10, normal, TINTA);
+      h.y -= 14;
+    }
   }
 
   // ── Pie en todas las páginas ──
-  const paginas = doc.getPages();
-  paginas.forEach((p, i) => {
-    const izquierda = "Grupo dMC · Ideas tecnológicas de seguridad";
-    const num = limpio(`Acta ${visita.folio}  ·  Página ${i + 1} de ${paginas.length}`);
-    p.drawLine({
-      start: { x: MARGEN, y: MARGEN + 12 },
-      end: { x: MARGEN + UTIL, y: MARGEN + 12 },
-      thickness: 0.5,
-      color: LINEA,
-    });
-    p.drawText(izquierda, { x: MARGEN, y: MARGEN, size: 7.5, font: normal, color: GRIS });
-    p.drawText(num, {
-      x: MARGEN + UTIL - anchoDe(normal, num, 7.5),
-      y: MARGEN,
-      size: 7.5,
-      font: normal,
-      color: GRIS,
-    });
-  });
+  for (const p of doc.getPages()) {
+    p.drawRectangle({ x: 0, y: ALTO - 803.25, width: ANCHO, height: 1.5, color: REGLA });
+    h.linea("Grupo DMC · Ideas tecnológicas de seguridad", MARGEN, ALTO - 812, 8.2, normal, TINTA, 0, p);
+    const der = limpio(`Acta ${visita.folio}`);
+    h.linea(der, DERECHA - anchoDe(normal, der, 8.2), ALTO - 812, 8.2, normal, TINTA, 0, p);
+  }
 
   return doc.save();
 }
