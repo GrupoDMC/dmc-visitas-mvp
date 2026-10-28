@@ -25,6 +25,7 @@ import { descargarZip, extensionDe, type ArchivoADescargar } from "@/lib/ui/desc
 import { resumenEdicion } from "@/lib/ui/edicion";
 import { esInformePapel } from "@/lib/ui/papel";
 import { nombreArchivoActa } from "@/lib/ui/nombre-acta";
+import { textoMall } from "@/lib/ui/ubicacion";
 import type { Visita } from "@/lib/types";
 import { AdjuntosVista } from "@/components/ui/AdjuntosTrabajo";
 
@@ -143,7 +144,9 @@ export default function ActaView({
     { k: visita.fechaHasta ? "Margen de días" : "Fecha programada", v: textoFechaVisita(visita) },
     { k: "Hora de llegada", v: visita.horaProgramada ?? "Sin hora · durante el día" },
     { k: "Cliente", v: visita.cliente?.nombreFantasia ?? "—" },
+    { k: "Marca", v: visita.marca?.nombre ?? "—" },
     { k: "Sucursal", v: visita.sucursal?.nombre ?? "—" },
+    { k: "Mall", v: textoMall(visita.mall) },
     { k: visita.motivosCodigos.length > 1 ? "Motivos de la visita" : "Motivo de la visita", v: textoMotivos(visita) },
     { k: "Técnico", v: visita.tecnico?.nombreCompleto ?? "—" },
     { k: "Técnico ayudante", v: visita.tecnicoAyudante?.nombreCompleto ?? "Sin ayudante" },
@@ -344,7 +347,7 @@ export default function ActaView({
           {visita.folio}
         </h1>
         <p className="m-0 mb-6 text-[15px] opacity-60">
-          {visita.cliente?.nombreFantasia} · {visita.sucursal?.nombre} · {textoMotivos(visita)}
+          {[visita.cliente?.nombreFantasia, visita.marca?.nombre, visita.sucursal?.nombre].filter(Boolean).join(" · ")} · {textoMotivos(visita)}
         </p>
 
         <div className="border border-[var(--color-divider)] bg-[var(--color-surface-3)]">

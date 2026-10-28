@@ -6,6 +6,7 @@ import fontkit from "@pdf-lib/fontkit";
 import { PDFDocument, StandardFonts, rgb, type Color, type PDFFont, type PDFImage, type PDFPage } from "pdf-lib";
 import type { CatalogoMotivo, CatalogoProblema, CatalogoTrabajo, Visita } from "@/lib/types";
 import { esInformePapel } from "@/lib/ui/papel";
+import { textoMall } from "@/lib/ui/ubicacion";
 
 /**
  * El acta de la visita en PDF, lista para mandarle al cliente.
@@ -432,7 +433,7 @@ export async function generarPdfActa(d: DatosPdfActa): Promise<Uint8Array> {
     const altoNombre = lineasNombre.length * (tam + 4);
     h.escribir(lineasNombre, MARGEN, h.y - 23, tam, negrita, TINTA, tam + 4);
 
-    const subtitulo = [visita.cliente?.nombreFantasia, sucursal?.codigo ? `Sucursal ${sucursal.codigo}` : ""]
+    const subtitulo = [visita.cliente?.nombreFantasia, visita.marca?.nombre, sucursal?.codigo ? `Sucursal ${sucursal.codigo}` : ""]
       .filter(Boolean)
       .join(" · ");
     h.linea(subtitulo, MARGEN, h.y - 23 - altoNombre - 3, 11.2, normal, TINTA);
@@ -684,7 +685,11 @@ export async function generarPdfActa(d: DatosPdfActa): Promise<Uint8Array> {
     const filas: (Campo | [Campo, Campo])[] = [
       [
         { etiqueta: "Cliente", valor: visita.cliente?.nombreFantasia ?? "—" },
+        { etiqueta: "Marca", valor: visita.marca?.nombre ?? "—" },
+      ],
+      [
         { etiqueta: "Sucursal", valor: [sucursal?.nombre, sucursal?.codigo ? `(${sucursal.codigo})` : ""].filter(Boolean).join(" ") || "—" },
+        { etiqueta: "Mall", valor: textoMall(visita.mall) },
       ],
       { etiqueta: "Dirección", valor: [sucursal?.direccion, sucursal?.comuna, sucursal?.region].filter(Boolean).join(", ") || "—" },
       [

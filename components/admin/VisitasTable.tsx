@@ -492,7 +492,13 @@ export default function VisitasTable({
                     {v.horaProgramada ?? "Sin hora"}
                   </td>
                   <td>
-                    <Recorte texto={v.cliente?.nombreFantasia} />
+                    <Recorte
+                      texto={
+                        v.marca && v.marca.nombre !== v.cliente?.nombreFantasia
+                          ? `${v.cliente?.nombreFantasia ?? ""} · ${v.marca.nombre}`
+                          : v.cliente?.nombreFantasia
+                      }
+                    />
                   </td>
                   <td className="opacity-70">
                     <Recorte texto={v.sucursal?.nombre} />

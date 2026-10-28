@@ -59,7 +59,7 @@ export default function SucursalesLoteDialogo({
     .filter((c) => c.activo)
     .map((c) => ({ v: String(c.id), t: c.nombreFantasia }));
   const opcMalls = [
-    { v: "", t: "Sin mall" },
+    { v: "", t: "Sin mall (a la calle)" },
     ...malls.filter((m) => m.activo).map((m) => ({ v: String(m.id), t: m.nombre })),
   ];
   const opcRegiones = REGIONES.map((r) => ({ v: r, t: r }));
@@ -73,7 +73,25 @@ export default function SucursalesLoteDialogo({
   const [guardando, setGuardando] = useState(false);
   /** Los bloques plegados, por `key`: solo se ve el título del mall. */
   const [plegadas, setPlegadas] = useState<Set<number>>(() => new Set());
+  /** Los grupos de mall plegados (por id de mall; "" = sin mall): solo se ve su título. */
+  const [gruposPlegados, setGruposPlegados] = useState<Set<string>>(() => new Set());
   const [confirmar, setConfirmar] = useState<ConfirmarCfg | null>(null);
+
+  /** Las sucursales nuevas agrupadas por mall, en el orden en que aparece cada mall. */
+  const grupos = nuevas.reduce<{ id: string; filas: { n: Nueva; i: number }[] }[]>((acc, n, i) => {
+    const grupo = acc.find((g) => g.id === n.mallId);
+    if (grupo) grupo.filas.push({ n, i });
+    else acc.push({ id: n.mallId, filas: [{ n, i }] });
+    return acc;
+  }, []);
+
+  function alternarGrupo(id: string) {
+    setGruposPlegados((prev) => {
+      const sig = new Set(prev);
+      if (!sig.delete(id)) sig.add(id);
+      return sig;
+    });
+  }
 
   const delCliente = sucursales.filter((s) => String(s.clienteId) === clienteSel);
 
@@ -227,10 +245,41 @@ export default function SucursalesLoteDialogo({
         />
       </div>
 
-      {nuevas.map((n, i) => {
+      {grupos.map((g) => {
+        const mallDelGrupo = malls.find((m) => String(m.id) === g.id);
+        const grupoPlegado = gruposPlegados.has(g.id);
+        return (
+      <div key={g.id || "sin-mall"} className="mt-5">
+        <button
+          type="button"
+          aria-expanded={!grupoPlegado}
+          onClick={() => alternarGrupo(g.id)}
+          className="w-full flex items-center gap-2.5 min-h-10 px-3.5 bg-transparent border-2 border-[var(--color-text)] cursor-pointer text-left text-[var(--color-text)]"
+        >
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.2"
+            className="flex-none transition-transform"
+            style={{ transform: `rotate(${grupoPlegado ? -90 : 0}deg)` }}
+          >
+            <path d="M6 9l6 6 6-6" />
+          </svg>
+          <span className="font-extrabold text-[12px] tracking-[.11em] uppercase truncate">
+            {mallDelGrupo ? mallDelGrupo.nombre : "Sin mall · a la calle"}
+          </span>
+          <span className="ml-auto flex-none text-[11px] opacity-66">
+            {g.filas.length} {g.filas.length === 1 ? "sucursal" : "sucursales"}
+          </span>
+        </button>
+        <div className={grupoPlegado ? "hidden" : "block"}>
+      {g.filas.map(({ n, i }) => {
         const plegada = plegadas.has(n.key);
         const mall = malls.find((m) => String(m.id) === n.mallId);
-        const titulo = mall ? mall.nombre : "Sin mall";
+        const titulo = mall ? mall.nombre : "Sin mall · a la calle";
         // Plegado no se ve el formulario: el nombre de la sucursal ayuda a ubicar el bloque.
         const subtitulo = n.nombre.trim() && n.nombre.trim() !== mall?.nombre ? n.nombre.trim() : `Sucursal ${i + 1}`;
         return (
@@ -344,6 +393,10 @@ export default function SucursalesLoteDialogo({
             </div>
           </div>
         </div>
+        );
+      })}
+        </div>
+      </div>
         );
       })}
 

@@ -94,7 +94,7 @@ export default function ActaGuardada({
           {visita.sucursal?.nombre}
         </h1>
         <div className="text-sm opacity-60">
-          {visita.cliente?.nombreFantasia} · {visita.folio}
+          {[visita.cliente?.nombreFantasia, visita.marca?.nombre, visita.folio].filter(Boolean).join(" · ")}
         </div>
         {visita.estado === "COMPLETADA" ? (
           <a
