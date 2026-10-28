@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import SelectBuscable from "@/components/ui/SelectBuscable";
+import SelectConAlta, { type TipoAlta } from "@/components/ui/SelectConAlta";
 import SeccionPlegable from "@/components/ui/SeccionPlegable";
 import { agruparPorSeccion, hayAlgunaSeccion } from "@/lib/ui/secciones";
 import { fmtRut, fmtTel, mensajeRut, sinTildes } from "@/lib/ui/formato";
@@ -63,6 +64,13 @@ export interface CampoDef {
    * campo no cambie de forma el día que pasa de seis a siete opciones.
    */
   buscable?: boolean;
+  /**
+   * Agrega la opción «Agregar nuevo» a la lista: crea ese registro sin salir
+   * del formulario y lo deja elegido. Implica el selector con búsqueda.
+   */
+  alta?: TipoAlta;
+  /** Con `alta: "sucursal"`: el cliente al que se le crea la sucursal. */
+  altaClienteId?: string;
   /**
    * El campo nace plegado: solo se ve su título y se abre al pincharlo. Para
    * lo que casi nunca se llena y ocupaba una caja entera. Si ya trae un valor
@@ -229,7 +237,17 @@ export default function Dialogo({
                   )}
 
                   {c.tipo === "select" ? (
-                    c.buscable || (c.opciones?.length ?? 0) >= MINIMO_PARA_BUSCAR ? (
+                    c.alta ? (
+                      <SelectConAlta
+                        id={`dlg-${c.k}`}
+                        valor={texto}
+                        opciones={c.opciones ?? []}
+                        onChange={(v) => onCampo(c.k, v)}
+                        ariaLabel={c.label}
+                        alta={c.alta}
+                        clienteId={c.altaClienteId}
+                      />
+                    ) : c.buscable || (c.opciones?.length ?? 0) >= MINIMO_PARA_BUSCAR ? (
                       // Lista larga: se escribe y filtra al momento.
                       <SelectBuscable
                         id={`dlg-${c.k}`}

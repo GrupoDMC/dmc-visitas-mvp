@@ -27,6 +27,8 @@ export default function SelectBuscable({
   ariaLabel,
   className = "",
   claseCampo = "input",
+  onAgregar,
+  textoAgregar = "Agregar nuevo",
 }: {
   id?: string;
   valor: string;
@@ -40,6 +42,13 @@ export default function SelectBuscable({
    * pasa la suya, que es más alta y con el fondo de las hojas del móvil.
    */
   claseCampo?: string;
+  /**
+   * Si viene, la lista cierra con la opción «Agregar nuevo»: sirve para crear
+   * lo que todavía no existe sin salir del formulario. Lo que se haya escrito
+   * en el campo se entrega como sugerencia para el nombre.
+   */
+  onAgregar?: (escrito: string) => void;
+  textoAgregar?: string;
 }) {
   const [abierto, setAbierto] = useState(false);
   const [texto, setTexto] = useState("");
@@ -167,7 +176,28 @@ export default function SelectBuscable({
             );
           })}
           {filtradas.length === 0 ? (
-            <div className="px-3 py-3 text-[13px] opacity-66">Nada coincide con «{texto}».</div>
+            <div className="px-3 py-3 text-[13px] opacity-66">
+              {texto.trim() ? `Nada coincide con «${texto}».` : "No hay opciones."}
+            </div>
+          ) : null}
+          {onAgregar ? (
+            <button
+              type="button"
+              onClick={() => {
+                const escrito = texto.trim();
+                cerrar();
+                onAgregar(escrito);
+              }}
+              className="sticky bottom-0 w-full flex items-center gap-2 min-h-11 px-3 text-left text-[14px] font-extrabold cursor-pointer border-0 border-t border-[var(--color-divider)] bg-[var(--color-surface)] text-[var(--color-accent-800)] hover:brightness-95"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+                <path d="M12 5v14M5 12h14" />
+              </svg>
+              <span className="flex-1 min-w-0">
+                {textoAgregar}
+                {texto.trim() ? ` «${texto.trim()}»` : ""}
+              </span>
+            </button>
           ) : null}
         </div>
       ) : null}

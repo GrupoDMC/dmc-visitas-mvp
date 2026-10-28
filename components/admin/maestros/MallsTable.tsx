@@ -10,6 +10,7 @@ import SelectBuscable from "@/components/ui/SelectBuscable";
 import Tag from "@/components/Tag";
 import { Toast, useToast } from "@/components/ui/Toast";
 import { guardarMallAction, guardarTiendasMallAction } from "@/app/actions/maestros";
+import { conMismaDireccion } from "@/lib/ui/direcciones";
 import { puede, useReferencias } from "@/lib/ui/referencias";
 import { REGIONES } from "@/lib/ui/regiones";
 import type { Cliente, Mall, Sucursal } from "@/lib/types";
@@ -65,6 +66,12 @@ export default function MallsTable({
             ? null
             : "Nombre, dirección y comuna son obligatorios"
         }
+        // Solo al crear: dos malls en la misma dirección casi siempre son uno cargado dos veces.
+        advertir={(f, id) => {
+          if (id !== null) return null;
+          const otro = conMismaDireccion(malls, String(f.direccion), String(f.comuna));
+          return otro ? `El mall «${otro.nombre}» ya está en «${otro.direccion}».` : null;
+        }}
         toFormValues={(m) => ({
           nombre: m.nombre,
           direccion: m.direccion,

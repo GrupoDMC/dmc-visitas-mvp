@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Sheet from "@/components/mobile/Sheet";
 import SelectBuscable from "@/components/ui/SelectBuscable";
+import SelectConAlta from "@/components/ui/SelectConAlta";
 import SeccionPlegable from "@/components/ui/SeccionPlegable";
 import { crearVisitaTecnicoAction } from "@/app/actions/visitas";
 import { useReferencias } from "@/lib/ui/referencias";
@@ -156,7 +157,8 @@ export default function NuevaVisitaSheet({
           <label htmlFor="nv-cli" className={LABEL}>
             Cliente
           </label>
-          <SelectBuscable
+          <SelectConAlta
+            alta="cliente"
             id="nv-cli"
             valor={clienteId}
             opciones={clientes.map((c) => ({ v: String(c.id), t: c.nombreFantasia }))}
@@ -174,7 +176,9 @@ export default function NuevaVisitaSheet({
           <label htmlFor="nv-suc" className={LABEL}>
             Sucursal
           </label>
-          <SelectBuscable
+          <SelectConAlta
+            alta="sucursal"
+            clienteId={clienteId}
             id="nv-suc"
             valor={sucursalId}
             opciones={propias.map((s) => ({ v: String(s.id), t: s.nombre }))}

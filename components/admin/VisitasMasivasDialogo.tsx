@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import Dialogo, { escribirChecks, leerChecks, type CampoDef, type FormValores } from "@/components/admin/Dialogo";
 import SelectBuscable from "@/components/ui/SelectBuscable";
+import SelectConAlta from "@/components/ui/SelectConAlta";
 import { camposFecha, errorMargen, fechaHastaDe, opciones } from "@/components/admin/VisitaDialogos";
 import { useReferencias } from "@/lib/ui/referencias";
 import { crearVisitasMasivasAction } from "@/app/actions/admin";
@@ -290,7 +291,8 @@ export default function VisitasMasivasDialogo({
                 </button>
               ) : null}
             </div>
-            <SelectBuscable
+            <SelectConAlta
+              alta={porMall ? "mall" : "cliente"}
               id="vm-cliente"
               valor={porMall ? mallSel : clienteSel}
               opciones={porMall ? opc.malls : opc.clientes}
@@ -300,7 +302,9 @@ export default function VisitasMasivasDialogo({
           </div>
           <div className="field min-w-0">
             <label htmlFor="vm-sucursal">{porMall ? "Agregar tienda" : "Agregar sucursal"}</label>
-            <SelectBuscable
+            <SelectConAlta
+              alta={porMall ? undefined : "sucursal"}
+              clienteId={clienteSel}
               id="vm-sucursal"
               valor=""
               opciones={sucursalesLibres}

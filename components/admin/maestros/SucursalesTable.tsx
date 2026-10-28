@@ -8,6 +8,7 @@ import SucursalesLoteDialogo from "@/components/admin/maestros/SucursalesLoteDia
 import { Toast, useToast } from "@/components/ui/Toast";
 import Tag from "@/components/Tag";
 import { guardarSucursalAction } from "@/app/actions/maestros";
+import { conMismaDireccion } from "@/lib/ui/direcciones";
 import { REGIONES } from "@/lib/ui/regiones";
 import { OPCIONES_SI_NO, calibracionDeSucursal, formASiNo, siNoAForm } from "@/lib/ui/sino";
 import type { Cliente, Mall, Sucursal } from "@/lib/types";
@@ -176,6 +177,7 @@ export default function SucursalesTable({
           k: "clienteId",
           label: "Cliente",
           tipo: "select",
+          alta: "cliente",
           opciones: clientes.map((c) => ({ v: String(c.id), t: c.nombreFantasia })),
         },
         {
@@ -183,6 +185,7 @@ export default function SucursalesTable({
           label: "Mall (opcional)",
           tipo: "select",
           buscable: true,
+          alta: "mall",
           opciones: [
             { v: "", t: "Sin mall" },
             ...malls.map((m) => ({ v: String(m.id), t: m.activo ? m.nombre : `${m.nombre} · inactivo` })),
@@ -234,6 +237,13 @@ export default function SucursalesTable({
           return "Explica por qué se desactiva la sucursal";
         }
         return null;
+      }}
+      // Solo al crear: el mismo cliente con dos locales en la misma dirección suele ser un duplicado.
+      advertir={(f, id) => {
+        if (id !== null) return null;
+        const delCliente = sucursales.filter((s) => String(s.clienteId) === String(f.clienteId));
+        const otra = conMismaDireccion(delCliente, String(f.direccion), String(f.comuna));
+        return otra ? `El cliente ya tiene la sucursal «${otra.nombre}» en «${otra.direccion}».` : null;
       }}
       // La ubicación sigue al mall siempre. El nombre solo en un alta: una
       // sucursal que ya existe no cambia de nombre por moverla de mall.

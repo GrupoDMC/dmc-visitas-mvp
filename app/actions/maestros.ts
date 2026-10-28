@@ -45,6 +45,8 @@ import type { RolUsuario } from "@/lib/types";
 export interface ResultadoMaestro {
   ok: boolean;
   error?: string;
+  /** El id del registro guardado: lo que necesita un alta hecha desde otro formulario. */
+  id?: number;
 }
 
 /** Agregar y editar son permisos distintos: `id` null es un alta. */
@@ -100,13 +102,14 @@ export async function guardarClienteAction(idPedido: number | null, datosPedidos
   if (!datos.activo && !datos.motivoInactivo?.trim()) {
     return { ok: false, error: "Explica por qué se desactiva el cliente." };
   }
+  let guardadoId: number;
   try {
-    await guardarCliente(id, datos);
+    guardadoId = await guardarCliente(id, datos);
   } catch (err) {
     return { ok: false, error: mensajeDeError(err, "guardarCliente") };
   }
   revalidar();
-  return { ok: true };
+  return { ok: true, id: guardadoId };
 }
 
 export async function guardarMallAction(idPedido: number | null, datosPedidos: DatosMall): Promise<ResultadoMaestro> {
@@ -117,13 +120,14 @@ export async function guardarMallAction(idPedido: number | null, datosPedidos: D
   if (!datos.nombre.trim() || !datos.direccion.trim() || !datos.comuna?.trim() || !datos.region?.trim()) {
     return { ok: false, error: "Nombre, dirección, comuna y región son obligatorios." };
   }
+  let guardadoId: number;
   try {
-    await guardarMall(id, datos);
+    guardadoId = await guardarMall(id, datos);
   } catch (err) {
     return { ok: false, error: mensajeDeError(err, "guardarMall") };
   }
   revalidar();
-  return { ok: true };
+  return { ok: true, id: guardadoId };
 }
 
 /** Las tiendas del mall: la lista completa, tal como quedó en el diálogo. */
@@ -162,13 +166,14 @@ export async function guardarSucursalAction(idPedido: number | null, datosPedido
   if (datos.fechaInstalacion && !/^\d{4}-\d{2}-\d{2}$/.test(datos.fechaInstalacion)) {
     return { ok: false, error: "La fecha de instalación no es válida." };
   }
+  let guardadoId: number;
   try {
-    await guardarSucursal(id, datos);
+    guardadoId = await guardarSucursal(id, datos);
   } catch (err) {
     return { ok: false, error: mensajeDeError(err, "guardarSucursal") };
   }
   revalidar();
-  return { ok: true };
+  return { ok: true, id: guardadoId };
 }
 
 /** Alta masiva: todas las sucursales nuevas de un cliente, en un solo INSERT. */

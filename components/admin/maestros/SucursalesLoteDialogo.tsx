@@ -2,8 +2,11 @@
 
 import { useRef, useState } from "react";
 import Dialogo from "@/components/admin/Dialogo";
+import Confirmar, { type ConfirmarCfg } from "@/components/ui/Confirmar";
 import SelectBuscable from "@/components/ui/SelectBuscable";
+import SelectConAlta from "@/components/ui/SelectConAlta";
 import { crearSucursalesLoteAction } from "@/app/actions/maestros";
+import { conMismaDireccion } from "@/lib/ui/direcciones";
 import { sinTildes } from "@/lib/ui/formato";
 import { REGIONES } from "@/lib/ui/regiones";
 import type { Cliente, Mall, Sucursal } from "@/lib/types";
@@ -64,6 +67,9 @@ export default function SucursalesLoteDialogo({
   );
   const [nuevas, setNuevas] = useState<Nueva[]>(() => [vacia()]);
   const [guardando, setGuardando] = useState(false);
+  /** Los bloques plegados, por `key`: solo se ve el título del mall. */
+  const [plegadas, setPlegadas] = useState<Set<number>>(() => new Set());
+  const [confirmar, setConfirmar] = useState<ConfirmarCfg | null>(null);
 
   const delCliente = sucursales.filter((s) => String(s.clienteId) === clienteSel);
 
@@ -109,6 +115,38 @@ export default function SucursalesLoteDialogo({
     return null;
   }
 
+  /** Avisa de una dirección que el cliente ya tiene (o que se repite en esta carga). */
+  function advertencia(): string | null {
+    const vistas: { nombre: string; direccion: string; comuna: string }[] = [...delCliente];
+    for (const [i, n] of nuevas.entries()) {
+      const otra = conMismaDireccion(vistas, n.direccion, n.comuna);
+      if (otra) return `Sucursal ${i + 1} («${n.nombre.trim()}»): «${otra.nombre}» ya está en «${otra.direccion}».`;
+      vistas.push(n);
+    }
+    return null;
+  }
+
+  function intentar() {
+    const error = problema();
+    if (error) return onHecho(error, false);
+    const aviso = advertencia();
+    if (!aviso) return void guardar();
+    setConfirmar({
+      titulo: "Ya existe esa dirección",
+      texto: `${aviso} ¿Quieres crearlas de todas formas?`,
+      cta: "Crear de todas formas",
+      accion: guardar,
+    });
+  }
+
+  function alternar(key: number) {
+    setPlegadas((prev) => {
+      const sig = new Set(prev);
+      if (!sig.delete(key)) sig.add(key);
+      return sig;
+    });
+  }
+
   async function guardar() {
     const error = problema();
     if (error) return onHecho(error, false);
@@ -131,6 +169,7 @@ export default function SucursalesLoteDialogo({
   }
 
   return (
+    <>
     <Dialogo
       kicker="Maestro · alta masiva"
       titulo="Nuevas sucursales"
@@ -144,12 +183,13 @@ export default function SucursalesLoteDialogo({
       form={{}}
       onCampo={() => {}}
       onCerrar={onCerrar}
-      onGuardar={guardar}
+      onGuardar={intentar}
       guardando={guardando}
     >
       <div className="field min-w-0">
         <label htmlFor="sl-cliente">Cliente</label>
-        <SelectBuscable
+        <SelectConAlta
+          alta="cliente"
           id="sl-cliente"
           valor={clienteSel}
           opciones={opcClientes}
@@ -165,15 +205,44 @@ export default function SucursalesLoteDialogo({
         ) : null}
       </div>
 
-      {nuevas.map((n, i) => (
+      {nuevas.map((n, i) => {
+        const plegada = plegadas.has(n.key);
+        const mall = malls.find((m) => String(m.id) === n.mallId);
+        const titulo = mall ? mall.nombre : "Sin mall";
+        // Plegado no se ve el formulario: el nombre de la sucursal ayuda a ubicar el bloque.
+        const subtitulo = n.nombre.trim() && n.nombre.trim() !== mall?.nombre ? n.nombre.trim() : `Sucursal ${i + 1}`;
+        return (
         <div key={n.key} className="mt-5 border border-black/[.3]">
-          <div className="flex items-center gap-2.5 px-3.5 py-2 bg-[var(--color-surface)] border-b border-[var(--color-divider-soft)]">
-            <div className="font-extrabold text-[11px] tracking-[.11em] uppercase">Sucursal {i + 1}</div>
+          <div className="flex items-center gap-2.5 pr-3.5 bg-[var(--color-surface)] border-b border-[var(--color-divider-soft)]">
+            <button
+              type="button"
+              aria-expanded={!plegada}
+              aria-controls={`sl-bloque-${n.key}`}
+              onClick={() => alternar(n.key)}
+              className="flex-1 min-w-0 flex items-center gap-2.5 min-h-11 pl-3.5 py-2 bg-transparent border-0 cursor-pointer text-left text-[var(--color-text)]"
+            >
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.2"
+                className="flex-none transition-transform"
+                style={{ transform: `rotate(${plegada ? -90 : 0}deg)` }}
+              >
+                <path d="M6 9l6 6 6-6" />
+              </svg>
+              <span className="min-w-0">
+                <span className="block font-extrabold text-[11px] tracking-[.11em] uppercase truncate">{titulo}</span>
+                <span className="block text-[11px] opacity-66 truncate">{subtitulo}</span>
+              </span>
+            </button>
             {nuevas.length > 1 ? (
               <button
                 type="button"
                 onClick={() => setNuevas((prev) => prev.filter((x) => x.key !== n.key))}
-                className="ml-auto flex items-center gap-1.5 min-h-8 px-2 bg-transparent border-0 cursor-pointer text-[var(--color-text)] text-[11px] tracking-[.06em] uppercase opacity-72 hover:opacity-100"
+                className="flex-none flex items-center gap-1.5 min-h-8 px-2 bg-transparent border-0 cursor-pointer text-[var(--color-text)] text-[11px] tracking-[.06em] uppercase opacity-72 hover:opacity-100"
               >
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6">
                   <path d="M6 6l12 12M18 6L6 18" />
@@ -183,11 +252,15 @@ export default function SucursalesLoteDialogo({
             ) : null}
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 p-3.5 sm:p-4">
+          <div
+            id={`sl-bloque-${n.key}`}
+            className={`${plegada ? "hidden" : "grid"} grid-cols-1 sm:grid-cols-2 gap-4 p-3.5 sm:p-4`}
+          >
             {malls.length > 0 ? (
               <div className="field min-w-0 sm:col-span-2">
                 <label htmlFor={`sl-mall-${n.key}`}>Mall (opcional)</label>
-                <SelectBuscable
+                <SelectConAlta
+                  alta="mall"
                   id={`sl-mall-${n.key}`}
                   valor={n.mallId}
                   opciones={opcMalls}
@@ -249,7 +322,8 @@ export default function SucursalesLoteDialogo({
             </div>
           </div>
         </div>
-      ))}
+        );
+      })}
 
       <button
         type="button"
@@ -262,5 +336,7 @@ export default function SucursalesLoteDialogo({
         <span>Agregar otra sucursal</span>
       </button>
     </Dialogo>
+      {confirmar ? <Confirmar cfg={confirmar} onCerrar={() => setConfirmar(null)} /> : null}
+    </>
   );
 }

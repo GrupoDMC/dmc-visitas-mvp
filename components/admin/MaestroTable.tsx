@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import AdminHeader from "@/components/admin/AdminHeader";
 import FiltrosBar, { type CampoFiltro, type ChipFiltro } from "@/components/admin/FiltrosBar";
 import Dialogo, { type CampoDef, type FormValores } from "@/components/admin/Dialogo";
+import Confirmar, { type ConfirmarCfg } from "@/components/ui/Confirmar";
 import { Toast, useToast } from "@/components/ui/Toast";
 import { puede, useReferencias } from "@/lib/ui/referencias";
 
@@ -57,6 +58,7 @@ export default function MaestroTable<T extends { id: number }>({
   guardarAction,
   emptyRow,
   validar,
+  advertir,
   alCambiar,
   accionFila,
   filtros,
@@ -89,6 +91,11 @@ export default function MaestroTable<T extends { id: number }>({
    */
   validar?: (form: FormValores, id: number | null) => string | null;
   /**
+   * Un aviso que no impide guardar (una dirección que ya existe). Si devuelve
+   * texto, se pide confirmación antes de guardar; null = nada que avisar.
+   */
+  advertir?: (form: FormValores, id: number | null) => string | null;
+  /**
    * Lo que un campo arrastra al cambiar: devuelve los otros campos que hay que
    * pisar (elegir el mall llena el nombre de la sucursal). `id` es null en un alta.
    */
@@ -109,6 +116,7 @@ export default function MaestroTable<T extends { id: number }>({
   const [busqueda, setBusqueda] = useState("");
   const [dialogo, setDialogo] = useState<{ id: number | null; form: FormValores } | null>(null);
   const [guardando, setGuardando] = useState(false);
+  const [confirmar, setConfirmar] = useState<ConfirmarCfg | null>(null);
 
   const filtradas = useMemo(() => {
     const q = sinTildes(busqueda.trim());
@@ -116,10 +124,20 @@ export default function MaestroTable<T extends { id: number }>({
     return rows.filter((r) => (!pasa || pasa(r)) && (!q || sinTildes(searchKeys(r)).includes(q)));
   }, [rows, busqueda, searchKeys, filtros?.pasa]);
 
-  async function guardar() {
+  async function guardar(confirmado = false): Promise<void> {
     if (!dialogo) return;
     const error = validar?.(dialogo.form, dialogo.id);
     if (error) return aviso(error);
+
+    const advertencia = confirmado ? null : advertir?.(dialogo.form, dialogo.id);
+    if (advertencia) {
+      return setConfirmar({
+        titulo: "Ya existe esa dirección",
+        texto: `${advertencia} ¿Quieres guardarlo de todas formas?`,
+        cta: "Guardar de todas formas",
+        accion: () => guardar(true),
+      });
+    }
 
     setGuardando(true);
     const res = await guardarAction(dialogo.id, dialogo.form);
@@ -227,11 +245,12 @@ export default function MaestroTable<T extends { id: number }>({
             })
           }
           onCerrar={() => setDialogo(null)}
-          onGuardar={guardar}
+          onGuardar={() => guardar()}
           guardando={guardando}
         />
       ) : null}
 
+      {confirmar ? <Confirmar cfg={confirmar} onCerrar={() => setConfirmar(null)} /> : null}
       <Toast texto={toast} variante="panel" />
     </>
   );
