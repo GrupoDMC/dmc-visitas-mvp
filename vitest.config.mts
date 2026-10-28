@@ -65,6 +65,9 @@ export default defineConfig({
           include: ["tests/bd/**/*.test.ts"],
           setupFiles: ["tests/setup/bd.ts"],
           globalSetup: ["tests/setup/bd-global.ts"],
+          // Todos comparten UNA base desechable: un solo proceso, un archivo a la vez.
+          pool: "forks",
+          poolOptions: { forks: { singleFork: true } },
           fileParallelism: false,
           testTimeout: 30_000,
           hookTimeout: 120_000,
