@@ -145,8 +145,11 @@ export async function guardarActaAction(entradaPedida: ActaEntrada): Promise<Res
     await borrarBorrador(entrada.folio, sesion.usuario.id).catch((err) =>
       log.error("borrarBorrador tras guardar el acta", { err })
     );
-    revalidar(entrada.folio);
-    revalidatePath(`/admin/visitas/${entrada.folio}`);
+    // Sin revalidatePath a propósito: revalidar desde una acción hace que Next
+    // vuelva a renderizar la página actual en la misma respuesta, y el
+    // formulario de una visita ya COMPLETADA redirige al detalle, tapando la
+    // pantalla «Visita guardada». Las páginas son dinámicas y no hay caché de
+    // servidor que limpiar: al salir de la confirmación se cargan de nuevo.
     return { ok: true, horaTermino: res.horaTermino };
   } catch (err) {
     const texto = err instanceof Error ? err.message : String(err);

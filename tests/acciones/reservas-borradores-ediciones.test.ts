@@ -87,14 +87,14 @@ describe("respaldo del borrador en el servidor", () => {
   });
 
   it("guarda el respaldo y renueva la reserva (subir el respaldo es actividad)", async () => {
-    expect(await guardarBorradorAction("V-1", '{"a":1}')).toEqual({ ok: true });
+    expect(await guardarBorradorAction({ folio: "V-1", payload: '{"a":1}' })).toEqual({ ok: true });
     expect(tomarReserva).toHaveBeenCalled();
     expect(guardarBorrador).toHaveBeenCalledWith("V-1", 3, '{"a":1}');
   });
 
   it("si otro técnico tiene la reserva, no sube el respaldo y lo informa", async () => {
     vi.mocked(tomarReserva).mockResolvedValue({ ok: false, motivo: "ajena", nombre: "Beto", desde: "10:00", liberaEnSeg: 60 } as never);
-    const r = await guardarBorradorAction("V-1", "{}");
+    const r = await guardarBorradorAction({ folio: "V-1", payload: "{}" });
     expect(r.ok).toBe(false);
     expect(r.reservaAjena?.nombre).toBe("Beto");
     expect(guardarBorrador).not.toHaveBeenCalled();
@@ -102,11 +102,11 @@ describe("respaldo del borrador en el servidor", () => {
 
   it("falla en silencio (ok:false) ante visita ajena, payload enorme o error de la base", async () => {
     vi.mocked(getVisitaCompletaPorFolio).mockResolvedValue({ ...suya, tecnicoId: 999 } as never);
-    expect(await guardarBorradorAction("V-1", "{}")).toEqual({ ok: false });
+    expect(await guardarBorradorAction({ folio: "V-1", payload: "{}" })).toEqual({ ok: false });
     vi.mocked(getVisitaCompletaPorFolio).mockResolvedValue(suya as never);
-    expect(await guardarBorradorAction("V-1", "x".repeat(3_000_001))).toEqual({ ok: false });
+    expect(await guardarBorradorAction({ folio: "V-1", payload: "x".repeat(3_000_001) })).toEqual({ ok: false });
     vi.mocked(guardarBorrador).mockRejectedValue(new Error("boom"));
-    expect(await guardarBorradorAction("V-1", "{}")).toEqual({ ok: false });
+    expect(await guardarBorradorAction({ folio: "V-1", payload: "{}" })).toEqual({ ok: false });
   });
 
   it("leer: devuelve el payload guardado, o ok sin payload si no hay", async () => {
@@ -129,13 +129,13 @@ describe("respaldo del borrador en el servidor", () => {
     expect(borrarBorrador).not.toHaveBeenCalled();
   });
 
-  it("el cliente sube el respaldo SIN fotos (el tope de 1 MB por string de una Server Action no alcanza para base64)", async () => {
-    // Regresión de diseño: el payload viaja como string suelto, así que solo
-    // es seguro mientras el celular lo mande sin imágenes. Si alguien quita
-    // `fotos: []` del hook, este test avisa antes de que el respaldo falle en producción.
+  it("el payload viaja envuelto en un objeto (React corta en 1 MB los strings sueltos de una acción)", async () => {
+    // Regresión de diseño: con el string suelto el tope real era 1 MB y no los
+    // 3 MB que valida la acción. Si alguien vuelve a pasarlo suelto, esto avisa.
     const { readFileSync } = await import("node:fs");
     const fuente = readFileSync("components/mobile/formulario/useFormularioVisita.tsx", "utf8");
-    expect(fuente).toMatch(/guardarBorradorAction\(visita\.folio, JSON\.stringify\(\{ \.\.\.b, fotos: \[\], sinFotos: true \}\)\)/);
+    expect(fuente).toMatch(/guardarBorradorAction\(\{ folio: visita\.folio, payload: /);
+    expect(fuente).not.toMatch(/guardarBorradorAction\(visita\.folio,/);
   });
 });
 

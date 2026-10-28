@@ -42,9 +42,7 @@ export default defineConfig({
   ],
   webServer: hayBase
     ? {
-        // La CLI de Next se detiene una vez a mostrar un aviso de actualización y pide
-        // repetir el mismo comando: por eso el build se reintenta una vez.
-        command: `npm run build || npm run build && npm run start -- -p ${PUERTO}`,
+        command: `npm run build && npm run start -- -p ${PUERTO}`,
         url: `http://localhost:${PUERTO}/login`,
         timeout: 300_000,
         reuseExistingServer: false,

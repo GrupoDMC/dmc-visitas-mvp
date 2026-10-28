@@ -35,11 +35,17 @@ async function tecnicoDeLaVisita(folio: string) {
   return { sesion, tecnico: sesion.tecnico, visita };
 }
 
-/** Sube lo que lleva escrito. Se llama cada tanto, no en cada tecla. */
-export async function guardarBorradorAction(folioPedido: string, payloadPedido: string): Promise<ResultadoBorrador> {
+/**
+ * Sube lo que lleva escrito. Se llama cada tanto, no en cada tecla.
+ *
+ * El payload viaja dentro de un objeto, nunca como argumento suelto: React
+ * corta en 1 MB los strings sueltos de una acción, y con fotos el respaldo
+ * pasa de largo ese tope.
+ */
+export async function guardarBorradorAction(pedido: { folio: string; payload: string }): Promise<ResultadoBorrador> {
   // Un respaldo que no cabe en el cuerpo de la acción no se sube; sigue en el
   // celular. El folio decide qué visita se busca: se valida antes.
-  const entrada = validar(entradaGuardarBorrador, { folio: folioPedido, payload: payloadPedido }, "guardarBorrador");
+  const entrada = validar(entradaGuardarBorrador, pedido, "guardarBorrador");
   if (!entrada.ok) return { ok: false };
   const { folio, payload } = entrada.datos;
   const contexto = await tecnicoDeLaVisita(folio);

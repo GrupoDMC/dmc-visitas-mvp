@@ -18,8 +18,6 @@ test.describe.configure({ mode: "serial" });
 
 test.describe("flujo completo: agendar → acta móvil → panel → PDF", () => {
   let folio = "";
-  /** ¿Alcanzó a verse la pantalla «Visita guardada» al terminar el acta? (ver el test BUG CONOCIDO). */
-  let vioConfirmacion = false;
 
   test("coordinación agenda una visita desde el panel", async ({ browser }) => {
     const { contexto, page } = await abrir(browser, "escritorio");
@@ -89,30 +87,22 @@ test.describe("flujo completo: agendar → acta móvil → panel → PDF", () =>
     await expect(page.getByText(FIRMANTE.nombre).first()).toBeVisible();
     await page.getByRole("button", { name: "Guardar visita" }).click();
 
-    // ¿La confirmación aparece Y se sostiene? Un destello de milisegundos no cuenta: la técnica
-    // tiene que poder leerla y tocar «Siguiente visita».
+    // La confirmación aparece Y se sostiene: un destello de milisegundos no cuenta, la
+    // técnica tiene que poder leerla y tocar «Siguiente visita». Antes, la revalidación
+    // re-renderizaba el formulario de la visita ya COMPLETADA y redirigía al detalle.
     const confirmacion = page.getByRole("heading", { name: /Visita\s*guardada/ });
-    vioConfirmacion = await confirmacion.waitFor({ state: "visible", timeout: 5_000 }).then(
-      async () => {
-        await page.waitForTimeout(2_500);
-        return confirmacion.isVisible();
-      },
-      () => false
-    );
-    // Lo estable: la visita queda cerrada y la técnica termina en su detalle.
-    await expect(page).toHaveURL(new RegExp(`/tecnico/visitas/${folio}$`), { timeout: 20_000 });
+    await expect(confirmacion).toBeVisible();
+    await page.waitForTimeout(2_500);
+    await expect(confirmacion).toBeVisible();
+    await expect(page).toHaveURL(new RegExp(`/tecnico/visitas/${folio}/formulario`));
+
+    // «Ver el acta guardada» lleva al acta en la base, y el detalle ya la muestra cerrada.
+    await page.getByRole("button", { name: "Ver el acta guardada" }).click();
+    await expect(page).toHaveURL(new RegExp(`/tecnico/visitas/${folio}/revisar`));
+    await page.goto(`/tecnico/visitas/${folio}`);
     await expect(page.getByText("Completada").first()).toBeVisible();
     await expect(page.getByRole("button", { name: /Ver acta guardada/ })).toBeVisible();
     await contexto.close();
-  });
-
-  // BUG CONOCIDO (reportado, sin arreglar): al guardar, el formulario hace setPaso("ok") y
-  // router.refresh(); la página del formulario, ya con la visita COMPLETADA, redirige al
-  // detalle y la pantalla «Visita guardada · Siguiente visita» no llega a sostenerse.
-  // `test.fail` deja constancia: pasa mientras el bug exista y avisa (falla) cuando se corrija.
-  test("BUG CONOCIDO: al guardar el acta se muestra la confirmación «Visita guardada»", () => {
-    test.fail(true, "la redirección del refresh reemplaza la pantalla de confirmación");
-    expect(vioConfirmacion).toBe(true);
   });
 
   test("coordinación la ve completada y baja el PDF del acta", async ({ browser }) => {

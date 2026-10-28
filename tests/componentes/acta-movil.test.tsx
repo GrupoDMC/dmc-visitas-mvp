@@ -182,7 +182,8 @@ describe("guardar la visita", () => {
     await screen.findByRole("heading", { name: /Visita\s*guardada/ });
     expect(leerBorrador(UID, "V-0500")).toBeNull();
     expect(leerActaEnCola(UID, "V-0500")).toBeNull();
-    expect(router.refresh).toHaveBeenCalled();
+    // Un refresh haría redirigir la página (visita ya COMPLETADA) y taparía la confirmación.
+    expect(router.refresh).not.toHaveBeenCalled();
   });
 
   it("sin firma no se puede guardar", async () => {

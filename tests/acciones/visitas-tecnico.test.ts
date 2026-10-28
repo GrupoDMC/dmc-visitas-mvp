@@ -137,7 +137,9 @@ describe("guardarActaAction (cerrar el acta)", () => {
       cargo: "Jefa de tienda",
     });
     expect(borrarBorrador).toHaveBeenCalledWith("V-1", 3);
-    expect(revalidatePath).toHaveBeenCalledWith("/admin/visitas/V-1");
+    // Revalidar re-renderiza el formulario en la respuesta y su redirección
+    // tapa la pantalla «Visita guardada».
+    expect(revalidatePath).not.toHaveBeenCalled();
   });
 
   it("sin técnico asociado no guarda nada", async () => {

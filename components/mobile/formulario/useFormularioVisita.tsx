@@ -400,7 +400,7 @@ export function useFormularioVisita({
       const b = borradorRef.current;
       if (!b || !hayConexion() || subidoRef.current === b.guardadoEn || bloqueoRef.current) return;
       subidoRef.current = b.guardadoEn;
-      void guardarBorradorAction(visita.folio, JSON.stringify({ ...b, fotos: [], sinFotos: true }))
+      void guardarBorradorAction({ folio: visita.folio, payload: JSON.stringify({ ...b, fotos: [], sinFotos: true }) })
         .then((r) => {
           if (r.reservaAjena) perderReserva(r.reservaAjena);
         })
@@ -657,7 +657,6 @@ export function useFormularioVisita({
             setRespaldo(null);
             setPaso("ok");
             aviso("El acta ya estaba guardada en el servidor");
-            router.refresh();
             return true;
           }
           // Cualquier otro rechazo: reintentar no lo va a arreglar. Se vuelve a
@@ -676,9 +675,10 @@ export function useFormularioVisita({
         setPendiente(null);
         setRespaldo(null);
         setHoraTermino(res.horaTermino || ahora());
+        // Sin router.refresh(): la página del formulario, con la visita ya
+        // COMPLETADA, redirige al detalle y la confirmación no se alcanza a ver.
+        // «Siguiente visita» navega a páginas dinámicas, que llegan frescas.
         setPaso("ok");
-        // El listado del técnico y el panel se recargan con la visita cerrada.
-        router.refresh();
         return true;
       } catch (err) {
         console.error("[dmc] no se pudo enviar el acta:", err);
@@ -705,7 +705,7 @@ export function useFormularioVisita({
         setEnviando(false);
       }
     },
-    [uid, visita.folio, aviso, router, perderReserva]
+    [uid, visita.folio, aviso, perderReserva]
   );
 
   /** La corrección del acta cerrada, tal como viaja al servidor. */
