@@ -1,6 +1,6 @@
 import "server-only";
 import { enTransaccion, num, paramIds, sql, subIds, type Ejecutor, type Parametro } from "@/lib/data/sql";
-import { ESTADO_PROBLEMA_CIERRE, ESTADO_PROBLEMA_INICIAL } from "@/lib/ui/estado";
+import { ESTADO_PROBLEMA_AGENDADO, ESTADO_PROBLEMA_CIERRE, ESTADO_PROBLEMA_INICIAL } from "@/lib/ui/estado";
 import type {
   BorradorChecklist,
   ItemBorrador,
@@ -514,9 +514,10 @@ function codigoDeEstado(nombre: string, usados: Set<string>): string {
 
 /**
  * Guarda la Lista 7. Igual que las otras: la posición es el orden, lo que no
- * viene se desactiva y nada se borra. La diferencia es que ABIERTO y RESUELTO
- * nunca se desactivan, aunque el borrador no los traiga: el primero es con el
- * que nace un problema y el segundo es el que lo cierra.
+ * viene se desactiva y nada se borra. La diferencia es que ABIERTO, AGENDADO y
+ * RESUELTO nunca se desactivan, aunque el borrador no los traiga: el primero es
+ * con el que nace un problema, el segundo lo pone la app al agendar una visita
+ * para resolverlo y el tercero es el que lo cierra.
  */
 async function guardarEstadosProblema(
   ej: Ejecutor,
@@ -563,10 +564,11 @@ async function guardarEstadosProblema(
   const desactivados = await ej.ejecutar(
     `UPDATE dmc.catalogo_problema_estado SET activo = 0
       WHERE activo = 1 AND id NOT IN ${subIds("vivos")}
-        AND codigo NOT IN (@inicial, @cierre)`,
+        AND codigo NOT IN (@inicial, @agendado, @cierre)`,
     [
       paramIds("vivos", vivos),
       ["inicial", sql.VarChar(10), ESTADO_PROBLEMA_INICIAL],
+      ["agendado", sql.VarChar(10), ESTADO_PROBLEMA_AGENDADO],
       ["cierre", sql.VarChar(10), ESTADO_PROBLEMA_CIERRE],
     ]
   );

@@ -76,9 +76,11 @@ export const ESTADO_VISITA_BARRA: Record<EstadoVisita, string> = {
   CANCELADA_ADMIN: "var(--color-neutral-500)",
 };
 
-/** Los dos estados que el sistema conoce por nombre; el resto son intermedios. */
+/** Los estados que el sistema conoce por nombre; el resto son intermedios. */
 export const ESTADO_PROBLEMA_INICIAL = "ABIERTO";
 export const ESTADO_PROBLEMA_CIERRE = "RESUELTO";
+/** Lo pone la app al agendar una visita para resolverlo; lo saca el acta de esa visita (migración 030). */
+export const ESTADO_PROBLEMA_AGENDADO = "AGENDADO";
 
 /**
  * Los tres estados de siempre. Es con lo que nace la Lista 7 del Checklist y
@@ -86,8 +88,9 @@ export const ESTADO_PROBLEMA_CIERRE = "RESUELTO";
  */
 export const ESTADOS_PROBLEMA_BASE: CatalogoEstadoProblema[] = [
   { id: null, codigo: "ABIERTO", nombre: "Abierto", orden: 1, activo: true },
-  { id: null, codigo: "PENDIENTE", nombre: "Espera repuesto", orden: 2, activo: true },
-  { id: null, codigo: "RESUELTO", nombre: "Resuelto", orden: 3, activo: true },
+  { id: null, codigo: "AGENDADO", nombre: "Agendado", orden: 2, activo: true },
+  { id: null, codigo: "PENDIENTE", nombre: "Espera repuesto", orden: 3, activo: true },
+  { id: null, codigo: "RESUELTO", nombre: "Resuelto", orden: 4, activo: true },
 ];
 
 /** El nombre de un estado tal como está hoy en el checklist; si no está, su código. */
@@ -107,6 +110,7 @@ export function tagEstadoProblema(codigo: string): TagVariant {
 
 export const ESTADO_PROBLEMA_COLOR: Record<EstadoProblema, string> = {
   ABIERTO: "var(--color-accent)",
+  AGENDADO: "var(--color-accent-400)",
   PENDIENTE: "var(--color-accent-400)",
   RESUELTO: "var(--color-text)",
 };

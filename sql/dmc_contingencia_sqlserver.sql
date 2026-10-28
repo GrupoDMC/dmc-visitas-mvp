@@ -390,8 +390,9 @@ CREATE TABLE dmc.catalogo_problema_gestion (
 GO
 
 -- Estados de un problema (Lista 7 del Checklist). ABIERTO es con el que nace
--- y RESUELTO el único que lo cierra: los dos se renombran, pero no se quitan.
--- Lo demás son estados intermedios. El código mide 10, como dmc.problema.estado.
+-- y RESUELTO el único que lo cierra; AGENDADO lo pone la app cuando se agenda
+-- una visita para resolverlo (migración 030). Los tres se renombran, pero no se
+-- quitan. Lo demás son estados intermedios. El código mide 10, como dmc.problema.estado.
 CREATE TABLE dmc.catalogo_problema_estado (
     id         bigint        IDENTITY(1,1) NOT NULL,
     codigo     varchar(10)   NOT NULL,
@@ -406,8 +407,9 @@ CREATE TABLE dmc.catalogo_problema_estado (
 GO
 INSERT INTO dmc.catalogo_problema_estado (codigo, nombre, orden) VALUES
  ('ABIERTO',   N'Abierto',         1),
- ('PENDIENTE', N'Espera repuesto', 2),
- ('RESUELTO',  N'Resuelto',        3);
+ ('AGENDADO',  N'Agendado',        2),
+ ('PENDIENTE', N'Espera repuesto', 3),
+ ('RESUELTO',  N'Resuelto',        4);
 GO
 
 /* =====================================================================
@@ -810,11 +812,47 @@ CREATE TABLE dmc.problema_visita_resolucion (
     visita_id     bigint       NOT NULL,        -- visita agendada para resolverlo
     agendado_por  bigint       NULL,
     creado_en     datetime2(0) NOT NULL CONSTRAINT df_pvr_creado DEFAULT (SYSDATETIME()),
+    -- Lo que dijo el acta de esa visita: RESUELTO o NO_RESUELTO. NULL = sin acta aún.
+    resultado     varchar(12)  NULL,
+    respondido_en datetime2(0) NULL,
     CONSTRAINT pk_problema_visita_resolucion PRIMARY KEY (id),
     CONSTRAINT uq_pvr UNIQUE (problema_id, visita_id),
     CONSTRAINT fk_pvr_problema FOREIGN KEY (problema_id)  REFERENCES dmc.problema (id) ON DELETE CASCADE,
     CONSTRAINT fk_pvr_visita   FOREIGN KEY (visita_id)    REFERENCES dmc.visita   (id),
-    CONSTRAINT fk_pvr_usuario  FOREIGN KEY (agendado_por) REFERENCES dmc.usuario  (id)
+    CONSTRAINT fk_pvr_usuario  FOREIGN KEY (agendado_por) REFERENCES dmc.usuario  (id),
+    CONSTRAINT ck_pvr_resultado CHECK (resultado IS NULL OR resultado IN ('RESUELTO','NO_RESUELTO'))
+);
+GO
+CREATE INDEX ix_pvr_visita ON dmc.problema_visita_resolucion (visita_id);
+GO
+
+-- El aviso de problemas sin resolver al agendar o reprogramar en una sucursal
+-- que los tiene: qué se respondió, quién y qué se mostró (migración 030). Queda
+-- aunque la respuesta sea "otra cosa" y no se vincule nada. Sin trigger: la app
+-- recoge el id con SCOPE_IDENTITY().
+CREATE TABLE dmc.visita_aviso_problema (
+    id          bigint        IDENTITY(1,1) NOT NULL,
+    visita_id   bigint        NOT NULL,
+    ocasion     varchar(10)   NOT NULL,      -- AGENDAR | REAGENDAR
+    respuesta   varchar(10)   NOT NULL,      -- RESUELVE | OTRA_COSA
+    usuario_id  bigint        NULL,
+    creado_en   datetime2(0)  NOT NULL CONSTRAINT df_aviso_problema_creado DEFAULT (SYSDATETIME()),
+    CONSTRAINT pk_visita_aviso_problema PRIMARY KEY (id),
+    CONSTRAINT fk_aviso_problema_visita  FOREIGN KEY (visita_id)  REFERENCES dmc.visita  (id) ON DELETE CASCADE,
+    CONSTRAINT fk_aviso_problema_usuario FOREIGN KEY (usuario_id) REFERENCES dmc.usuario (id),
+    CONSTRAINT ck_aviso_problema_ocasion   CHECK (ocasion   IN ('AGENDAR','REAGENDAR')),
+    CONSTRAINT ck_aviso_problema_respuesta CHECK (respuesta IN ('RESUELVE','OTRA_COSA'))
+);
+GO
+CREATE INDEX ix_aviso_problema_visita ON dmc.visita_aviso_problema (visita_id, creado_en DESC);
+GO
+
+CREATE TABLE dmc.visita_aviso_problema_detalle (
+    aviso_id     bigint  NOT NULL,
+    problema_id  bigint  NOT NULL,
+    CONSTRAINT pk_visita_aviso_problema_detalle PRIMARY KEY (aviso_id, problema_id),
+    CONSTRAINT fk_aviso_detalle_aviso    FOREIGN KEY (aviso_id)    REFERENCES dmc.visita_aviso_problema (id) ON DELETE CASCADE,
+    CONSTRAINT fk_aviso_detalle_problema FOREIGN KEY (problema_id) REFERENCES dmc.problema (id)
 );
 GO
 
@@ -1403,9 +1441,9 @@ GO
 /* =====================================================================
    12. VERSIÓN DEL ESQUEMA
    ===================================================================== */
-/* Este archivo ya trae todo hasta la migración 029. */
+/* Este archivo ya trae todo hasta la migración 030. */
 INSERT INTO dmc.schema_version (version, descripcion)
-VALUES (29, N'Esquema base (incluye las migraciones 002 a 029)');
+VALUES (30, N'Esquema base (incluye las migraciones 002 a 030)');
 GO
 
 

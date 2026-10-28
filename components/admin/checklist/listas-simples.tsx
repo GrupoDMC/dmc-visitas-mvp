@@ -1,6 +1,6 @@
 "use client";
 
-import { ESTADO_PROBLEMA_CIERRE, ESTADO_PROBLEMA_INICIAL } from "@/lib/ui/estado";
+import { ESTADO_PROBLEMA_AGENDADO, ESTADO_PROBLEMA_CIERRE, ESTADO_PROBLEMA_INICIAL } from "@/lib/ui/estado";
 import { Bloque, FilasSimples, Vacio } from "@/components/admin/checklist/piezas";
 import type { ChecklistEditorApi } from "@/components/admin/checklist/useChecklistEditor";
 
@@ -209,12 +209,14 @@ export function ListasSimples({ fv }: { fv: ChecklistEditorApi }) {
           placeholder="Ej: En cotización"
           onEditar={(fn) => editar(setEstadosProblema, fn)}
           onPedirQuitar={(m) => {
-            if (m.codigo === ESTADO_PROBLEMA_INICIAL || m.codigo === ESTADO_PROBLEMA_CIERRE) {
-              return aviso(
-                m.codigo === ESTADO_PROBLEMA_INICIAL
-                  ? "Este es el estado con que nace todo problema: se puede renombrar, pero no quitar."
-                  : "Este es el estado que cierra un problema: se puede renombrar, pero no quitar."
-              );
+            if (m.codigo === ESTADO_PROBLEMA_INICIAL) {
+              return aviso("Este es el estado con que nace todo problema: se puede renombrar, pero no quitar.");
+            }
+            if (m.codigo === ESTADO_PROBLEMA_AGENDADO) {
+              return aviso("Este estado lo pone el sistema al agendar una visita para resolver el problema: se puede renombrar, pero no quitar.");
+            }
+            if (m.codigo === ESTADO_PROBLEMA_CIERRE) {
+              return aviso("Este es el estado que cierra un problema: se puede renombrar, pero no quitar.");
             }
             setConfirmar({
               titulo: "¿Quitar este estado?",
