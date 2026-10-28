@@ -6,15 +6,17 @@ import { useRouter } from "next/navigation";
 import Dialogo, { type FormValores } from "@/components/admin/Dialogo";
 import Confirmar, { type ConfirmarCfg } from "@/components/ui/Confirmar";
 import SelectBuscable, { type OpcionSelect } from "@/components/ui/SelectBuscable";
-import { guardarClienteAction, guardarMallAction, guardarSucursalAction } from "@/app/actions/maestros";
+import { guardarClienteAction, guardarMallAction, guardarMarcaAction, guardarSucursalAction } from "@/app/actions/maestros";
 import { conMismaDireccion } from "@/lib/ui/direcciones";
-import { mensajeRut, rutLimpio } from "@/lib/ui/formato";
+import { mensajeRut, rutLimpio, sinTildes } from "@/lib/ui/formato";
 import { puede, useReferencias } from "@/lib/ui/referencias";
 import { REGIONES } from "@/lib/ui/regiones";
 
-export type TipoAlta = "cliente" | "mall" | "sucursal";
+export type TipoAlta = "cliente" | "marca" | "mall" | "sucursal";
 
-const MODULO: Record<TipoAlta, string> = { cliente: "clientes", mall: "malls", sucursal: "sucursales" };
+const MODULO: Record<TipoAlta, string> = { cliente: "clientes", marca: "marcas", mall: "malls", sucursal: "sucursales" };
+
+const NOMBRE_TIPO: Record<TipoAlta, string> = { cliente: "cliente", marca: "marca", mall: "mall", sucursal: "sucursal" };
 
 /**
  * `SelectBuscable` con la opción «Agregar nuevo» al final de la lista.
@@ -32,7 +34,7 @@ export default function SelectConAlta({
 }: React.ComponentProps<typeof SelectBuscable> & {
   /** Qué se puede crear desde la lista. Sin esto es un `SelectBuscable` normal. */
   alta?: TipoAlta;
-  /** Para una sucursal nueva: el cliente al que se le crea. */
+  /** Para una marca o una sucursal nueva: el cliente al que se le crea. */
   clienteId?: string;
 }) {
   const router = useRouter();
@@ -46,7 +48,7 @@ export default function SelectConAlta({
         {...resto}
         onChange={onChange}
         onAgregar={permitido ? (escrito) => setAbierto({ sugerido: escrito }) : undefined}
-        textoAgregar={`Agregar ${alta === "cliente" ? "cliente" : alta === "mall" ? "mall" : "sucursal"} nuevo`}
+        textoAgregar={`Agregar ${alta ? NOMBRE_TIPO[alta] : ""} nuevo`}
       />
       {abierto && alta
         ? createPortal(
@@ -93,6 +95,7 @@ function AltaRapidaDialogo({
     razonSocial: "",
     rut: "",
     clienteId: clienteId || String(ref.clientes.find((c) => c.activo)?.id ?? ""),
+    marcaId: "",
     mallId: "",
     codigo: "",
     direccion: "",
@@ -109,6 +112,10 @@ function AltaRapidaDialogo({
     setError(null);
     setForm((prev) => {
       const sig = { ...prev, [k]: v };
+      // Otro cliente, otras marcas: la elegida ya no vale.
+      if (k === "clienteId" && tipo === "sucursal") {
+        sig.marcaId = String(ref.marcas.find((m) => m.activo && String(m.clienteId) === v)?.id ?? "");
+      }
       if (k === "mallId" && tipo === "sucursal") {
         // Como en el alta de una sucursal: el mall le pone nombre y ubicación.
         const mall = ref.malls.find((m) => String(m.id) === v);
@@ -130,6 +137,17 @@ function AltaRapidaDialogo({
           { k: "rut", label: "RUT", tipo: "rut" as const, ph: "76.123.456-7" },
           { k: "nombre", label: "Nombre fantasía" },
         ]
+      : tipo === "marca"
+        ? [
+            {
+              k: "clienteId",
+              label: "Cliente",
+              tipo: "select" as const,
+              buscable: true,
+              opciones: ref.clientes.filter((c) => c.activo).map((c) => ({ v: String(c.id), t: c.nombreFantasia })),
+            },
+            { k: "nombre", label: "Nombre de la marca" },
+          ]
       : tipo === "mall"
         ? [
             { k: "nombre", label: "Nombre del mall", span: 2 as const },
@@ -146,12 +164,23 @@ function AltaRapidaDialogo({
               opciones: ref.clientes.filter((c) => c.activo).map((c) => ({ v: String(c.id), t: c.nombreFantasia })),
             },
             {
+              k: "marcaId",
+              label: "Marca",
+              tipo: "select" as const,
+              buscable: true,
+              alta: "marca" as const,
+              opcionesSegun: (f: FormValores) =>
+                ref.marcas
+                  .filter((m) => m.activo && String(m.clienteId) === String(f.clienteId))
+                  .map((m) => ({ v: String(m.id), t: m.nombre })),
+            },
+            {
               k: "mallId",
               label: "Mall (opcional)",
               tipo: "select" as const,
               buscable: true,
               opciones: [
-                { v: "", t: "Sin mall" },
+                { v: "", t: "Sin mall (a la calle)" },
                 ...ref.malls.filter((m) => m.activo).map((m) => ({ v: String(m.id), t: m.nombre })),
               ],
             },
@@ -171,17 +200,26 @@ function AltaRapidaDialogo({
       const repetido = ref.clientes.find((c) => rutLimpio(c.rut) === rutLimpio(texto("rut")));
       return repetido ? `Ese RUT ya es de «${repetido.nombreFantasia || repetido.razonSocial}».` : null;
     }
+    if (tipo === "marca") {
+      if (!texto("clienteId")) return "Elige el cliente.";
+      if (!texto("nombre")) return "El nombre de la marca es obligatorio.";
+      const repetida = ref.marcas.find(
+        (m) => String(m.clienteId) === texto("clienteId") && sinTildes(m.nombre) === sinTildes(texto("nombre"))
+      );
+      return repetida ? `Ese cliente ya tiene la marca «${repetida.nombre}».` : null;
+    }
     if (tipo === "mall") {
       return texto("nombre") && texto("direccion") && texto("comuna") ? null : "Nombre, dirección y comuna son obligatorios.";
     }
     if (!texto("clienteId")) return "Elige el cliente.";
+    if (!texto("marcaId")) return "Elige la marca.";
     if (!texto("nombre") || !texto("direccion") || !texto("comuna")) return "Nombre, dirección y comuna son obligatorios.";
     return null;
   }
 
   /** Avisa si ya hay otro registro del mismo tipo en esa dirección. */
   function advertencia(): string | null {
-    if (tipo === "cliente") return null;
+    if (tipo === "cliente" || tipo === "marca") return null;
     if (tipo === "mall") {
       const otro = conMismaDireccion(ref.malls, texto("direccion"), texto("comuna"));
       return otro ? `El mall «${otro.nombre}» ya está en «${otro.direccion}».` : null;
@@ -206,6 +244,8 @@ function AltaRapidaDialogo({
             notas: null,
             planCalibracion: null,
           })
+        : tipo === "marca"
+          ? await guardarMarcaAction(null, { clienteId: Number(texto("clienteId")), nombre: texto("nombre"), activo: true })
         : tipo === "mall"
           ? await guardarMallAction(null, {
               nombre: texto("nombre"),
@@ -216,6 +256,7 @@ function AltaRapidaDialogo({
             })
           : await guardarSucursalAction(null, {
               clienteId: Number(texto("clienteId")),
+              marcaId: Number(texto("marcaId")),
               mallId: Number(texto("mallId")) || null,
               nombre: texto("nombre"),
               codigo: texto("codigo") || null,
@@ -249,7 +290,7 @@ function AltaRapidaDialogo({
     });
   }
 
-  const nombreTipo = tipo === "cliente" ? "cliente" : tipo === "mall" ? "mall" : "sucursal";
+  const nombreTipo = NOMBRE_TIPO[tipo];
 
   return (
     <>

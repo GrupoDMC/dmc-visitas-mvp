@@ -21,6 +21,15 @@ export const entradaCliente = z.object({
   }),
 });
 
+export const entradaMarca = z.object({
+  id: idOAlta,
+  datos: z.object({
+    clienteId: idPositivo,
+    nombre: texto(80),
+    activo: z.boolean(),
+  }),
+});
+
 export const entradaMall = z.object({
   id: idOAlta,
   datos: z.object({
@@ -42,6 +51,7 @@ export const entradaSucursal = z.object({
   id: idOAlta,
   datos: z.object({
     clienteId: idPositivo,
+    marcaId: idPositivo,
     mallId: idPositivo.nullable(),
     nombre: texto(120),
     codigo: texto(20).nullable(),
@@ -61,6 +71,7 @@ export const entradaSucursal = z.object({
 
 export const entradaSucursalesLote = z.object({
   clienteId: idPositivo,
+  marcaId: idPositivo,
   filas: arreglo(
     z.object({
       mallId: idPositivo.nullable(),

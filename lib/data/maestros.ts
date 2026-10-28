@@ -3,7 +3,7 @@ import { consulta, consultaCon, ejecutar, enTransaccion, num, numONull, paramIds
 import { hashearPassword } from "@/lib/password";
 import { leerCuenta, leerRol, permisosDelPanel, type Cuenta } from "@/lib/data/roles";
 import { fmtRut, rutLimpio } from "@/lib/ui/formato";
-import type { Cliente, Mall, RolUsuario, Sucursal, Tecnico, Usuario } from "@/lib/types";
+import type { Cliente, Mall, Marca, RolUsuario, Sucursal, Tecnico, Usuario } from "@/lib/types";
 
 // Maestros: dmc.cliente, dmc.mall, dmc.sucursal, dmc.tecnico y dmc.usuario.
 // Lectura para las tablas del panel y escritura para sus diálogos de alta/edición.
@@ -128,6 +128,53 @@ export async function guardarCliente(id: number | null, d: DatosCliente): Promis
   return id;
 }
 
+// ── Marcas ──────────────────────────────────────────────────────────────────
+
+interface FilaMarca {
+  id: number;
+  cliente_id: number;
+  nombre: string;
+  activo: boolean;
+}
+
+/** Todas las marcas, o solo las de un cliente. */
+export async function listarMarcas(filtro: { clienteId?: number } = {}): Promise<Marca[]> {
+  const filas = await consultaCon<FilaMarca>(
+    `SELECT id, cliente_id, nombre, activo FROM dmc.marca
+      ${filtro.clienteId !== undefined ? "WHERE cliente_id = @cliente" : ""}
+      ORDER BY nombre`,
+    filtro.clienteId !== undefined ? [["cliente", sql.BigInt, filtro.clienteId]] : []
+  );
+  return filas.map((f) => ({ id: num(f.id), clienteId: num(f.cliente_id), nombre: f.nombre, activo: Boolean(f.activo) }));
+}
+
+export interface DatosMarca {
+  clienteId: number;
+  nombre: string;
+  activo: boolean;
+}
+
+export async function guardarMarca(id: number | null, d: DatosMarca): Promise<number> {
+  const params: Parametros = [
+    ["cliente", sql.BigInt, d.clienteId],
+    ["nombre", sql.NVarChar(80), d.nombre],
+    ["activo", sql.Bit, d.activo],
+  ];
+  if (id === null) {
+    const [fila] = await consultaCon<{ id: number }>(
+      `INSERT INTO dmc.marca (cliente_id, nombre, activo) OUTPUT INSERTED.id AS id VALUES (@cliente, @nombre, @activo)`,
+      params
+    );
+    return num(fila.id);
+  }
+  // El cliente de una marca no cambia: sus sucursales ya cuelgan de él (fk_sucursal_marca).
+  await ejecutar(`UPDATE dmc.marca SET nombre = @nombre, activo = @activo WHERE id = @id AND cliente_id = @cliente`, [
+    ...params,
+    ["id", sql.BigInt, id],
+  ]);
+  return id;
+}
+
 // ── Malls ───────────────────────────────────────────────────────────────────
 
 interface FilaMall {
@@ -241,6 +288,7 @@ export async function ponerTiendasDeMall(mallId: number, sucursalIds: number[]):
 interface FilaSucursal {
   id: number;
   cliente_id: number;
+  marca_id: number;
   mall_id: number | null;
   nombre: string;
   codigo: string | null;
@@ -276,7 +324,7 @@ export async function listarSucursales(
     params.push(["mall", sql.BigInt, filtro.mallId]);
   }
   const filas = await consultaCon<FilaSucursal>(
-    `SELECT id, cliente_id, mall_id, nombre, codigo, direccion, comuna, region, telefono, activo,
+    `SELECT id, cliente_id, marca_id, mall_id, nombre, codigo, direccion, comuna, region, telefono, activo,
             motivo_inactivo, notas, ${F_FECHA("fecha_instalacion")} AS fecha_instalacion, remota, en_garantia,
             plan_calibracion
        FROM dmc.sucursal
@@ -287,6 +335,7 @@ export async function listarSucursales(
   return filas.map((f) => ({
     id: num(f.id),
     clienteId: num(f.cliente_id),
+    marcaId: num(f.marca_id),
     mallId: numONull(f.mall_id),
     nombre: f.nombre,
     codigo: f.codigo,
@@ -311,7 +360,9 @@ export async function getSucursal(id: number): Promise<Sucursal | undefined> {
 
 export interface DatosSucursal {
   clienteId: number;
-  /** El mall en el que queda la tienda. null = no está en ningún mall. */
+  /** Una marca de `clienteId`: la base lo exige con una FK compuesta. */
+  marcaId: number;
+  /** El mall en el que queda la tienda. null = a la calle: solo con su dirección. */
   mallId: number | null;
   nombre: string;
   /** Opcional: null o vacío se guarda como "sin código". */
@@ -338,6 +389,7 @@ export interface DatosSucursal {
 export async function guardarSucursal(id: number | null, d: DatosSucursal): Promise<number> {
   const params: Parametros = [
     ["cliente", sql.BigInt, d.clienteId],
+    ["marca", sql.BigInt, d.marcaId],
     ["mall", sql.BigInt, d.mallId],
     ["nombre", sql.NVarChar(120), d.nombre],
     ["codigo", sql.VarChar(20), d.codigo?.trim() || null],
@@ -356,10 +408,10 @@ export async function guardarSucursal(id: number | null, d: DatosSucursal): Prom
   ];
   if (id === null) {
     const [fila] = await consultaCon<{ id: number }>(
-      `INSERT INTO dmc.sucursal (cliente_id, mall_id, nombre, codigo, direccion, comuna, region, telefono, activo,
+      `INSERT INTO dmc.sucursal (cliente_id, marca_id, mall_id, nombre, codigo, direccion, comuna, region, telefono, activo,
                                  motivo_inactivo, notas, fecha_instalacion, remota, en_garantia, plan_calibracion)
        OUTPUT INSERTED.id AS id
-       VALUES (@cliente, @mall, @nombre, @codigo, @direccion, @comuna, @region, @telefono, @activo, @motivo, @notas,
+       VALUES (@cliente, @marca, @mall, @nombre, @codigo, @direccion, @comuna, @region, @telefono, @activo, @motivo, @notas,
                @instalacion, @remota, @garantia, @plan)`,
       params
     );
@@ -367,7 +419,7 @@ export async function guardarSucursal(id: number | null, d: DatosSucursal): Prom
   }
   await ejecutar(
     `UPDATE dmc.sucursal
-        SET cliente_id = @cliente, mall_id = @mall, nombre = @nombre, codigo = @codigo, direccion = @direccion,
+        SET cliente_id = @cliente, marca_id = @marca, mall_id = @mall, nombre = @nombre, codigo = @codigo, direccion = @direccion,
             comuna = @comuna, region = @region, telefono = @telefono, activo = @activo,
             motivo_inactivo = @motivo, notas = @notas, fecha_instalacion = @instalacion, remota = @remota,
             en_garantia = @garantia, plan_calibracion = @plan
@@ -391,7 +443,7 @@ export interface DatosSucursalLote {
  * Crea todas las sucursales de un cliente en un solo INSERT: o entran todas o
  * ninguna. Las filas viajan como JSON, igual que en `ponerTiendasDeMall`.
  */
-export async function crearSucursalesLote(clienteId: number, filas: DatosSucursalLote[]): Promise<number> {
+export async function crearSucursalesLote(clienteId: number, marcaId: number, filas: DatosSucursalLote[]): Promise<number> {
   const json = JSON.stringify(
     filas.map((f) => ({
       mall: f.mallId,
@@ -403,13 +455,14 @@ export async function crearSucursalesLote(clienteId: number, filas: DatosSucursa
     }))
   );
   return ejecutar(
-    `INSERT INTO dmc.sucursal (cliente_id, mall_id, nombre, codigo, direccion, comuna, region, activo)
-     SELECT @cliente, j.mall, j.nombre, j.codigo, j.direccion, j.comuna, j.region, 1
+    `INSERT INTO dmc.sucursal (cliente_id, marca_id, mall_id, nombre, codigo, direccion, comuna, region, activo)
+     SELECT @cliente, @marca, j.mall, j.nombre, j.codigo, j.direccion, j.comuna, j.region, 1
        FROM OPENJSON(@filas)
             WITH (mall bigint '$.mall', nombre nvarchar(120) '$.nombre', codigo varchar(20) '$.codigo',
                   direccion nvarchar(180) '$.direccion', comuna nvarchar(80) '$.comuna', region nvarchar(80) '$.region') j`,
     [
       ["cliente", sql.BigInt, clienteId],
+      ["marca", sql.BigInt, marcaId],
       ["filas", sql.NVarChar(sql.MAX), json],
     ]
   );

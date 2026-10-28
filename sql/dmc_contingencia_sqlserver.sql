@@ -58,10 +58,27 @@ CREATE TABLE dmc.cliente (
     motivo_inactivo  nvarchar(400) NULL,         -- por qué se desactivó; el panel lo exige (migración 009)
     notas            nvarchar(max) NULL,         -- texto libre del panel
     plan_calibracion bit           NULL,         -- en plan de calibración; NULL = no se sabe (migración 017)
+    garantia_meses   smallint      NULL,         -- plan de garantía que cubre todos sus locales; NULL = ninguno (migración 029)
     creado_en        datetime2(0)  NOT NULL CONSTRAINT df_cliente_creado DEFAULT (SYSDATETIME()),
     actualizado_en   datetime2(0)  NOT NULL CONSTRAINT df_cliente_actualizado DEFAULT (SYSDATETIME()),
     CONSTRAINT pk_cliente     PRIMARY KEY (id),
-    CONSTRAINT uq_cliente_rut UNIQUE (rut)
+    CONSTRAINT uq_cliente_rut UNIQUE (rut),
+    CONSTRAINT ck_cliente_garantia_meses CHECK (garantia_meses IS NULL OR garantia_meses BETWEEN 1 AND 240)
+);
+GO
+
+-- Cada marca que opera un cliente (migración 029): Cliente → Marca → Sucursal.
+CREATE TABLE dmc.marca (
+    id              bigint        IDENTITY(1,1) NOT NULL,
+    cliente_id      bigint        NOT NULL,
+    nombre          nvarchar(80)  NOT NULL,
+    activo          bit           NOT NULL CONSTRAINT df_marca_activo DEFAULT (1),
+    creado_en       datetime2(0)  NOT NULL CONSTRAINT df_marca_creado DEFAULT (SYSDATETIME()),
+    actualizado_en  datetime2(0)  NOT NULL CONSTRAINT df_marca_actualizado DEFAULT (SYSDATETIME()),
+    CONSTRAINT pk_marca                PRIMARY KEY (id),
+    CONSTRAINT uq_marca_cliente_nombre UNIQUE (cliente_id, nombre),
+    CONSTRAINT uq_marca_id_cliente     UNIQUE (id, cliente_id),   -- destino de la FK compuesta de sucursal
+    CONSTRAINT fk_marca_cliente        FOREIGN KEY (cliente_id) REFERENCES dmc.cliente (id)
 );
 GO
 
@@ -83,6 +100,7 @@ GO
 CREATE TABLE dmc.sucursal (
     id              bigint        IDENTITY(1,1) NOT NULL,
     cliente_id      bigint        NOT NULL,
+    marca_id        bigint        NOT NULL,     -- la marca de la tienda; debe ser del mismo cliente (migración 029)
     mall_id         bigint        NULL,         -- el mall donde está la tienda, si está en uno (migración 011)
     nombre          nvarchar(120) NOT NULL,
     codigo          varchar(20)   NULL,         -- código interno opcional
@@ -97,17 +115,22 @@ CREATE TABLE dmc.sucursal (
     remota          bit           NULL,         -- se atiende en remoto; NULL = no se sabe (migración 017)
     en_garantia     bit           NULL,         -- está en garantía; NULL = no se sabe (migración 017)
     plan_calibracion bit          NULL,         -- en plan por su cuenta; si el cliente lo está, la tienda también (migración 018)
+    garantia_meses  smallint      NULL,         -- duración propia de la garantía; manda sobre la del cliente (migración 029)
     creado_en       datetime2(0)  NOT NULL CONSTRAINT df_sucursal_creado DEFAULT (SYSDATETIME()),
     actualizado_en  datetime2(0)  NOT NULL CONSTRAINT df_sucursal_actualizado DEFAULT (SYSDATETIME()),
     CONSTRAINT pk_sucursal                PRIMARY KEY (id),
-    CONSTRAINT uq_sucursal_cliente_nombre UNIQUE (cliente_id, nombre),
+    CONSTRAINT uq_sucursal_marca_nombre   UNIQUE (marca_id, nombre),
+    CONSTRAINT ck_sucursal_garantia_meses CHECK (garantia_meses IS NULL OR garantia_meses BETWEEN 1 AND 240),
     CONSTRAINT fk_sucursal_cliente FOREIGN KEY (cliente_id) REFERENCES dmc.cliente (id),
+    CONSTRAINT fk_sucursal_marca   FOREIGN KEY (marca_id, cliente_id) REFERENCES dmc.marca (id, cliente_id),
     CONSTRAINT fk_sucursal_mall    FOREIGN KEY (mall_id)    REFERENCES dmc.mall (id)
 );
 GO
 CREATE INDEX ix_sucursal_cliente ON dmc.sucursal (cliente_id) WHERE activo = 1;
 GO
 CREATE INDEX ix_sucursal_mall ON dmc.sucursal (mall_id) WHERE mall_id IS NOT NULL;
+GO
+CREATE INDEX ix_sucursal_marca ON dmc.sucursal (marca_id) WHERE activo = 1;
 GO
 -- El código es opcional: único solo entre las sucursales que lo tienen.
 CREATE UNIQUE INDEX uq_sucursal_codigo ON dmc.sucursal (codigo) WHERE codigo IS NOT NULL;
@@ -536,6 +559,40 @@ CREATE TABLE dmc.visita_eliminacion (
 );
 GO
 CREATE INDEX ix_visita_elim_visita ON dmc.visita_eliminacion (visita_id);
+GO
+
+-- Contactos (migración 029). Un contacto tiene varios cargos y cada cargo su
+-- alcance: CLIENTE, MARCA, SUCURSAL (alcance_id) o REGION (alcance_texto). Sin
+-- triggers de INSERT a propósito: el servidor valida que el alcance exista.
+CREATE TABLE dmc.contacto (
+    id              bigint        IDENTITY(1,1) NOT NULL,
+    nombre          nvarchar(120) NOT NULL,
+    email           nvarchar(160) NULL,
+    telefono        varchar(30)   NULL,
+    activo          bit           NOT NULL CONSTRAINT df_contacto_activo DEFAULT (1),
+    creado_en       datetime2(0)  NOT NULL CONSTRAINT df_contacto_creado DEFAULT (SYSDATETIME()),
+    actualizado_en  datetime2(0)  NOT NULL CONSTRAINT df_contacto_actualizado DEFAULT (SYSDATETIME()),
+    CONSTRAINT pk_contacto PRIMARY KEY (id)
+);
+GO
+CREATE TABLE dmc.contacto_cargo (
+    id            bigint        IDENTITY(1,1) NOT NULL,
+    contacto_id   bigint        NOT NULL,
+    cargo         nvarchar(80)  NOT NULL,
+    alcance_tipo  varchar(10)   NOT NULL,
+    alcance_id    bigint        NULL,           -- cliente, marca o sucursal
+    alcance_texto nvarchar(80)  NULL,           -- la región, como texto
+    CONSTRAINT pk_contacto_cargo PRIMARY KEY (id),
+    CONSTRAINT fk_contacto_cargo_contacto FOREIGN KEY (contacto_id) REFERENCES dmc.contacto (id) ON DELETE CASCADE,
+    CONSTRAINT ck_contacto_cargo_alcance CHECK (
+           (alcance_tipo IN ('CLIENTE', 'MARCA', 'SUCURSAL') AND alcance_id IS NOT NULL AND alcance_texto IS NULL)
+        OR (alcance_tipo = 'REGION' AND alcance_id IS NULL AND alcance_texto IS NOT NULL)
+    )
+);
+GO
+CREATE UNIQUE INDEX uq_contacto_cargo ON dmc.contacto_cargo (contacto_id, cargo, alcance_tipo, alcance_id, alcance_texto);
+GO
+CREATE INDEX ix_contacto_cargo_alcance ON dmc.contacto_cargo (alcance_tipo, alcance_id, alcance_texto);
 GO
 
 -- Quienes han recibido o firmado en cada tienda (migración 021). Se ofrecen al
@@ -1105,6 +1162,18 @@ BEGIN
     UPDATE c SET actualizado_en = SYSDATETIME() FROM dmc.cliente c JOIN inserted i ON i.id = c.id;
 END;
 GO
+CREATE OR ALTER TRIGGER dmc.tg_marca_actualizado ON dmc.marca AFTER UPDATE AS
+BEGIN
+    SET NOCOUNT ON;
+    UPDATE m SET actualizado_en = SYSDATETIME() FROM dmc.marca m JOIN inserted i ON i.id = m.id;
+END;
+GO
+CREATE OR ALTER TRIGGER dmc.tg_contacto_actualizado ON dmc.contacto AFTER UPDATE AS
+BEGIN
+    SET NOCOUNT ON;
+    UPDATE c SET actualizado_en = SYSDATETIME() FROM dmc.contacto c JOIN inserted i ON i.id = c.id;
+END;
+GO
 CREATE OR ALTER TRIGGER dmc.tg_mall_actualizado ON dmc.mall AFTER UPDATE AS
 BEGIN
     SET NOCOUNT ON;
@@ -1325,6 +1394,8 @@ FROM (VALUES
         ('clientes.ver'), ('clientes.crear'), ('clientes.editar'),
         ('sucursales.ver'), ('sucursales.crear'), ('sucursales.editar'),
         ('malls.ver'), ('malls.crear'), ('malls.editar'),
+        ('marcas.ver'), ('marcas.crear'), ('marcas.editar'),
+        ('contactos.ver'), ('contactos.crear'), ('contactos.editar'),
         ('checklist.ver'), ('checklist.editar')
 ) AS x(permiso);
 GO
@@ -1332,9 +1403,9 @@ GO
 /* =====================================================================
    12. VERSIÓN DEL ESQUEMA
    ===================================================================== */
-/* Este archivo ya trae todo hasta la migración 028. */
+/* Este archivo ya trae todo hasta la migración 029. */
 INSERT INTO dmc.schema_version (version, descripcion)
-VALUES (28, N'Esquema base (incluye las migraciones 002 a 028)');
+VALUES (29, N'Esquema base (incluye las migraciones 002 a 029)');
 GO
 
 

@@ -127,8 +127,16 @@ FROM (VALUES
 WHERE NOT EXISTS (SELECT 1 FROM dmc.cliente t WHERE t.rut = v.rut);
 GO
 
-INSERT INTO dmc.sucursal (cliente_id, nombre, codigo, direccion, comuna, region, telefono, activo)
-SELECT c.id, x.nombre, x.codigo, x.direccion, x.comuna, x.region, x.telefono, x.activo
+/* Una marca por cliente, con su nombre de fantasía (migración 029). */
+INSERT INTO dmc.marca (cliente_id, nombre)
+SELECT c.id, c.nombre_fantasia
+FROM dmc.cliente c
+WHERE c.rut LIKE '99.000.00_-_'
+  AND NOT EXISTS (SELECT 1 FROM dmc.marca m WHERE m.cliente_id = c.id AND m.nombre = c.nombre_fantasia);
+GO
+
+INSERT INTO dmc.sucursal (cliente_id, marca_id, nombre, codigo, direccion, comuna, region, telefono, activo)
+SELECT c.id, m.id, x.nombre, x.codigo, x.direccion, x.comuna, x.region, x.telefono, x.activo
 FROM (VALUES
  (N'Deportes del Sur',       N'Parque Arauco',        'SP-241', N'Av. Kennedy 5413',                       N'Las Condes',       N'Metropolitana', '+56 2 2000 0001', 1),
  (N'Sol y Mar',N'Mall Plaza Tobalaba',  'MS-118', N'Av. Camilo Henríquez 3296',              N'Puente Alto',      N'Metropolitana', '+56 2 2000 0002', 1),
@@ -146,6 +154,7 @@ FROM (VALUES
  (N'Belleza Plus',      N'Mall Arauco Estación', 'PR-140', N'Av. Libertador Bernardo O''Higgins 3470',N'Estación Central', N'Metropolitana', '+56 2 2000 0014', 1)
 ) AS x(cliente, nombre, codigo, direccion, comuna, region, telefono, activo)
 JOIN dmc.cliente c ON c.nombre_fantasia = x.cliente
+JOIN dmc.marca m   ON m.cliente_id = c.id AND m.nombre = c.nombre_fantasia
 WHERE NOT EXISTS (SELECT 1 FROM dmc.sucursal q WHERE q.cliente_id = c.id AND q.codigo = x.codigo);
 GO
 

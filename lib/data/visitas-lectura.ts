@@ -131,6 +131,10 @@ interface FilaVisita {
   s_telefono: string | null;
   s_activo: boolean;
   s_cliente_id: number;
+  s_marca_id: number;
+  s_mall_id: number | null;
+  mk_nombre: string;
+  ml_nombre: string | null;
 
   t_rut: string;
   t_nombres: string;
@@ -207,6 +211,8 @@ const SELECT_VISITA = `
          s.nombre AS s_nombre, s.codigo AS s_codigo, s.direccion AS s_direccion,
          s.comuna AS s_comuna, s.region AS s_region, s.telefono AS s_telefono,
          s.activo AS s_activo, s.cliente_id AS s_cliente_id,
+         s.marca_id AS s_marca_id, s.mall_id AS s_mall_id,
+         mk.nombre AS mk_nombre, ml.nombre AS ml_nombre,
 
          t.rut AS t_rut, t.nombres AS t_nombres, t.apellido_paterno AS t_apellido_paterno,
          t.apellido_materno AS t_apellido_materno, t.nombre_completo AS t_nombre_completo,
@@ -218,6 +224,8 @@ const SELECT_VISITA = `
     FROM dmc.visita   v
     JOIN dmc.cliente  c ON c.id = v.cliente_id
     JOIN dmc.sucursal s ON s.id = v.sucursal_id
+    JOIN dmc.marca    mk ON mk.id = s.marca_id
+    LEFT JOIN dmc.mall ml ON ml.id = s.mall_id
     JOIN dmc.tecnico  t ON t.id = v.tecnico_id
     LEFT JOIN dmc.tecnico ta ON ta.id = v.tecnico_ayudante_id
     LEFT JOIN dmc.catalogo_motivo cm ON cm.codigo = v.motivo_codigo`;
@@ -556,9 +564,14 @@ async function cargar(filtro: Filtro): Promise<Visita[]> {
         nombreFantasia: v.c_nombre_fantasia,
         activo: Boolean(v.c_activo),
       },
+      marca: { id: num(v.s_marca_id), nombre: v.mk_nombre },
+      // Null = la tienda está a la calle: se muestra su dirección en vez del mall.
+      mall: v.s_mall_id === null ? null : { id: num(v.s_mall_id), nombre: v.ml_nombre ?? "" },
       sucursal: {
         id: num(v.sucursal_id),
         clienteId: num(v.s_cliente_id),
+        marcaId: num(v.s_marca_id),
+        mallId: numONull(v.s_mall_id),
         nombre: v.s_nombre,
         codigo: v.s_codigo,
         direccion: v.s_direccion,

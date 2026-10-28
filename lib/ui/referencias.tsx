@@ -9,6 +9,7 @@ import type {
   CatalogoTrabajo,
   Cliente,
   Mall,
+  Marca,
   RolUsuario,
   Sucursal,
   Tecnico,
@@ -31,6 +32,7 @@ export interface Referencias {
   /** Lo que puede hacer quien está mirando: "<módulo>.<acción>". Ver lib/permisos.ts. */
   permisos: string[];
   clientes: Cliente[];
+  marcas: Marca[];
   malls: Mall[];
   sucursales: Sucursal[];
   tecnicos: Tecnico[];
@@ -47,6 +49,7 @@ export const REFERENCIAS_VACIAS: Referencias = {
   rol: "TECNICO",
   permisos: [],
   clientes: [],
+  marcas: [],
   malls: [],
   sucursales: [],
   tecnicos: [],

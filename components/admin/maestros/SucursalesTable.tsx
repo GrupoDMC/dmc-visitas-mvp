@@ -9,6 +9,7 @@ import { Toast, useToast } from "@/components/ui/Toast";
 import Tag from "@/components/Tag";
 import { guardarSucursalAction } from "@/app/actions/maestros";
 import { conMismaDireccion } from "@/lib/ui/direcciones";
+import { useReferencias } from "@/lib/ui/referencias";
 import { REGIONES } from "@/lib/ui/regiones";
 import { OPCIONES_SI_NO, calibracionDeSucursal, formASiNo, siNoAForm } from "@/lib/ui/sino";
 import type { Cliente, Mall, Sucursal } from "@/lib/types";
@@ -38,7 +39,11 @@ export default function SucursalesTable({
 }) {
   const router = useRouter();
   const { toast, aviso } = useToast();
+  const { marcas } = useReferencias();
   const [lote, setLote] = useState(false);
+  /** La primera marca activa del cliente: lo que queda elegido al cambiar de cliente. */
+  const marcaInicial = (clienteId: string | number) =>
+    String(marcas.find((m) => m.activo && String(m.clienteId) === String(clienteId))?.id ?? "");
   const nombreCliente = (id: number) => clientes.find((c) => c.id === id)?.nombreFantasia ?? "—";
   const calibracion = (s: Sucursal) => calibracionDeSucursal(s, clientes.find((c) => c.id === s.clienteId));
   /** ¿El cliente elegido en el formulario está en plan? Entonces la tienda también, sin preguntar. */
@@ -181,17 +186,27 @@ export default function SucursalesTable({
           opciones: clientes.map((c) => ({ v: String(c.id), t: c.nombreFantasia })),
         },
         {
+          k: "marcaId",
+          label: "Marca",
+          tipo: "select",
+          buscable: true,
+          alta: "marca",
+          opcionesSegun: (f) =>
+            marcas
+              .filter((m) => String(m.clienteId) === String(f.clienteId))
+              .map((m) => ({ v: String(m.id), t: m.activo ? m.nombre : `${m.nombre} · inactiva` })),
+        },
+        {
           k: "mallId",
           label: "Mall (opcional)",
           tipo: "select",
           buscable: true,
           alta: "mall",
           opciones: [
-            { v: "", t: "Sin mall" },
+            { v: "", t: "Sin mall (a la calle)" },
             ...malls.map((m) => ({ v: String(m.id), t: m.activo ? m.nombre : `${m.nombre} · inactivo` })),
           ],
-          ayuda: "Al elegirlo, la sucursal toma la dirección, la comuna y la región del mall. Al crearla, también el nombre.",
-          visible: () => malls.length > 0,
+          ayuda: "Al elegirlo, la sucursal toma la dirección, la comuna y la región del mall. Sin mall, escribe la dirección de la calle.",
         },
         { k: "nombre", label: "Nombre de la sucursal" },
         { k: "codigo", label: "Código interno (opcional)", ph: "MS-118" },
@@ -233,6 +248,8 @@ export default function SucursalesTable({
       ]}
       validar={(f) => {
         if (!String(f.nombre).trim() || !f.clienteId) return "Nombre y cliente son obligatorios";
+        if (!f.marcaId) return "Elige la marca";
+        if (!f.mallId && !String(f.direccion).trim()) return "Sin mall, la sucursal necesita su dirección de calle";
         if (f.activo === false && !String(f.motivoInactivo ?? "").trim()) {
           return "Explica por qué se desactiva la sucursal";
         }
@@ -247,7 +264,9 @@ export default function SucursalesTable({
       }}
       // La ubicación sigue al mall siempre. El nombre solo en un alta: una
       // sucursal que ya existe no cambia de nombre por moverla de mall.
-      alCambiar={(k, v, _f, id) => {
+      alCambiar={(k, v, _f, id): Record<string, string | boolean> | null => {
+        // Otro cliente, otras marcas: la elegida ya no vale.
+        if (k === "clienteId") return { marcaId: marcaInicial(String(v)) };
         if (k !== "mallId") return null;
         const mall = malls.find((m) => String(m.id) === v);
         if (!mall) return null;
@@ -261,6 +280,7 @@ export default function SucursalesTable({
       }}
       toFormValues={(s) => ({
         clienteId: String(s.clienteId),
+        marcaId: String(s.marcaId),
         mallId: s.mallId ? String(s.mallId) : "",
         nombre: s.nombre,
         codigo: s.codigo ?? "",
@@ -280,6 +300,7 @@ export default function SucursalesTable({
       guardarAction={(id, f) =>
         guardarSucursalAction(id, {
           clienteId: Number(f.clienteId),
+          marcaId: Number(f.marcaId),
           mallId: Number(f.mallId) || null,
           nombre: String(f.nombre).trim(),
           codigo: String(f.codigo ?? "").trim() || null,
@@ -300,6 +321,7 @@ export default function SucursalesTable({
       }
       emptyRow={{
         clienteId: String(clientes[0]?.id ?? ""),
+        marcaId: marcaInicial(clientes[0]?.id ?? ""),
         mallId: "",
         nombre: "",
         codigo: "",

@@ -87,6 +87,24 @@ export const MODULOS: ModuloPermiso[] = [
     ],
   },
   {
+    clave: "marcas",
+    label: "Marcas",
+    acciones: [
+      { clave: "ver", label: "Ver marcas" },
+      { clave: "crear", label: "Agregar marcas" },
+      { clave: "editar", label: "Editar marcas" },
+    ],
+  },
+  {
+    clave: "contactos",
+    label: "Contactos",
+    acciones: [
+      { clave: "ver", label: "Ver contactos" },
+      { clave: "crear", label: "Agregar contactos" },
+      { clave: "editar", label: "Editar contactos y sus cargos" },
+    ],
+  },
+  {
     clave: "malls",
     label: "Malls",
     acciones: [

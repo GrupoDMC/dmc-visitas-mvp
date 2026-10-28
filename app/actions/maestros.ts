@@ -5,6 +5,7 @@ import { crearSesion, sesionCon } from "@/lib/auth";
 import {
   guardarCliente,
   guardarMall,
+  guardarMarca,
   guardarSucursal,
   crearSucursalesLote,
   guardarTecnico,
@@ -15,6 +16,7 @@ import {
   TiendaEnOtroMall,
   type DatosCliente,
   type DatosMall,
+  type DatosMarca,
   type DatosSucursal,
   type DatosSucursalLote,
   type DatosTecnico,
@@ -30,6 +32,7 @@ import { idPositivo, validar } from "@/lib/validacion/comun";
 import {
   entradaCliente,
   entradaMall,
+  entradaMarca,
   entradaPermisosCelular,
   entradaRol,
   entradaSucursal,
@@ -75,7 +78,9 @@ function mensajeDeError(err: unknown, contexto: string): string {
   if (/uq_\w*rut/i.test(texto)) return "Ya existe un registro con ese RUT.";
   if (/uq_\w*email|uq_usuario_email/i.test(texto)) return "Ya existe un registro con ese correo.";
   if (/uq_sucursal_codigo/i.test(texto)) return "Ya existe una sucursal con ese código.";
-  if (/uq_sucursal_cliente_nombre/i.test(texto)) return "Ese cliente ya tiene una sucursal con ese nombre.";
+  if (/uq_sucursal_marca_nombre/i.test(texto)) return "Esa marca ya tiene una sucursal con ese nombre.";
+  if (/uq_marca_cliente_nombre/i.test(texto)) return "Ese cliente ya tiene una marca con ese nombre.";
+  if (/fk_sucursal_marca/i.test(texto)) return "La marca elegida no es de ese cliente. Elígela de nuevo.";
   if (/uq_usuario_tecnico/i.test(texto)) return "Ese técnico ya está vinculado a otro usuario.";
   if (/ck_usuario_tecnico/i.test(texto)) return "Un usuario TÉCNICO necesita un técnico vinculado, y los demás roles no pueden tenerlo.";
   if (/uq_rol_nombre/i.test(texto)) return "Ya existe un rol con ese nombre.";
@@ -107,6 +112,22 @@ export async function guardarClienteAction(idPedido: number | null, datosPedidos
     guardadoId = await guardarCliente(id, datos);
   } catch (err) {
     return { ok: false, error: mensajeDeError(err, "guardarCliente") };
+  }
+  revalidar();
+  return { ok: true, id: guardadoId };
+}
+
+export async function guardarMarcaAction(idPedido: number | null, datosPedidos: DatosMarca): Promise<ResultadoMaestro> {
+  if (!(await sesionMaestro("marcas", idPedido))) return { ok: false, error: "No tienes permiso para editar marcas." };
+  const entrada = validar(entradaMarca, { id: idPedido, datos: datosPedidos }, "guardarMarca");
+  if (!entrada.ok) return { ok: false, error: entrada.error };
+  const { id, datos } = entrada.datos;
+  if (!datos.nombre.trim()) return { ok: false, error: "El nombre de la marca es obligatorio." };
+  let guardadoId: number;
+  try {
+    guardadoId = await guardarMarca(id, datos);
+  } catch (err) {
+    return { ok: false, error: mensajeDeError(err, "guardarMarca") };
   }
   revalidar();
   return { ok: true, id: guardadoId };
@@ -156,8 +177,12 @@ export async function guardarSucursalAction(idPedido: number | null, datosPedido
   const entrada = validar(entradaSucursal, { id: idPedido, datos: datosPedidos }, "guardarSucursal");
   if (!entrada.ok) return { ok: false, error: entrada.error };
   const { id, datos } = entrada.datos;
-  if (!datos.nombre.trim() || !datos.clienteId) {
-    return { ok: false, error: "Nombre y cliente son obligatorios." };
+  if (!datos.nombre.trim() || !datos.clienteId || !datos.marcaId) {
+    return { ok: false, error: "Nombre, cliente y marca son obligatorios." };
+  }
+  // Sin mall, la tienda está a la calle y su dirección es lo único que la ubica.
+  if (!datos.mallId && !datos.direccion.trim()) {
+    return { ok: false, error: "Una sucursal sin mall necesita su dirección de calle." };
   }
   // Una sucursal no queda inactiva sin que conste por qué.
   if (!datos.activo && !datos.motivoInactivo?.trim()) {
@@ -179,18 +204,19 @@ export async function guardarSucursalAction(idPedido: number | null, datosPedido
 /** Alta masiva: todas las sucursales nuevas de un cliente, en un solo INSERT. */
 export async function crearSucursalesLoteAction(
   clientePedido: number,
+  marcaPedida: number,
   filasPedidas: DatosSucursalLote[]
 ): Promise<ResultadoMaestro & { creadas?: number }> {
   if (!(await sesionCon("sucursales.crear"))) return { ok: false, error: "No tienes permiso para crear sucursales." };
-  const entrada = validar(entradaSucursalesLote, { clienteId: clientePedido, filas: filasPedidas }, "crearSucursalesLote");
+  const entrada = validar(entradaSucursalesLote, { clienteId: clientePedido, marcaId: marcaPedida, filas: filasPedidas }, "crearSucursalesLote");
   if (!entrada.ok) return { ok: false, error: entrada.error };
-  const { clienteId, filas } = entrada.datos;
-  if (!clienteId || filas.length === 0) return { ok: false, error: "No hay sucursales por crear." };
+  const { clienteId, marcaId, filas } = entrada.datos;
+  if (!clienteId || !marcaId || filas.length === 0) return { ok: false, error: "No hay sucursales por crear." };
   if (filas.some((f) => !f.nombre.trim() || !f.direccion.trim() || !f.comuna.trim() || !f.region.trim())) {
     return { ok: false, error: "Cada sucursal necesita nombre, dirección, comuna y región." };
   }
   try {
-    const creadas = await crearSucursalesLote(clienteId, filas);
+    const creadas = await crearSucursalesLote(clienteId, marcaId, filas);
     revalidar();
     return { ok: true, creadas };
   } catch (err) {

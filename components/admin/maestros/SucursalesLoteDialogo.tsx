@@ -8,6 +8,7 @@ import SelectConAlta from "@/components/ui/SelectConAlta";
 import { crearSucursalesLoteAction } from "@/app/actions/maestros";
 import { conMismaDireccion } from "@/lib/ui/direcciones";
 import { sinTildes } from "@/lib/ui/formato";
+import { useReferencias } from "@/lib/ui/referencias";
 import { REGIONES } from "@/lib/ui/regiones";
 import type { Cliente, Mall, Sucursal } from "@/lib/types";
 
@@ -42,6 +43,7 @@ export default function SucursalesLoteDialogo({
   onCerrar: () => void;
   onHecho: (mensaje: string, guardado: boolean) => void;
 }) {
+  const { marcas } = useReferencias();
   const contador = useRef(0);
   const vacia = (): Nueva => ({
     key: ++contador.current,
@@ -65,6 +67,8 @@ export default function SucursalesLoteDialogo({
   const [clienteSel, setClienteSel] = useState(
     opcClientes.some((o) => o.v === clienteInicial) ? clienteInicial : (opcClientes[0]?.v ?? "")
   );
+  const marcasDe = (cliente: string) => marcas.filter((m) => m.activo && String(m.clienteId) === cliente);
+  const [marcaSel, setMarcaSel] = useState(() => String(marcasDe(clienteSel)[0]?.id ?? ""));
   const [nuevas, setNuevas] = useState<Nueva[]>(() => [vacia()]);
   const [guardando, setGuardando] = useState(false);
   /** Los bloques plegados, por `key`: solo se ve el título del mall. */
@@ -96,6 +100,7 @@ export default function SucursalesLoteDialogo({
   /** El texto del primer problema, o null si todo está listo para guardar. */
   function problema(): string | null {
     if (!clienteSel) return "Elige el cliente.";
+    if (!marcaSel) return "Elige la marca.";
     if (nuevas.length === 0) return "Agrega al menos una sucursal.";
     const nombres = new Set(delCliente.map((s) => sinTildes(s.nombre.trim())));
     const codigos = new Set(delCliente.map((s) => (s.codigo ?? "").trim().toLowerCase()).filter(Boolean));
@@ -153,6 +158,7 @@ export default function SucursalesLoteDialogo({
     setGuardando(true);
     const res = await crearSucursalesLoteAction(
       Number(clienteSel),
+      Number(marcaSel),
       nuevas.map((n) => ({
         mallId: Number(n.mallId) || null,
         nombre: n.nombre.trim(),
@@ -193,7 +199,10 @@ export default function SucursalesLoteDialogo({
           id="sl-cliente"
           valor={clienteSel}
           opciones={opcClientes}
-          onChange={setClienteSel}
+          onChange={(v) => {
+            setClienteSel(v);
+            setMarcaSel(String(marcasDe(v)[0]?.id ?? ""));
+          }}
           ariaLabel="Cliente"
         />
         {clienteSel ? (
@@ -203,6 +212,19 @@ export default function SucursalesLoteDialogo({
               : `Ya tiene ${delCliente.length} ${delCliente.length === 1 ? "sucursal" : "sucursales"}: no se pueden repetir nombres ni códigos.`}
           </div>
         ) : null}
+      </div>
+
+      <div className="field min-w-0 mt-4">
+        <label htmlFor="sl-marca">Marca</label>
+        <SelectConAlta
+          alta="marca"
+          clienteId={clienteSel}
+          id="sl-marca"
+          valor={marcaSel}
+          opciones={marcasDe(clienteSel).map((m) => ({ v: String(m.id), t: m.nombre }))}
+          onChange={setMarcaSel}
+          ariaLabel="Marca"
+        />
       </div>
 
       {nuevas.map((n, i) => {

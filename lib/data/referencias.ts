@@ -1,6 +1,6 @@
 import "server-only";
 import { listarCargos, listarEstadosProblema, listarMotivos, listarProblemas, listarTrabajos } from "@/lib/data/catalogos";
-import { listarClientes, listarMalls, listarSucursales, listarTecnicos } from "@/lib/data/maestros";
+import { listarClientes, listarMalls, listarMarcas, listarSucursales, listarTecnicos } from "@/lib/data/maestros";
 import type { RolUsuario } from "@/lib/types";
 import type { Referencias } from "@/lib/ui/referencias";
 
@@ -9,8 +9,9 @@ import type { Referencias } from "@/lib/ui/referencias";
  * completos. Se carga una vez por petición en el layout y baja por contexto.
  */
 export async function cargarReferencias(rol: RolUsuario, permisos: string[]): Promise<Referencias> {
-  const [clientes, malls, sucursales, tecnicos, motivos, problemas, trabajos, estadosProblema, cargos] = await Promise.all([
+  const [clientes, marcas, malls, sucursales, tecnicos, motivos, problemas, trabajos, estadosProblema, cargos] = await Promise.all([
     listarClientes(),
+    listarMarcas(),
     listarMalls(),
     listarSucursales(),
     listarTecnicos(),
@@ -20,7 +21,7 @@ export async function cargarReferencias(rol: RolUsuario, permisos: string[]): Pr
     listarEstadosProblema(),
     listarCargos(),
   ]);
-  return { rol, permisos, clientes, malls, sucursales, tecnicos, motivos, problemas, trabajos, estadosProblema, cargos };
+  return { rol, permisos, clientes, marcas, malls, sucursales, tecnicos, motivos, problemas, trabajos, estadosProblema, cargos };
 }
 
 /**
@@ -29,8 +30,9 @@ export async function cargarReferencias(rol: RolUsuario, permisos: string[]): Pr
  * visita". RUT, correo y teléfono se quedan en el servidor.
  */
 export async function cargarReferenciasTecnico(permisos: string[]): Promise<Referencias> {
-  const [clientes, malls, sucursales, tecnicos, motivos, problemas, trabajos, estadosProblema, cargos] = await Promise.all([
+  const [clientes, marcas, malls, sucursales, tecnicos, motivos, problemas, trabajos, estadosProblema, cargos] = await Promise.all([
     listarClientes(),
+    listarMarcas(),
     listarMalls(),
     listarSucursales(),
     listarTecnicos(),
@@ -57,6 +59,7 @@ export async function cargarReferenciasTecnico(permisos: string[]): Promise<Refe
     rol: "TECNICO",
     permisos,
     clientes,
+    marcas,
     malls,
     sucursales,
     tecnicos: companeros,

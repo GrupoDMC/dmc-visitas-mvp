@@ -53,6 +53,14 @@ export interface Cliente {
   planCalibracion?: boolean | null;
 }
 
+/** Una marca que opera un cliente: Cliente → Marca → Sucursal. */
+export interface Marca {
+  id: number;
+  clienteId: number;
+  nombre: string;
+  activo: boolean;
+}
+
 /** Un centro comercial. Sus tiendas son las sucursales con ese `mallId`. */
 export interface Mall {
   id: number;
@@ -67,7 +75,9 @@ export interface Mall {
 export interface Sucursal {
   id: number;
   clienteId: number;
-  /** El mall donde está la tienda. Null = no está en ninguno. */
+  /** La marca de la tienda: siempre es de `clienteId`. */
+  marcaId: number;
+  /** El mall donde está la tienda. Null = está a la calle, solo con dirección. */
   mallId?: number | null;
   nombre: string;
   /** Código interno de la sucursal. Opcional. */
@@ -448,6 +458,10 @@ export interface Visita {
   // Relaciones ya resueltas para la UI: la consulta trae los maestros con la
   // visita y agrupa las tablas hijas en memoria (ver lib/data/visitas).
   cliente?: Cliente;
+  /** La marca de la tienda de la visita. */
+  marca?: Pick<Marca, "id" | "nombre">;
+  /** Su mall; null = a la calle. */
+  mall?: Pick<Mall, "id" | "nombre"> | null;
   sucursal?: Sucursal;
   tecnico?: Tecnico;
   tecnicoAyudante?: Pick<Tecnico, "id" | "nombreCompleto" | "telefono">;

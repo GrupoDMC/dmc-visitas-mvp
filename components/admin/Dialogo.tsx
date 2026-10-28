@@ -59,6 +59,11 @@ export interface CampoDef {
   ayuda?: string;
   opciones?: OpcionCampo[];
   /**
+   * Opciones que dependen de lo escrito en otros campos (las marcas del cliente
+   * elegido). Si está, manda sobre `opciones`.
+   */
+  opcionesSegun?: (form: FormValores) => OpcionCampo[];
+  /**
    * Fuerza el selector con búsqueda aunque la lista sea corta. Se usa donde el
    * catálogo crece con el tiempo —clientes, sucursales, técnicos— para que el
    * campo no cambie de forma el día que pasa de seis a siete opciones.
@@ -172,7 +177,8 @@ export default function Dialogo({
 
         <div className="flex-1 min-h-0 overflow-y-auto p-4 sm:p-5.5">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {campos.map((c) => {
+            {campos.map((def) => {
+              const c = def.opcionesSegun ? { ...def, opciones: def.opcionesSegun(form) } : def;
               const valor = form[c.k];
               const texto = typeof valor === "boolean" ? "" : String(valor ?? "");
               const abierto = !c.plegable || desplegados.includes(c.k);
@@ -245,7 +251,7 @@ export default function Dialogo({
                         onChange={(v) => onCampo(c.k, v)}
                         ariaLabel={c.label}
                         alta={c.alta}
-                        clienteId={c.altaClienteId}
+                        clienteId={c.altaClienteId ?? (c.alta === "marca" ? String(form.clienteId ?? "") : undefined)}
                       />
                     ) : c.buscable || (c.opciones?.length ?? 0) >= MINIMO_PARA_BUSCAR ? (
                       // Lista larga: se escribe y filtra al momento.
