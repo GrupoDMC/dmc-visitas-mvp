@@ -34,6 +34,7 @@ yarn-error.log*
 # env files (can opt-in for committing if needed)
 .env*
 !.env.example
+!.env.test.example
 
 # vercel
 .vercel
@@ -74,3 +75,7 @@ sql/Tiendas/
 
 # Volcado completo de la base (1,8 GB, con datos reales): nunca al repo
 sql/Emigracion-Final.sql
+
+# tests
+/playwright-report/
+/test-results/
