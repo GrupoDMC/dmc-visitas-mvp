@@ -1,6 +1,9 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // Los tests E2E construyen y sirven la app en una carpeta aparte (NEXT_DIST_DIR)
+  // para no pisar el `.next` de quien esté corriendo `npm run dev`.
+  distDir: process.env.NEXT_DIST_DIR || ".next",
   // mssql/tedious usa require dinámico y binarios opcionales: si el bundler
   // lo empaqueta, la conexión revienta en runtime. Se deja fuera del bundle
   // del servidor y se resuelve desde node_modules.

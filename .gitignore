@@ -79,3 +79,6 @@ sql/Emigracion-Final.sql
 # tests
 /playwright-report/
 /test-results/
+
+# build aislado de los tests E2E
+/.next-e2e/

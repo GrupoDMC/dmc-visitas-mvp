@@ -71,7 +71,8 @@ function espiarTexto() {
 
 afterEach(() => vi.restoreAllMocks());
 
-describe("generarPdfActa", () => {
+// Armar PDF reales (con fotos) es lento, y más aún con la instrumentación de cobertura.
+describe("generarPdfActa", { timeout: 30_000 }, () => {
   it("genera un PDF válido de al menos una página con el título y el folio", async () => {
     const pdf = await generarPdfActa(datos());
     expect(Buffer.from(pdf.slice(0, 5)).toString()).toBe("%PDF-");

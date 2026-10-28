@@ -27,7 +27,7 @@ afterEach(() => {
 });
 
 // jsdom no implementa estas APIs que los componentes usan al montar.
-if (!("scrollTo" in window)) window.scrollTo = () => undefined;
+window.scrollTo ??= (() => undefined) as typeof window.scrollTo;
 Element.prototype.scrollIntoView ??= () => undefined;
 window.matchMedia ??= ((consulta: string) =>
   ({ matches: false, media: consulta, addEventListener: () => undefined, removeEventListener: () => undefined, addListener: () => undefined, removeListener: () => undefined, onchange: null, dispatchEvent: () => false }) as MediaQueryList);

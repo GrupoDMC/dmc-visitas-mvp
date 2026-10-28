@@ -56,7 +56,7 @@ describe("motivoPideHora (solo las instalaciones piden hora)", () => {
 });
 
 describe("trabajosDelMotivo", () => {
-  const trabajos = [
+  const trabajos: { codigo: string; motivosCodigos: string[]; ordenEnMotivo: Record<string, number>; orden: number }[] = [
     { codigo: "a", motivosCodigos: ["M1"], ordenEnMotivo: { M1: 2 }, orden: 1 },
     { codigo: "b", motivosCodigos: ["M1", "M2"], ordenEnMotivo: { M1: 1 }, orden: 9 },
     { codigo: "c", motivosCodigos: ["M2"], ordenEnMotivo: {}, orden: 3 },

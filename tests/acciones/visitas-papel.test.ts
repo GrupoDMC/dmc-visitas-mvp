@@ -60,9 +60,9 @@ describe("crearVisitasPapelAction (informes de años anteriores)", () => {
     await crearVisitasPapelAction({ informes: [informe({ trabajos: [t, t], motivosCodigos: ["CALIBRACION", "VISITA"] })] as never });
     const guardado = vi.mocked(crearInformePapel).mock.calls[0][0];
     expect(guardado.trabajos).toHaveLength(1);
-    expect(guardado.trabajos[0].motivoCodigo).toBe("CALIBRACION");
+    expect(guardado.trabajos![0].motivoCodigo).toBe("CALIBRACION");
     // Cantidad 0 o inválida se guarda como 1: un subtrabajo marcado existe.
-    expect(guardado.trabajos[0].subtrabajos[0].cantidad).toBe(1);
+    expect(guardado.trabajos![0].subtrabajos[0].cantidad).toBe(1);
   });
 
   describe("cada informe se valida contra la base antes de guardarse", () => {

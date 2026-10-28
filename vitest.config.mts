@@ -68,7 +68,6 @@ export default defineConfig({
           // Todos comparten UNA base desechable: un solo proceso, un archivo a la vez.
           pool: "forks",
           poolOptions: { forks: { singleFork: true } },
-          fileParallelism: false,
           testTimeout: 30_000,
           hookTimeout: 120_000,
         },

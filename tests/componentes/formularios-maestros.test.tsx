@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -195,7 +195,7 @@ describe("formulario de cliente", () => {
 describe("formulario de mall", () => {
   const abrir = async (malls = [mall()]) => {
     const u = userEvent.setup();
-    pintar(<MallsTable malls={malls as never} sucursales={[]} />, { permisos: PERMISOS("malls") });
+    pintar(<MallsTable malls={malls as never} sucursales={[]} clientes={[]} />, { permisos: PERMISOS("malls") });
     await u.click(screen.getByRole("button", { name: /Nuevo mall/ }));
     return u;
   };
@@ -239,7 +239,7 @@ describe("formulario de mall", () => {
 
   it("editar un mall no dispara el aviso de dirección repetida (es el mismo)", async () => {
     const u = userEvent.setup();
-    pintar(<MallsTable malls={[mall()] as never} sucursales={[]} />, { permisos: PERMISOS("malls") });
+    pintar(<MallsTable malls={[mall()] as never} sucursales={[]} clientes={[]} />, { permisos: PERMISOS("malls") });
     await u.click(screen.getByRole("button", { name: /Editar mall/i }));
     await u.click(within(dialogo()).getByRole("button", { name: "Guardar cambios" }));
     await waitFor(() => expect(acciones.guardarMallAction).toHaveBeenCalledWith(5, expect.objectContaining({ nombre: "Mall Plaza Norte" })));
