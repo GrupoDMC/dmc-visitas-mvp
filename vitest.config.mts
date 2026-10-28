@@ -14,7 +14,7 @@ const aqui = (ruta: string) => fileURLToPath(new URL(ruta, import.meta.url));
 // seguridad.ts lo impide. `server-only` se reemplaza por un módulo vacío
 // porque fuera de Next su import lanza.
 export default defineConfig({
-  esbuild: { jsx: "automatic" },
+  oxc: { jsx: { runtime: "automatic" } },
   resolve: {
     alias: {
       "server-only": aqui("./tests/stubs/server-only.ts"),
@@ -67,7 +67,7 @@ export default defineConfig({
           globalSetup: ["tests/setup/bd-global.ts"],
           // Todos comparten UNA base desechable: un solo proceso, un archivo a la vez.
           pool: "forks",
-          poolOptions: { forks: { singleFork: true } },
+          fileParallelism: false,
           testTimeout: 30_000,
           hookTimeout: 120_000,
         },
