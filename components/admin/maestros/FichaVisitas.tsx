@@ -52,6 +52,7 @@ export default function FichaVisitas({
   tiendas,
   verVisitas,
   hoy,
+  secciones,
 }: {
   /** De qué es la ficha: cambia un gráfico y las columnas de las tablas. */
   modo: "sucursal" | "cliente" | "mall";
@@ -68,6 +69,8 @@ export default function FichaVisitas({
   tiendas?: TiendaFicha[];
   verVisitas: boolean;
   hoy: string;
+  /** Bloques propios de la ficha (marcas, contactos), entre los datos y las visitas. */
+  secciones?: React.ReactNode;
 }) {
   const router = useRouter();
   const historial = useRef<HTMLDivElement>(null);
@@ -212,6 +215,8 @@ export default function FichaVisitas({
             sub={ultima ? `hace ${diasEntre(ultima.fecha, hoy)} días · ${ultima.folio}` : "Todavía ninguna"}
           />
         </div>
+
+        {secciones}
 
         <div className="grid grid-cols-1 lg:grid-cols-2">
           {/* Datos */}

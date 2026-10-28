@@ -1,13 +1,17 @@
 import { notFound } from "next/navigation";
 import SinAcceso from "@/components/admin/SinAcceso";
 import FichaVisitas from "@/components/admin/maestros/FichaVisitas";
+import ContactosSeccion from "@/components/admin/contactos/ContactosSeccion";
 import type { DatoFicha } from "@/components/admin/maestros/FichaPartes";
-import { getCliente, getMall, getSucursal } from "@/lib/data/maestros";
+import { contactosCandidatos } from "@/lib/data/contactos";
+import { getCliente, getMall, getSucursal, listarMarcas } from "@/lib/data/maestros";
 import { getFilasFicha } from "@/lib/data/visitas-lista";
 import { sesionCon } from "@/lib/auth";
 import { hoyISO } from "@/lib/ui/fecha";
 import { garantiaDe, ETIQUETA_GARANTIA, resumenGarantia } from "@/lib/ui/garantia";
 import { calibracionDeSucursal } from "@/lib/ui/sino";
+import { contactosDeTienda, origenDe } from "@/lib/ui/contactos";
+import { textoMall } from "@/lib/ui/ubicacion";
 
 export const dynamic = "force-dynamic";
 
@@ -26,13 +30,30 @@ export default async function SucursalFichaPage({ params }: { params: Promise<{ 
     verVisitas ? getFilasFicha({ sucursalId }) : Promise.resolve([]),
   ]);
   if (!s) notFound();
-  const [cliente, mall] = await Promise.all([getCliente(s.clienteId), s.mallId ? getMall(s.mallId) : undefined]);
+  const verContactos = Boolean(await sesionCon("contactos.ver"));
+  const [cliente, mall, marcas] = await Promise.all([
+    getCliente(s.clienteId),
+    s.mallId ? getMall(s.mallId) : undefined,
+    listarMarcas({ clienteId: s.clienteId }),
+  ]);
+  const marca = marcas.find((m) => m.id === s.marcaId);
+  // Los contactos de la tienda: los propios y los que hereda de su marca, región y cliente.
+  const candidatos = verContactos
+    ? await contactosCandidatos({ id: s.id, clienteId: s.clienteId, marcaId: s.marcaId, region: s.region })
+    : [];
+  const aplicables = contactosDeTienda(candidatos, { id: s.id, clienteId: s.clienteId, marcaId: s.marcaId, region: s.region });
+  const nombres = {
+    cliente: (i: number) => (i === s.clienteId ? cliente?.nombreFantasia : undefined),
+    marca: (i: number) => marcas.find((m) => m.id === i)?.nombre,
+    sucursal: (i: number) => (i === s.id ? s.nombre : undefined),
+  };
   const cal = calibracionDeSucursal(s, cliente);
   const garantia = garantiaDe(s, cliente, hoyISO());
 
   const datos: DatoFicha[] = [
     { label: "Cliente", valor: cliente?.nombreFantasia ?? "—", href: cliente && verClientes ? `/admin/clientes/${cliente.id}` : undefined },
-    { label: "Mall", valor: mall?.nombre ?? "Sin mall" },
+    { label: "Marca", valor: marca?.nombre ?? "" },
+    { label: "Mall", valor: textoMall(mall) },
     { label: "Código", valor: s.codigo ?? "" },
     { label: "Dirección", valor: s.direccion },
     { label: "Comuna · región", valor: [s.comuna, s.region].filter(Boolean).join(" · ") },
@@ -54,7 +75,7 @@ export default async function SucursalFichaPage({ params }: { params: Promise<{ 
       modo="sucursal"
       kicker="Maestros · ficha de sucursal"
       titulo={s.nombre}
-      subtitulo={[cliente?.nombreFantasia, mall?.nombre, s.comuna].filter(Boolean).join(" · ")}
+      subtitulo={[cliente?.nombreFantasia, marca?.nombre, textoMall(mall), s.comuna].filter(Boolean).join(" · ")}
       activo={s.activo}
       volver={{ href: "/admin/sucursales", label: "Sucursales" }}
       datos={datos}
@@ -62,6 +83,22 @@ export default async function SucursalFichaPage({ params }: { params: Promise<{ 
       filas={filas}
       verVisitas={verVisitas}
       hoy={hoyISO()}
+      secciones={
+        verContactos ? (
+          <ContactosSeccion
+            titulo="Contactos de esta tienda"
+            vacio="Esta tienda no tiene contactos, ni propios ni heredados de su marca, región o cliente."
+            filas={aplicables.map((a) => ({
+              contactoId: a.contacto.id,
+              cargo: a.cargo.cargo,
+              origen: origenDe(a, nombres),
+              heredado: a.heredado,
+            }))}
+            contactos={candidatos}
+            cargoInicial={{ alcanceTipo: "SUCURSAL", alcanceId: s.id, alcanceTexto: null }}
+          />
+        ) : undefined
+      }
     />
   );
 }
