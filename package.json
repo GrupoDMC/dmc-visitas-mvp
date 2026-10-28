@@ -9,7 +9,7 @@
     "lint": "eslint",
     "typecheck": "next typegen && tsc --noEmit",
     "test": "vitest run",
-    "test:unit": "vitest run --project unidad --project componentes",
+    "test:unit": "vitest run --project unidad --project acciones --project componentes",
     "test:bd": "vitest run --project bd",
     "test:e2e": "playwright test",
     "test:coverage": "vitest run --coverage",

@@ -35,8 +35,17 @@ export default defineConfig({
         test: {
           name: "unidad",
           environment: "node",
-          include: ["tests/unidad/**/*.test.ts", "tests/acciones/**/*.test.ts", "tests/api/**/*.test.ts"],
+          include: ["tests/unidad/**/*.test.ts"],
           setupFiles: ["tests/setup/seguridad.ts"],
+        },
+      },
+      {
+        extends: true,
+        test: {
+          name: "acciones",
+          environment: "node",
+          include: ["tests/acciones/**/*.test.ts", "tests/api/**/*.test.ts"],
+          setupFiles: ["tests/setup/seguridad.ts", "tests/setup/acciones.ts"],
         },
       },
       {
