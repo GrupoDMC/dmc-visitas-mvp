@@ -15,7 +15,8 @@ import {
   registrarEnvioActa,
   reprogramarVisita,
 } from "@/lib/data/visitas";
-import type { CambiosVisita, DatosVisita } from "@/lib/contratos/visitas";
+import type { AvisoProblemas, CambiosVisita, DatosVisita, ProblemaSinResolver } from "@/lib/contratos/visitas";
+import { ErrorDeAviso, problemasSinResolver, sucursalesConProblemas } from "@/lib/data/avisos-problema";
 import { marcarGestionPendiente } from "@/lib/data/pendientes";
 import { marcarGestionProblema } from "@/lib/data/problemas";
 import {
@@ -50,6 +51,7 @@ import {
   entradaGestionPendiente,
   entradaGestionProblema,
   entradaModificarVisitas,
+  entradaProblemasSinResolver,
   entradaReprogramar,
   entradaVisitasMasivas,
 } from "@/lib/validacion/visitas";
@@ -70,6 +72,8 @@ function revalidarPanel(folio?: string) {
 }
 
 function comoError(err: unknown, contexto: string): ResultadoAdmin {
+  // La respuesta al aviso de problemas no sirvió: el mensaje ya es para quien agenda.
+  if (err instanceof ErrorDeAviso) return { ok: false, error: err.message };
   const texto = err instanceof Error ? err.message : String(err);
   if (/ck_visita_fecha_hasta/i.test(texto)) return { ok: false, error: ERROR_MARGEN };
   if (/fk_visita_motivo/i.test(texto)) {
@@ -122,11 +126,32 @@ export async function crearVisitaAction(datosPedidos: DatosVisita): Promise<Resu
   }
 
   try {
-    const visita = await crearVisita(datos, sesion.usuario.id);
+    const visita = await crearVisita(datos, sesion.usuario.id, { exigirAviso: true });
     revalidarPanel(visita.folio);
     return { ok: true, folio: visita.folio };
   } catch (err) {
     return comoError(err, "crearVisita");
+  }
+}
+
+/**
+ * Los problemas sin resolver de una sucursal, para el aviso del formulario de
+ * visita. Con folio, sin los que esa visita ya venía a resolver.
+ */
+export async function problemasSinResolverAction(pedido: {
+  sucursalId: number;
+  folio?: string;
+}): Promise<{ ok: boolean; error?: string; problemas: ProblemaSinResolver[] }> {
+  const sesion = (await sesionCon("visitas.crear")) ?? (await sesionCon("visitas.reprogramar"));
+  if (!sesion) return { ok: false, error: "No tienes permiso para agendar visitas.", problemas: [] };
+  const entrada = validar(entradaProblemasSinResolver, pedido, "problemasSinResolver");
+  if (!entrada.ok) return { ok: false, error: entrada.error, problemas: [] };
+  try {
+    const problemas = await problemasSinResolver(entrada.datos.sucursalId, entrada.datos.folio ?? null);
+    return { ok: true, problemas };
+  } catch (err) {
+    log.error("problemasSinResolver", { err });
+    return { ok: false, error: "No se pudieron revisar los problemas de la sucursal.", problemas: [] };
   }
 }
 
@@ -192,13 +217,30 @@ export async function crearVisitasMasivasAction(visitasPedidas: DatosVisita[]): 
   const folios: string[] = [];
   const fallidas: number[] = [];
   let error: string | undefined;
+
+  // La ruta no tiene dónde responder el aviso de problemas sin resolver: esos
+  // locales se dejan fuera y se agendan uno por uno desde «Nueva visita».
+  const conProblemas = new Set(await sucursalesConProblemas(visitas.map((v) => v.sucursalId)));
+  if (conProblemas.size > 0) {
+    error =
+      conProblemas.size === 1
+        ? "Un local tiene problemas sin resolver y no se agendó: hazlo desde «Nueva visita» para responder el aviso."
+        : `${conProblemas.size} locales tienen problemas sin resolver y no se agendaron: hazlo uno por uno desde «Nueva visita» para responder el aviso.`;
+  }
+
   for (const datos of visitas) {
+    if (conProblemas.has(datos.sucursalId)) {
+      fallidas.push(datos.sucursalId);
+      continue;
+    }
     try {
       const visita = await crearVisita({ ...datos, problemaOrigenId: null, creadaEnTerreno: false }, sesion.usuario.id);
       folios.push(visita.folio);
     } catch (err) {
       fallidas.push(datos.sucursalId);
-      error = comoError(err, "crearVisitasMasivas").error;
+      const fallo = comoError(err, "crearVisitasMasivas").error;
+      // El aviso de los locales con problemas va primero: es el que dice qué hacer.
+      error = error ?? fallo;
     }
   }
 
@@ -242,6 +284,7 @@ export async function reprogramarVisitaAction(pedido: {
   tecnicoId: number;
   fecha: string;
   hora: string | null;
+  avisoProblemas?: AvisoProblemas | null;
 }): Promise<ResultadoAdmin> {
   const sesion = await sesionCon("visitas.reprogramar");
   if (!sesion) return { ok: false, error: "No tienes permiso para reprogramar visitas." };
@@ -262,6 +305,8 @@ export async function reprogramarVisitaAction(pedido: {
       fecha: input.fecha,
       hora: input.hora,
       usuarioId: sesion.usuario.id,
+      exigirAviso: true,
+      aviso: input.avisoProblemas,
     });
     if (!ok) return { ok: false, error: "No encontramos esa visita." };
   } catch (err) {

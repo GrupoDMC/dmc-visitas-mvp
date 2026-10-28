@@ -16,8 +16,9 @@ import { registrarPersonaLocal } from "@/lib/data/personas-local";
 import { soltarReservaEn, tomarReservaEn, traspasarTomadaEn } from "@/lib/data/reservas";
 import { textoActaEnCurso } from "@/lib/reserva";
 import type { EstadoProblema, EstadoVisita, OrigenRegistro, Visita } from "@/lib/types";
-import type { DatosVisita } from "@/lib/contratos/visitas";
+import type { AvisoProblemas, DatosVisita } from "@/lib/contratos/visitas";
 import { MOTIVO_PENDIENTE, TOMADA_POR, getVisitaCompleta } from "@/lib/data/visitas-lectura";
+import { registrarAvisoEn, soltarAgendadosEn, vincularEn } from "@/lib/data/avisos-problema";
 
 // Visitas: los cambios de estado, el alta, la corrección, la reprogramación
 // y los problemas que cambia coordinación.
@@ -215,6 +216,8 @@ export async function cambiarEstadoVisita(input: {
     }
 
     await marcarEstado(id, input.estado, input.motivo, input.origen, input.usuarioId ?? null, ej);
+    // Cancelada en la tienda, ya no va a resolver nada: lo que esperaba por ella vuelve a abierto.
+    if (input.estado === "CANCELADA") await soltarAgendadosEn(ej, id, input.folio, input.usuarioId ?? null);
   });
   return true;
 }
@@ -285,6 +288,7 @@ export async function cancelarVisitaPorAdmin(input: {
       [["id", sql.BigInt, id]]
     );
 
+    await soltarAgendadosEn(ej, id, input.folio, input.usuarioId);
     return null;
   });
 }
@@ -336,6 +340,7 @@ export async function eliminarVisita(input: {
         ["usuario", sql.BigInt, input.usuarioId],
       ]
     );
+    await soltarAgendadosEn(ej, id, input.folio, input.usuarioId);
     return null;
   });
 }
@@ -379,9 +384,32 @@ async function marcarEstado(
   );
 }
 
-/** "Nueva visita" del panel y "Agregar visita" del celular. Nace PROGRAMADA. */
-export async function crearVisita(datos: DatosVisita, creadaPor: number | null): Promise<Visita> {
-  const { id, folio, cargo } = await enTransaccion((ej) => crearVisitaEn(ej, datos, creadaPor));
+/**
+ * "Nueva visita" del panel y la ruta masiva. Nace PROGRAMADA.
+ *
+ * `exigirAviso`: si la sucursal tiene problemas sin resolver, la visita no se
+ * crea sin la respuesta al aviso (ver lib/data/avisos-problema). Lanza
+ * ErrorDeAviso si falta o no sirve.
+ */
+export async function crearVisita(
+  datos: DatosVisita,
+  creadaPor: number | null,
+  opciones: { exigirAviso?: boolean } = {}
+): Promise<Visita> {
+  const { id, folio, cargo } = await enTransaccion(async (ej) => {
+    const nueva = await crearVisitaEn(ej, datos, creadaPor);
+    if (opciones.exigirAviso) {
+      await registrarAvisoEn(ej, {
+        visitaId: nueva.id,
+        folio: nueva.folio,
+        sucursalId: datos.sucursalId,
+        ocasion: "AGENDAR",
+        aviso: datos.avisoProblemas,
+        usuarioId: creadaPor,
+      });
+    }
+    return nueva;
+  });
   return visitaCreada(id, folio, datos, cargo);
 }
 
@@ -438,20 +466,10 @@ async function crearVisitaEn(
 
   const id = num(fila.id);
 
-  // La visita que nace de un problema queda enlazada: así el panel muestra el
-  // problema como "agendado" y no lo vuelve a ofrecer.
+  // La visita que nace de un problema queda enlazada y el problema pasa a
+  // AGENDADO: así el panel lo muestra agendado y el acta pregunta si se resolvió.
   if (datos.problemaOrigenId) {
-    await ej.ejecutar(
-      `IF NOT EXISTS (SELECT 1 FROM dmc.problema_visita_resolucion
-                       WHERE problema_id = @problema AND visita_id = @visita)
-         INSERT INTO dmc.problema_visita_resolucion (problema_id, visita_id, agendado_por)
-         VALUES (@problema, @visita, @usuario)`,
-      [
-        ["problema", sql.BigInt, datos.problemaOrigenId],
-        ["visita", sql.BigInt, id],
-        ["usuario", sql.BigInt, creadaPor],
-      ]
-    );
+    await vincularEn(ej, datos.problemaOrigenId, id, fila.folio, creadaPor);
   }
 
   await sincronizarMotivos(ej, id, "PLAN", motivosDe(datos));
@@ -623,17 +641,21 @@ export async function reprogramarVisita(
     fecha: string;
     hora: string | null;
     usuarioId: number | null;
+    /** Como en crearVisita: sin respuesta al aviso no se reprograma (lanza ErrorDeAviso). */
+    exigirAviso?: boolean;
+    aviso?: AvisoProblemas | null;
   },
   // Dentro de una transacción ajena (ver modificarVisita) todo se lee y escribe por ella.
   ejAjeno?: Ejecutor
 ): Promise<boolean> {
   const [visita] = await (ejAjeno ?? ejecutorSuelto).consulta<{
     id: number;
+    sucursal_id: number;
     fecha: string;
     hora: string | null;
     motivo: string | null;
   }>(
-    `SELECT v.id, ${F_FECHA("v.fecha_programada")} AS fecha, ${F_HORA("v.hora_programada")} AS hora,
+    `SELECT v.id, v.sucursal_id, ${F_FECHA("v.fecha_programada")} AS fecha, ${F_HORA("v.hora_programada")} AS hora,
             ${MOTIVO_PENDIENTE} AS motivo
        FROM dmc.visita v WHERE v.folio = @folio AND v.activo = 1`,
     [["folio", sql.VarChar(16), input.folio]]
@@ -674,6 +696,17 @@ export async function reprogramarVisita(
     );
 
     await marcarEstado(id, "PROGRAMADA", "Reprogramada desde coordinación.", "WEB", input.usuarioId, ej);
+
+    if (input.exigirAviso) {
+      await registrarAvisoEn(ej, {
+        visitaId: id,
+        folio: input.folio,
+        sucursalId: num(visita.sucursal_id),
+        ocasion: "REAGENDAR",
+        aviso: input.aviso,
+        usuarioId: input.usuarioId,
+      });
+    }
   });
   return true;
 }

@@ -40,6 +40,12 @@ export interface ProblemaActa {
   items: SubtrabajoActa[];
 }
 
+/** «¿Quedó solucionado?» sobre un problema que la visita venía a resolver. */
+export interface ResolucionActa {
+  problemaId: number;
+  resuelto: boolean;
+}
+
 export interface FotoActa {
   /** data:image/jpeg;base64,… tal como sale del canvas de la cámara. */
   dataUrl: string;
@@ -63,6 +69,12 @@ export interface ActaEntrada {
   internosCodigos?: string[];
   trabajos: TrabajoActa[];
   problemas: ProblemaActa[];
+  /**
+   * Una por cada problema que la visita venía a resolver. Sin todas, el acta
+   * no se cierra. Opcional solo para que un acta encolada antes de este campo
+   * pueda viajar: el servidor la rechaza y el técnico responde en el formulario.
+   */
+  resoluciones?: ResolucionActa[];
   fotos: FotoActa[];
   /**
    * Los clips que quedaron en el acta, en el orden en que se ven.

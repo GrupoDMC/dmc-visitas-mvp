@@ -41,6 +41,9 @@ const problemaActa = z.object({
   items: arreglo(subtrabajoActa, 200),
 });
 
+/** «¿Quedó solucionado?» sobre un problema que la visita venía a resolver. */
+const resolucionActa = z.object({ problemaId: idPositivo, resuelto: z.boolean() });
+
 export const actaEntrada = z.object({
   folio,
   responsableNombre: texto(120),
@@ -53,6 +56,7 @@ export const actaEntrada = z.object({
   internosCodigos: arreglo(codigo, 100).optional(),
   trabajos: arreglo(trabajoActa, 100),
   problemas: arreglo(problemaActa, 100),
+  resoluciones: arreglo(resolucionActa, 100).optional(),
   fotos: arreglo(fotoActa, 60),
   videosIds: arreglo(idPositivo, 30).optional(),
   videosInternosIds: arreglo(idPositivo, 30).optional(),

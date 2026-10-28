@@ -40,6 +40,13 @@ export const trabajoActa = z.object({
   subtrabajos: arreglo(subtrabajoActa, 200),
 });
 
+/** La respuesta al aviso de problemas sin resolver de la sucursal. */
+export const avisoProblemas = z.object({
+  respuesta: z.enum(["RESUELVE", "OTRA_COSA"]),
+  avisados: arreglo(idPositivo, 200),
+  elegidos: arreglo(idPositivo, 200),
+});
+
 /** Los datos con que se agenda o se corrige una visita (DatosVisita). */
 export const datosVisita = z.object({
   clienteId: idObligatorio,
@@ -59,6 +66,7 @@ export const datosVisita = z.object({
   responsableCargo: texto(80).nullable().optional(),
   problemaOrigenId: idPositivo.nullable().optional(),
   creadaEnTerreno: z.boolean().optional(),
+  avisoProblemas: avisoProblemas.nullable().optional(),
 });
 
 /** Una ruta: tantos locales como una jornada pueda llevar. */
@@ -71,7 +79,11 @@ export const entradaReprogramar = z.object({
   tecnicoId: idPositivo,
   fecha: fechaISO,
   hora: hora.nullable(),
+  avisoProblemas: avisoProblemas.nullable().optional(),
 });
+
+/** Qué sucursal mira el aviso; con folio, sin los problemas ya vinculados a esa visita. */
+export const entradaProblemasSinResolver = z.object({ sucursalId: idPositivo, folio: folio.optional() });
 
 export const entradaCancelarAdmin = z.object({ folio, motivo: textoLibre });
 

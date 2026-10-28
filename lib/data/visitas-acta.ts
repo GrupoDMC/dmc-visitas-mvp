@@ -15,6 +15,7 @@ import { decodificarImagen } from "@/lib/imagen";
 import { cargoDelChecklist } from "@/lib/data/catalogos";
 import { motivoParaNoCerrar } from "@/lib/validacion/reglas-acta";
 import { soltarReservaEn, tomarReservaEn, traspasarTomadaEn } from "@/lib/data/reservas";
+import { prepararResolucionesEn } from "@/lib/data/avisos-problema";
 import { CERRADA_POR_OTRO, textoActaEnCurso } from "@/lib/reserva";
 import type { EstadoVisita } from "@/lib/types";
 import type { ActaEntrada, ProblemaActa, ResultadoActa, SubtrabajoActa, TrabajoActa } from "@/lib/contratos/acta";
@@ -158,6 +159,10 @@ export async function guardarActa(
       }
       return { ok: false, error: noEsSuya };
     }
+    // Los problemas que la visita venía a resolver: cada uno necesita su
+    // «¿quedó solucionado?». Se revisa antes de escribir nada del acta.
+    const resoluciones = await prepararResolucionesEn(ej, id, entrada.resoluciones);
+    if ("error" in resoluciones) return { ok: false, error: resoluciones.error };
     const reserva = await tomarReservaEn(ej, id, ctx);
     if (!reserva.ok) {
       if (reserva.motivo === "ajena") {
@@ -246,6 +251,9 @@ export async function guardarActa(
     for (const [i, pr] of entrada.problemas.entries()) {
       await insertarProblema(ej, id, pr, i + 1);
     }
+
+    // 4b · Los que venía a resolver: RESUELTO si quedó solucionado, ABIERTO si no.
+    await resoluciones.aplicar(entrada.folio, ctx.usuarioId);
 
     // 5 · Fotos. Las anteriores no se borran: se dejan inactivas.
     await ej.ejecutar(`UPDATE dmc.visita_foto SET activo = 0 WHERE visita_id = @id AND activo = 1`, [
