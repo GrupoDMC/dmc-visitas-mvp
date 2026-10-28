@@ -7,6 +7,8 @@ import SelectBuscable from "@/components/ui/SelectBuscable";
 import SelectConAlta from "@/components/ui/SelectConAlta";
 import SeccionPlegable from "@/components/ui/SeccionPlegable";
 import { crearVisitaTecnicoAction } from "@/app/actions/visitas";
+import { SelectorAdjuntos } from "@/components/ui/AdjuntosTrabajo";
+import { useAdjuntosPendientes } from "@/lib/ui/adjuntos";
 import { useReferencias } from "@/lib/ui/referencias";
 import { cargoVigente } from "@/lib/ui/cargos";
 import { etiquetaPersona, usePersonasLocal } from "@/lib/ui/personas-local";
@@ -62,6 +64,8 @@ export default function NuevaVisitaSheet({
   const personas = usePersonasLocal(sucursalId);
   const [trabajo, setTrabajo] = useState("");
   const [guardando, setGuardando] = useState(false);
+  const [subiendo, setSubiendo] = useState<string | null>(null);
+  const adjuntos = useAdjuntosPendientes();
 
   const propias = sucursales.filter((s) => String(s.clienteId) === clienteId);
   const esInstalacion = algunoPideHora(motivos, catalogoMotivo);
@@ -98,7 +102,9 @@ export default function NuevaVisitaSheet({
     );
   };
   const companeros = referencias.tecnicos.filter((t) => t.id !== tecnicoId);
-  const listo = Boolean(clienteId && sucursalId && motivos.length > 0 && (!esInstalacion || hora));
+  const listo = Boolean(
+    clienteId && sucursalId && motivos.length > 0 && (!esInstalacion || hora) && !adjuntos.preparando
+  );
 
   async function confirmar() {
     if (!listo) {
@@ -132,11 +138,25 @@ export default function NuevaVisitaSheet({
       responsableCargo: cargo,
       trabajo,
     });
-    setGuardando(false);
 
     if (!res.ok || !res.folio) {
+      setGuardando(false);
       onError(res.error ?? "No se pudo crear la visita.");
       return;
+    }
+    // Los adjuntos se suben con la visita ya creada. Si alguno falla la visita
+    // sigue en pie: se avisa y se sigue al formulario.
+    const fallidos = await adjuntos.subirTodos(res.folio, (hechos, total) =>
+      setSubiendo(`Subiendo adjuntos ${Math.min(hechos + 1, total)} de ${total}…`)
+    );
+    setGuardando(false);
+    setSubiendo(null);
+    if (fallidos > 0) {
+      onError(
+        fallidos === 1
+          ? "La visita se creó, pero 1 adjunto no se pudo subir."
+          : `La visita se creó, pero ${fallidos} adjuntos no se pudieron subir.`
+      );
     }
     onCerrar();
     router.push(`/tecnico/visitas/${res.folio}/formulario`);
@@ -377,6 +397,14 @@ export default function NuevaVisitaSheet({
             placeholder="Ej: calibrar las 3 antenas EAS del pórtico principal"
             className={`${CAMPO} min-h-[90px] resize-y leading-[1.4]`}
           />
+          <div className="mt-2.5">
+            <SelectorAdjuntos
+              pendientes={adjuntos.pendientes}
+              onAgregar={adjuntos.agregar}
+              onQuitar={adjuntos.quitar}
+              deshabilitado={guardando}
+            />
+          </div>
         </div>
 
         <button
@@ -386,7 +414,7 @@ export default function NuevaVisitaSheet({
           className="w-full min-h-[58px] flex items-center justify-between px-4.5 border-0 font-extrabold text-base cursor-pointer text-left text-[var(--color-bg)] hover:brightness-95"
           style={{ background: listo ? "var(--color-accent)" : "#8f8b8b" }}
         >
-          <span>{guardando ? "Creando…" : "Crear e iniciar visita"}</span>
+          <span>{subiendo ?? (guardando ? "Creando…" : adjuntos.preparando ? "Preparando adjuntos…" : "Crear e iniciar visita")}</span>
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4">
             <path d="M4 12l5 5L20 6" />
           </svg>

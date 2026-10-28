@@ -19,7 +19,7 @@ export default async function VisitasPage({
   const filtros = leerFiltrosVisitas(await searchParams, { verEliminadas: esAdmin });
   const [pagina, opciones, eliminadas] = await Promise.all([
     buscarVisitas(filtros),
-    opcionesFiltroVisitas(filtros.clienteId),
+    opcionesFiltroVisitas(filtros.clienteIds),
     esAdmin ? contarVisitasEliminadas() : undefined,
   ]);
   return (

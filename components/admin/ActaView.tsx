@@ -15,6 +15,7 @@ import VisitaDialogo, {
 import VisorFotos, { useVisorFotos } from "@/components/ui/VisorFotos";
 import { Toast, useToast } from "@/components/ui/Toast";
 import { enviarActaAction } from "@/app/actions/admin";
+import { permitirEditarTecnicoAction } from "@/app/actions/ediciones";
 import EstadoProblemaTag from "@/components/EstadoProblemaTag";
 import { ESTADO_VISITA_LABEL, ESTADO_VISITA_TAG, nombreDeQuienLaTomo, textoMotivos, textoMotivosReales } from "@/lib/ui/estado";
 import { textoFechaVisita } from "@/lib/ui/fecha";
@@ -23,7 +24,9 @@ import { reloj } from "@/lib/ui/video";
 import { descargarZip, extensionDe, type ArchivoADescargar } from "@/lib/ui/descarga";
 import { resumenEdicion } from "@/lib/ui/edicion";
 import { esInformePapel } from "@/lib/ui/papel";
+import { nombreArchivoActa } from "@/lib/ui/nombre-acta";
 import type { Visita } from "@/lib/types";
+import { AdjuntosVista } from "@/components/ui/AdjuntosTrabajo";
 
 const AVISO_ESTADO: Record<string, string> = {
   PROGRAMADA: "Esta visita todavía no se ejecuta: cuando el técnico la cierre vas a ver aquí problemas, fotos y firma.",
@@ -90,6 +93,19 @@ export default function ActaView({
   const ediciones = visita.ediciones ?? [];
   // Editar el acta ya cerrada: solo con el permiso, y sin plazo.
   const editableActa = cerrada && permite("visitas.editarActa");
+  const [habilitando, setHabilitando] = useState(false);
+  async function permitirEditarTecnico() {
+    setHabilitando(true);
+    try {
+      const res = await permitirEditarTecnicoAction(visita.folio);
+      aviso(res.ok ? "El técnico puede editar el acta durante 5 minutos" : (res.error ?? "No se pudo habilitar."));
+      if (res.ok) router.refresh();
+    } catch {
+      aviso("No se pudo llegar al servidor. Inténtalo otra vez.");
+    } finally {
+      setHabilitando(false);
+    }
+  }
 
   // Lo del comentario interno va aparte: coordinación lo ve, el cliente no.
   const fotosCliente = (visita.fotos ?? []).filter((f) => !f.interno);
@@ -197,6 +213,21 @@ export default function ActaView({
               <span>Editar acta</span>
             </Link>
           ) : null}
+          {editableActa ? (
+            <button
+              type="button"
+              onClick={() => void permitirEditarTecnico()}
+              disabled={habilitando}
+              className="btn btn-secondary min-h-10 px-3.5"
+              title="El técnico podrá corregir su acta desde el celular durante 5 minutos"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                <rect x="7" y="2.5" width="10" height="19" rx="1.5" />
+                <path d="M11 18.5h2" />
+              </svg>
+              <span>{habilitando ? "Habilitando…" : "Permitir editar técnico"}</span>
+            </button>
+          ) : null}
           {reprogramable && permite("visitas.reprogramar") ? (
             <button onClick={() => setDialogo("reprogramar")} className="btn btn-primary min-h-10 px-3.5">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
@@ -239,7 +270,7 @@ export default function ActaView({
           {cerrada && !eliminada ? (
             <a
               href={`/api/visita/acta/${encodeURIComponent(visita.folio)}`}
-              download={`Acta ${visita.folio}.pdf`}
+              download={nombreArchivoActa(visita)}
               className="btn btn-secondary min-h-10 px-3.5"
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
@@ -440,6 +471,11 @@ export default function ActaView({
                 Trabajo solicitado por coordinación
               </div>
               <div className="text-base leading-[1.5] max-w-[74ch]">{visita.trabajoSolicitado}</div>
+              {visita.adjuntos?.length ? (
+                <div className="mt-3 max-w-[74ch]">
+                  <AdjuntosVista adjuntos={visita.adjuntos} />
+                </div>
+              ) : null}
               {visita.indicacionesAcceso ? (
                 <div className="text-[13px] leading-[1.5] opacity-60 mt-2.5 max-w-[74ch]">
                   Acceso: {visita.indicacionesAcceso}
@@ -1033,7 +1069,7 @@ function CorreoDialogo({
       incluido: true,
     })),
     ...(visita.firmas ?? []).map((f) => ({ label: `Firma · ${f.nombre}.png`, incluido: true })),
-    { label: `Acta ${visita.folio}.pdf`, incluido: true },
+    { label: nombreArchivoActa(visita), incluido: true },
   ]);
 
   const [guardando, setGuardando] = useState(false);

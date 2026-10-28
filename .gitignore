@@ -71,3 +71,6 @@ $RECYCLE.BIN/
 
 # Planillas de tiendas: datos internos, fuera del repo público
 sql/Tiendas/
+
+# Volcado completo de la base (1,8 GB, con datos reales): nunca al repo
+sql/Emigracion-Final.sql

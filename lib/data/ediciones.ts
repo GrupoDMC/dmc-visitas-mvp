@@ -1,8 +1,10 @@
 import "server-only";
 import { decodificarImagen } from "@/lib/imagen";
-import { enTransaccion, num, paramIds, sql, subIds } from "@/lib/data/sql";
+import { ejecutar, enTransaccion, num, paramIds, sql, subIds } from "@/lib/data/sql";
 import {
   DIAS_PARA_EDITAR,
+  editableHastaSql,
+  MINUTOS_EDICION_HABILITADA,
   escribirInternos,
   escribirTrabajos,
   getVisitaCompletaPorFolio,
@@ -403,7 +405,7 @@ export async function editarActa(entrada: EdicionActaEntrada, ctx: ContextoEdici
       // lectura y este momento: el estado, el plazo y si alguien editó antes.
       const [fila] = await ej.consulta<{ estado: EstadoVisita; en_plazo: boolean | null; ediciones: number }>(
         `SELECT v.estado,
-                (SELECT CAST(CASE WHEN DATEADD(day, ${DIAS_PARA_EDITAR}, e.hora_termino) >= SYSDATETIME()
+                (SELECT CAST(CASE WHEN ${editableHastaSql("e")} >= SYSDATETIME()
                                   THEN 1 ELSE 0 END AS bit)
                    FROM dmc.visita_ejecucion e WHERE e.visita_id = v.id) AS en_plazo,
                 (SELECT COUNT(*) FROM dmc.visita_edicion x WHERE x.visita_id = v.id) AS ediciones
@@ -415,6 +417,11 @@ export async function editarActa(entrada: EdicionActaEntrada, ctx: ContextoEdici
       }
       if (!ctx.sinPlazo && !fila.en_plazo) throw new EdicionRechazada(PLAZO_VENCIDO);
       if (num(fila.ediciones) !== entrada.edicionesVistas) throw new EdicionRechazada(EDITADA_POR_OTRO);
+
+      // La habilitación de coordinación sirve para una sola corrección.
+      if (!ctx.sinPlazo) {
+        await ej.ejecutar(`UPDATE dmc.visita_ejecucion SET edicion_tecnico_hasta = NULL WHERE visita_id = @id`, p());
+      }
 
       // Un problema que coordinación ya gestionó no se quita del acta: se
       // perdería su historial y la visita agendada para resolverlo.
@@ -577,4 +584,20 @@ export async function editarActa(entrada: EdicionActaEntrada, ctx: ContextoEdici
     if (err instanceof EdicionRechazada) return { ok: false, error: err.message };
     throw err;
   }
+}
+
+/**
+ * Coordinación le abre la edición al técnico por unos minutos, aunque ya pasara
+ * el plazo de un día. La hora de término la fija la base con su propio reloj.
+ * Devuelve false si la visita no tiene acta cerrada.
+ */
+export async function habilitarEdicionTecnico(folio: string): Promise<boolean> {
+  const filas = await ejecutar(
+    `UPDATE e SET edicion_tecnico_hasta = DATEADD(minute, ${MINUTOS_EDICION_HABILITADA}, SYSDATETIME())
+       FROM dmc.visita_ejecucion e
+       JOIN dmc.visita v ON v.id = e.visita_id
+      WHERE v.folio = @folio AND v.activo = 1 AND v.estado = 'COMPLETADA'`,
+    [["folio", sql.VarChar(16), folio]]
+  );
+  return filas > 0;
 }

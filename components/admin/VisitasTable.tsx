@@ -16,6 +16,9 @@ import { textoFechaVisita } from "@/lib/ui/fecha";
 import {
   ELIMINADAS,
   ESTADOS_FILTRO,
+  LIMITES,
+  lunesDe,
+  rangoSemana,
   SIN_FILTROS,
   urlFiltrosVisitas,
   type FiltrosVisitas,
@@ -97,7 +100,7 @@ export default function VisitasTable({
       ]
     : [];
   // Las eliminadas solo se miran: sobre ellas no hay nada que marcar.
-  const verEliminadas = f.estado === ELIMINADAS;
+  const verEliminadas = f.estados.includes(ELIMINADAS);
   const conCasillas = seleccionando && !verEliminadas;
   const esMarcada = (folio: string) => marcadas.some((m) => m.folio === folio);
   // Las de la página a la vista van con lo que acaba de traer el servidor.
@@ -168,7 +171,7 @@ export default function VisitasTable({
     setMarcadas([]);
   }
 
-  const { clientes, tiendas, malls } = opciones;
+  const { clientes, tiendas, malls, regiones } = opciones;
 
   const todasMarcadas = visitas.length > 0 && visitas.every((v) => esMarcada(v.folio));
 
@@ -184,22 +187,37 @@ export default function VisitasTable({
 
   // La fecha con margen de días ("desde → hasta") necesita el doble de ancho.
   const hayMargen = visitas.some((v) => v.fechaHasta);
-  const mostrarMotivo = conMotivoTecnico || f.estado === "REAGENDADA" || f.estado === "PENDIENTE";
+  const mostrarMotivo = conMotivoTecnico || f.estados.includes("REAGENDADA") || f.estados.includes("PENDIENTE");
+  const sinEste = (lista: string[], v: string) => lista.filter((x) => x !== v);
 
   const chips: ChipFiltro[] = [];
-  if (f.estado !== "TODAS") {
+  for (const e of f.estados) {
     chips.push({
-      label: f.estado === ELIMINADAS ? "Eliminadas" : `Estado: ${ESTADO_VISITA_LABEL[f.estado as EstadoVisita]}`,
-      onQuitar: () => setF(() => ({ estado: "TODAS" })),
+      label: e === ELIMINADAS ? "Eliminadas" : `Estado: ${ESTADO_VISITA_LABEL[e as EstadoVisita]}`,
+      onQuitar: () => setF((p) => ({ estados: sinEste(p.estados, e) })),
     });
   }
-  if (f.clienteId) {
-    const c = clientes.find(([id]) => String(id) === f.clienteId);
-    chips.push({ label: `Cliente: ${c?.[1] ?? ""}`, onQuitar: () => setF(() => ({ clienteId: "", sucursalId: "" })) });
+  for (const cid of f.clienteIds) {
+    const c = clientes.find(([id]) => String(id) === cid);
+    chips.push({
+      label: `Cliente: ${c?.[1] ?? ""}`,
+      // Sin ese cliente las tiendas elegidas pueden dejar de corresponder: se limpian.
+      onQuitar: () => setF((p) => ({ clienteIds: sinEste(p.clienteIds, cid), sucursalIds: [] })),
+    });
   }
-  if (f.clienteId && f.sucursalId) {
-    const t = tiendas.find(([id]) => String(id) === f.sucursalId);
-    chips.push({ label: `Tienda: ${t?.[1] ?? ""}`, onQuitar: () => setF(() => ({ sucursalId: "" })) });
+  for (const sid of f.sucursalIds) {
+    const t = tiendas.find(([id]) => String(id) === sid);
+    chips.push({ label: `Tienda: ${t?.[1] ?? ""}`, onQuitar: () => setF((p) => ({ sucursalIds: sinEste(p.sucursalIds, sid) })) });
+  }
+  for (const r of f.regiones) {
+    chips.push({ label: `Zona: ${r}`, onQuitar: () => setF((p) => ({ regiones: sinEste(p.regiones, r) })) });
+  }
+  if (f.semana) {
+    const s = rangoSemana(f.semana);
+    chips.push({
+      label: `Semana: ${textoDiaMes(s.desde)} – ${textoDiaMes(s.hasta)}`,
+      onQuitar: () => setF(() => ({ semana: "" })),
+    });
   }
   if (f.mallId) {
     const m = malls.find(([id]) => String(id) === f.mallId);
@@ -211,7 +229,7 @@ export default function VisitasTable({
     const t = tecnicos.find((x) => String(x.id) === f.tecnicoId);
     chips.push({ label: `Técnico: ${t?.nombreCompleto ?? ""}`, onQuitar: () => setF(() => ({ tecnicoId: "" })) });
   }
-  if (f.tipo && !f.clienteId) {
+  if (f.tipo && !f.clienteIds.length) {
     const t = catalogoProblema.find((x) => x.codigo === f.tipo);
     chips.push({ label: `Falla: ${t?.nombre ?? f.tipo}`, onQuitar: () => setF(() => ({ tipo: "" })) });
   }
@@ -267,41 +285,89 @@ export default function VisitasTable({
           onBusqueda={setBusqueda}
           conteo={`${pagina.total} ${pagina.total === 1 ? "registro" : "registros"}`}
           chips={chips}
+          // Limpiar filtros no toca cuántas visitas se ven por página.
           onLimpiar={() => {
             setBusqueda("");
-            ir(SIN_FILTROS);
+            ir({ ...SIN_FILTROS, limite: f.limite });
           }}
+          acciones={
+            <label className="flex items-center gap-2 text-[11px] tracking-[.08em] uppercase opacity-80">
+              <span>Mostrar</span>
+              <select
+                value={f.limite}
+                onChange={(e) => ir({ limite: Number(e.target.value) })}
+                aria-label="Visitas por página"
+                className="input w-auto min-h-9 py-1 pr-2 tabular-nums"
+              >
+                {LIMITES.map((n) => (
+                  <option key={n} value={n}>
+                    {n}
+                  </option>
+                ))}
+              </select>
+            </label>
+          }
           campos={[
             {
               id: "fv-estado",
               label: "Estado de la visita",
-              valor: f.estado,
+              tipo: "multi",
+              textoVacio: "Todos los estados",
+              valor: "",
+              valores: f.estados,
               opciones: [
-                { v: "TODAS", t: "Todos los estados" },
                 ...ESTADOS_FILTRO.map((e) => ({ v: e, t: ESTADO_VISITA_LABEL[e] })),
                 ...(eliminadas !== undefined ? [{ v: ELIMINADAS, t: `Eliminadas (${eliminadas})` }] : []),
               ],
-              onChange: (v) => setF(() => ({ estado: v })),
+              onChange: () => {},
+              // Las eliminadas se miran solas: marcarlas desmarca el resto, y al revés.
+              onChangeMulti: (v) =>
+                setF((p) => ({
+                  estados: !v.includes(ELIMINADAS)
+                    ? v
+                    : p.estados.includes(ELIMINADAS)
+                      ? sinEste(v, ELIMINADAS)
+                      : [ELIMINADAS],
+                })),
             },
             {
               id: "fv-cliente",
               label: "Cliente",
-              valor: f.clienteId,
-              opciones: [{ v: "", t: "Todos los clientes" }, ...clientes.map(([id, n]) => ({ v: String(id), t: n }))],
-              // Con un cliente elegido el tipo de falla deja de aplicar: se limpia.
-              onChange: (v) => setF((p) => ({ clienteId: v, sucursalId: "", tipo: v ? "" : p.tipo })),
+              tipo: "multi",
+              textoVacio: "Todos los clientes",
+              valor: "",
+              valores: f.clienteIds,
+              opciones: clientes.map(([id, n]) => ({ v: String(id), t: n })),
+              onChange: () => {},
+              // Con algún cliente elegido el tipo de falla deja de aplicar: se limpia.
+              onChangeMulti: (v) => setF((p) => ({ clienteIds: v, sucursalIds: [], tipo: v.length ? "" : p.tipo })),
             },
-            ...(f.clienteId
+            ...(f.clienteIds.length
               ? [
                   {
                     id: "fv-tienda",
-                    label: "Tienda",
-                    valor: f.sucursalId,
-                    opciones: [{ v: "", t: "Todas las tiendas" }, ...tiendas.map(([id, n]) => ({ v: String(id), t: n }))],
-                    onChange: (v: string) => setF(() => ({ sucursalId: v })),
+                    label: "Sucursal",
+                    tipo: "multi" as const,
+                    textoVacio: "Todas las sucursales",
+                    valor: "",
+                    valores: f.sucursalIds,
+                    opciones: tiendas.map(([id, n]) => ({ v: String(id), t: n })),
+                    onChange: () => {},
+                    onChangeMulti: (v: string[]) => setF(() => ({ sucursalIds: v })),
                   },
                 ]
               : []),
+            {
+              id: "fv-region",
+              label: "Zona (región)",
+              tipo: "multi",
+              textoVacio: "Todas las zonas",
+              valor: "",
+              valores: f.regiones,
+              opciones: regiones.map((r) => ({ v: r, t: r })),
+              onChange: () => {},
+              onChangeMulti: (v) => setF(() => ({ regiones: v })),
+            },
             {
               id: "fv-mall",
               label: "Mall",
@@ -326,6 +392,15 @@ export default function VisitasTable({
               onChange: (v) => setF(() => ({ hasta: v })),
             },
             {
+              id: "fv-semana",
+              label: "Semana (elige cualquier día)",
+              tipo: "fecha",
+              // La semana es de lunes a domingo: el selector queda en su lunes.
+              valor: f.semana,
+              opciones: [],
+              onChange: (v) => setF(() => ({ semana: lunesDe(v) })),
+            },
+            {
               id: "fv-tecnico",
               label: "Técnico",
               valor: f.tecnicoId,
@@ -335,7 +410,7 @@ export default function VisitasTable({
               ],
               onChange: (v) => setF(() => ({ tecnicoId: v })),
             },
-            ...(f.clienteId
+            ...(f.clienteIds.length
               ? []
               : [
             {
@@ -592,6 +667,9 @@ export default function VisitasTable({
     </>
   );
 }
+
+/** «2026-10-26» como «26/10». */
+const textoDiaMes = (dia: string) => `${dia.slice(8, 10)}/${dia.slice(5, 7)}`;
 
 /** Anterior, «Página n de m» y siguiente, bajo la tabla. */
 function Paginas({

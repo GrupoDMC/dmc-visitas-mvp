@@ -231,15 +231,34 @@ export function Fotos({
   fotos,
   onQuitar,
   onAgregar,
+  onPegar,
+  onCopiar,
+  copiarA,
 }: {
   titulo: string;
   fotos: FotoForm[];
   onQuitar: (id: number) => void;
   onAgregar: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  /** «Pegar imagen»: trae lo que haya en el portapapeles. */
+  onPegar: () => void;
+  /** Copia la foto a la otra lista. */
+  onCopiar: (id: number) => void;
+  /** A qué lista va la copia: «el trabajo realizado» o «el comentario interno». */
+  copiarA: string;
 }) {
   return (
     <div>
-      <Subtitulo texto={titulo} cuenta={fotos.length} />
+      <div className="flex items-start gap-3">
+        <Subtitulo texto={titulo} cuenta={fotos.length} />
+        <button
+          type="button"
+          onClick={onPegar}
+          title="Pega la imagen que tengas copiada (también funciona Ctrl+V sobre esta sección)"
+          className="ml-auto -mt-1.5 px-2.5 min-h-8 bg-transparent border border-[var(--color-divider)] cursor-pointer text-[11px] font-extrabold uppercase tracking-[.07em] text-[var(--color-text)] hover:bg-black/[.05]"
+        >
+          Pegar imagen
+        </button>
+      </div>
       <div className="grid grid-cols-3 sm:grid-cols-5 gap-2.5">
         {fotos.map((f) => (
           <div
@@ -254,6 +273,18 @@ export function Fotos({
                 Nueva
               </span>
             ) : null}
+            <button
+              type="button"
+              onClick={() => onCopiar(f.id)}
+              aria-label={`Copiar la foto a ${copiarA}`}
+              title={`Copiar a ${copiarA}`}
+              className="absolute top-1.5 left-1.5 w-7 h-7 grid place-items-center bg-[rgba(32,30,29,.78)] text-white border-0 cursor-pointer opacity-80 group-hover:opacity-100 hover:bg-[var(--color-accent)] focus-visible:opacity-100"
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4">
+                <rect x="8" y="8" width="12" height="12" />
+                <path d="M16 8V4H4v12h4" />
+              </svg>
+            </button>
             <button
               type="button"
               onClick={() => onQuitar(f.id)}

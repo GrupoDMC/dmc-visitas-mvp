@@ -1,6 +1,6 @@
 import "server-only";
 import { consultaCon, ejecutar, num, numONull, sql } from "@/lib/data/sql";
-import { DIAS_PARA_EDITAR, TOMADA_POR } from "@/lib/data/visitas";
+import { editableHastaSql, TOMADA_POR } from "@/lib/data/visitas";
 import type { EstadoVisita } from "@/lib/types";
 
 /**
@@ -100,7 +100,7 @@ export async function getVisitaParaVideo(folio: string): Promise<VisitaParaVideo
     editable: boolean | null;
   }>(
     `SELECT v.id, v.estado, v.tecnico_id, v.tecnico_ayudante_id, ${TOMADA_POR} AS tomada_por,
-            (SELECT CAST(CASE WHEN DATEADD(day, ${DIAS_PARA_EDITAR}, e.hora_termino) >= SYSDATETIME()
+            (SELECT CAST(CASE WHEN ${editableHastaSql("e")} >= SYSDATETIME()
                               THEN 1 ELSE 0 END AS bit)
                FROM dmc.visita_ejecucion e WHERE e.visita_id = v.id) AS editable
        FROM dmc.visita v WHERE v.folio = @folio AND v.activo = 1`,

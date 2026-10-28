@@ -5,12 +5,13 @@ import { cancelarVisitasVencidas } from "@/lib/data/vencimiento";
 import {
   ELIMINADAS,
   patronBusqueda,
-  POR_PAGINA,
+  rangoSemana,
   type FiltrosVisitas,
   type OpcionesFiltroVisitas,
   type PaginaVisitas,
 } from "@/lib/ui/filtros-visitas";
 import { ESTADO_PROBLEMA_CIERRE } from "@/lib/ui/estado";
+import { REGIONES } from "@/lib/ui/regiones";
 import type { FilaFicha } from "@/lib/types";
 
 // Listas de visitas del panel: la tabla de Visitas, filtrada y paginada en el
@@ -32,14 +33,22 @@ interface Condiciones {
   conNombres: boolean;
 }
 
+/** `columna IN (@pref0, @pref1, …)` con un parámetro por valor. */
+function enLista(columna: string, pref: string, tipo: Parametro[1], valores: (string | number)[], params: Parametro[]) {
+  const nombres = valores.map((v, i) => {
+    params.push([`${pref}${i}`, tipo, v]);
+    return `@${pref}${i}`;
+  });
+  return `${columna} IN (${nombres.join(", ")})`;
+}
+
 function condiciones(f: FiltrosVisitas): Condiciones {
-  const eliminadas = f.estado === ELIMINADAS;
+  const eliminadas = f.estados.includes(ELIMINADAS);
   const partes = [`v.activo = ${eliminadas ? 0 : 1}`];
   const params: Parametro[] = [];
 
-  if (!eliminadas && f.estado !== "TODAS") {
-    partes.push("v.estado = @estado");
-    params.push(["estado", sql.VarChar(20), f.estado]);
+  if (!eliminadas && f.estados.length) {
+    partes.push(enLista("v.estado", "estado", sql.VarChar(20), f.estados, params));
   }
   if (f.desde) {
     partes.push("v.fecha_programada >= @desde");
@@ -49,13 +58,22 @@ function condiciones(f: FiltrosVisitas): Condiciones {
     partes.push("v.fecha_programada <= @hasta");
     params.push(["hasta", sql.Date, f.hasta]);
   }
-  if (f.clienteId) {
-    partes.push("v.cliente_id = @cliente");
-    params.push(["cliente", sql.BigInt, Number(f.clienteId)]);
-    if (f.sucursalId) {
-      partes.push("v.sucursal_id = @tienda");
-      params.push(["tienda", sql.BigInt, Number(f.sucursalId)]);
+  if (f.semana) {
+    const s = rangoSemana(f.semana);
+    partes.push("v.fecha_programada BETWEEN @semDesde AND @semHasta");
+    params.push(["semDesde", sql.Date, s.desde], ["semHasta", sql.Date, s.hasta]);
+  }
+  if (f.clienteIds.length) {
+    partes.push(enLista("v.cliente_id", "cliente", sql.BigInt, f.clienteIds.map(Number), params));
+    if (f.sucursalIds.length) {
+      partes.push(enLista("v.sucursal_id", "tienda", sql.BigInt, f.sucursalIds.map(Number), params));
     }
+  }
+  // La región de hoy de la tienda, igual que el mall.
+  if (f.regiones.length) {
+    partes.push(
+      `v.sucursal_id IN (SELECT rs.id FROM dmc.sucursal rs WHERE ${enLista("rs.region", "region", sql.NVarChar(80), f.regiones, params)})`
+    );
   }
   // El mall de hoy de la tienda, no el que tenía el día de la visita.
   if (f.mallId) {
@@ -67,7 +85,7 @@ function condiciones(f: FiltrosVisitas): Condiciones {
     partes.push("(v.tecnico_id = @tecnico OR v.tecnico_ayudante_id = @tecnico)");
     params.push(["tecnico", sql.BigInt, Number(f.tecnicoId)]);
   }
-  if (f.tipo && !f.clienteId) {
+  if (f.tipo && !f.clienteIds.length) {
     partes.push("EXISTS (SELECT 1 FROM dmc.problema p WHERE p.visita_id = v.id AND p.tipo_codigo = @tipo)");
     params.push(["tipo", sql.VarChar(40), f.tipo]);
   }
@@ -108,7 +126,7 @@ export async function buscarVisitas(f: FiltrosVisitas): Promise<PaginaVisitas> {
   const c = condiciones(f);
   const [cuenta] = await consultaCon<{ n: number }>(`SELECT COUNT(*) AS n ${desde(c)} WHERE ${c.where}`, c.params);
   const total = num(cuenta?.n ?? 0);
-  const paginas = Math.max(1, Math.ceil(total / POR_PAGINA));
+  const paginas = Math.max(1, Math.ceil(total / f.limite));
   const pagina = Math.min(f.pagina, paginas);
   if (total === 0) return { visitas: [], total, pagina, paginas };
 
@@ -116,11 +134,11 @@ export async function buscarVisitas(f: FiltrosVisitas): Promise<PaginaVisitas> {
     `SELECT v.id ${desde(c)} WHERE ${c.where}
       ORDER BY ${ORDEN}
      OFFSET @salto ROWS FETCH NEXT @cuantas ROWS ONLY`,
-    [...c.params, ["salto", sql.Int, (pagina - 1) * POR_PAGINA], ["cuantas", sql.Int, POR_PAGINA]]
+    [...c.params, ["salto", sql.Int, (pagina - 1) * f.limite], ["cuantas", sql.Int, f.limite]]
   );
   const visitas = await getVisitasPorIds(
     ids.map((x) => num(x.id)),
-    { eliminadas: f.estado === ELIMINADAS }
+    { eliminadas: f.estados.includes(ELIMINADAS) }
   );
   return { visitas, total, pagina, paginas };
 }
@@ -129,18 +147,20 @@ const porNombre = (filas: { id: number; nombre: string }[]): [number, string][] 
   filas.map((x): [number, string] => [num(x.id), x.nombre]).sort((a, b) => a[1].localeCompare(b[1], "es"));
 
 /** Lo que se ofrece en los selectores de la barra de filtros. */
-export async function opcionesFiltroVisitas(clienteId: string): Promise<OpcionesFiltroVisitas> {
-  const [clientes, tiendas, malls] = await Promise.all([
+export async function opcionesFiltroVisitas(clienteIds: string[]): Promise<OpcionesFiltroVisitas> {
+  const paramsTiendas: Parametro[] = [];
+  const [clientes, tiendas, malls, regiones] = await Promise.all([
     consulta<{ id: number; nombre: string }>(
       `SELECT c.id, c.nombre_fantasia AS nombre FROM dmc.cliente c
         WHERE EXISTS (SELECT 1 FROM dmc.visita v WHERE v.cliente_id = c.id AND v.activo = 1)`
     ),
-    clienteId
+    clienteIds.length
       ? consultaCon<{ id: number; nombre: string }>(
           `SELECT s.id, s.nombre FROM dmc.sucursal s
             WHERE EXISTS (SELECT 1 FROM dmc.visita v
-                           WHERE v.sucursal_id = s.id AND v.cliente_id = @cliente AND v.activo = 1)`,
-          [["cliente", sql.BigInt, Number(clienteId)]]
+                           WHERE v.sucursal_id = s.id AND v.activo = 1
+                             AND ${enLista("v.cliente_id", "cliente", sql.BigInt, clienteIds.map(Number), paramsTiendas)})`,
+          paramsTiendas
         )
       : Promise.resolve([]),
     consulta<{ id: number; nombre: string }>(
@@ -148,8 +168,21 @@ export async function opcionesFiltroVisitas(clienteId: string): Promise<Opciones
         WHERE EXISTS (SELECT 1 FROM dmc.sucursal s JOIN dmc.visita v ON v.sucursal_id = s.id
                        WHERE s.mall_id = m.id AND v.activo = 1)`
     ),
+    consulta<{ region: string }>(
+      `SELECT DISTINCT s.region FROM dmc.sucursal s
+        WHERE s.region <> N'' AND EXISTS (SELECT 1 FROM dmc.visita v WHERE v.sucursal_id = s.id AND v.activo = 1)`
+    ),
   ]);
-  return { clientes: porNombre(clientes), tiendas: porNombre(tiendas), malls: porNombre(malls) };
+  // De norte a sur, como las lista REGIONES; lo que no esté ahí, al final.
+  const lugar = (r: string) => (REGIONES.includes(r) ? REGIONES.indexOf(r) : REGIONES.length);
+  return {
+    clientes: porNombre(clientes),
+    tiendas: porNombre(tiendas),
+    malls: porNombre(malls),
+    regiones: regiones
+      .map((x) => x.region)
+      .sort((a, b) => lugar(a) - lugar(b) || a.localeCompare(b, "es")),
+  };
 }
 
 /** Cuántas visitas eliminadas hay. Solo para el administrador. */

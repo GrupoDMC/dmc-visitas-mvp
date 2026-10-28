@@ -6,7 +6,7 @@
 // constante en el mismo commit.
 
 /** La versión que este código necesita. */
-export const VERSION_ESQUEMA = 26;
+export const VERSION_ESQUEMA = 28;
 
 /** La versión aplicada en la base: la mayor registrada. Para una consulta. */
 export const SQL_VERSION_ESQUEMA = `(SELECT MAX(version) FROM dmc.schema_version)`;

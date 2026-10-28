@@ -358,6 +358,19 @@ export interface VisitaVideo {
   grabadoEn: string | null;
 }
 
+/** Foto o video que explica el trabajo a realizar (dmc.visita_adjunto). No es evidencia del acta. */
+export interface AdjuntoTrabajo {
+  id: number;
+  visitaId: number;
+  tipo: "FOTO" | "VIDEO";
+  nombre: string | null;
+  mime: string;
+  bytes: number;
+  duracionSeg: number | null;
+  /** Ruta interna: /api/visita/adjunto/<id>. */
+  url: string;
+}
+
 export interface VisitaFirma {
   id: number;
   visitaId: number;
@@ -444,6 +457,8 @@ export interface Visita {
   problemas?: Problema[];
   fotos?: VisitaFoto[];
   videos?: VisitaVideo[];
+  /** Fotos y videos que explican el trabajo a realizar. */
+  adjuntos?: AdjuntoTrabajo[];
   firmas?: VisitaFirma[];
   /** Lo marcado del checklist del comentario interno, con su nombre. */
   internos?: { codigo: string; nombre: string }[];

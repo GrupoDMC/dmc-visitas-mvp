@@ -10,6 +10,7 @@ import { ESTADO_VISITA_LABEL, ESTADO_VISITA_TAG, nombreDeQuienLaTomo, textoMotiv
 import ActaEnCurso from "@/components/mobile/ActaEnCurso";
 import { minutosDelPlazo, type ReservaAjena } from "@/lib/reserva";
 import ActaConservada from "@/components/mobile/ActaConservada";
+import { AdjuntosVista } from "@/components/ui/AdjuntosTrabajo";
 import { puede, useReferencias } from "@/lib/ui/referencias";
 import { hayDireccion, urlMapa, urlTel } from "@/lib/ui/formato";
 import type { HistorialVista } from "@/lib/contratos/panel";
@@ -251,6 +252,11 @@ export default function DetalleVisita({
           <div className="mt-4 px-4 pt-4 pb-4.5 bg-[var(--color-surface)] border-l-4 border-[var(--color-text)]">
             <div className="font-extrabold text-[13px] tracking-[.1em] uppercase mb-2.5">Qué hay que hacer</div>
             <div className="text-base leading-[1.55]">{visita.trabajoSolicitado}</div>
+            {visita.adjuntos?.length ? (
+              <div className="mt-3">
+                <AdjuntosVista adjuntos={visita.adjuntos} />
+              </div>
+            ) : null}
           </div>
         ) : null}
 

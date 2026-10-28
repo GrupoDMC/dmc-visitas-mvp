@@ -22,6 +22,9 @@ import { hoyISO } from "@/lib/ui/fecha";
 import { algunoPideHora } from "@/lib/ui/motivos";
 import { cargoVigente } from "@/lib/ui/cargos";
 import { etiquetaPersona, usePersonasLocal } from "@/lib/ui/personas-local";
+import { AdjuntosVista, SelectorAdjuntos } from "@/components/ui/AdjuntosTrabajo";
+import { borrarAdjuntoAction } from "@/app/actions/adjuntos";
+import { useAdjuntosPendientes } from "@/lib/ui/adjuntos";
 import type { Visita } from "@/lib/types";
 
 /** Opciones de los selectores, derivadas de los maestros que baja el layout. */
@@ -201,6 +204,10 @@ export default function VisitaDialogo({
   const opc = useMemo(() => opciones(ref), [ref]);
   const [form, setForm] = useState<FormValores>(() => valoresIniciales(opc, visita, origen));
   const [guardando, setGuardando] = useState(false);
+  const adjuntos = useAdjuntosPendientes();
+  // Los ya guardados que se quitaron: se borran recién al guardar los cambios.
+  const [quitados, setQuitados] = useState<number[]>([]);
+  const guardadosVigentes = (visita?.adjuntos ?? []).filter((a) => !quitados.includes(a.id));
   const personas = usePersonasLocal(form.sucursalId ? String(form.sucursalId) : "");
 
   // Una visita puede venir por varias cosas a la vez. El primero marcado es el
@@ -365,6 +372,10 @@ export default function VisitaDialogo({
       onHecho("En instalación la hora es obligatoria.");
       return;
     }
+    if (adjuntos.preparando) {
+      onHecho("Espera a que terminen de prepararse los adjuntos.");
+      return;
+    }
     const malMargen = errorMargen(form);
     if (malMargen) {
       onHecho(malMargen);
@@ -391,19 +402,33 @@ export default function VisitaDialogo({
     };
 
     const res = visita ? await editarVisitaAction(visita.folio, datos) : await crearVisitaAction(datos);
-    setGuardando(false);
-
     if (!res.ok) {
+      setGuardando(false);
       onHecho(res.error ?? "No se pudo guardar.");
       return;
     }
+    // Con la visita ya guardada se suben los adjuntos nuevos y se quitan los
+    // que se descartaron. Si algo falla la visita queda igual: se avisa y se
+    // puede completar desde «Editar visita».
+    let fallidos = 0;
+    if (res.folio) {
+      fallidos = await adjuntos.subirTodos(res.folio);
+      for (const id of quitados) {
+        const r = await borrarAdjuntoAction(res.folio, id).catch(() => null);
+        if (!r?.ok) fallidos++;
+      }
+    }
+    setGuardando(false);
+    const aviso = fallidos
+      ? ` · ${fallidos === 1 ? "1 adjunto no se pudo guardar" : `${fallidos} adjuntos no se pudieron guardar`}: reinténtalo desde Editar visita`
+      : "";
     const tecnico = ref.tecnicos.find((t) => String(t.id) === String(form.tecnicoId))?.nombreCompleto ?? "";
     onHecho(
       visita
-        ? "Cambios guardados · el técnico los ve en la próxima sincronización"
+        ? `Cambios guardados · el técnico los ve en la próxima sincronización${aviso}`
         : origen
-          ? `Visita agendada · ${tecnico} · ${form.fecha || "sin fecha"}`
-          : `Visita ${res.folio} programada · ${tecnico}`,
+          ? `Visita agendada · ${tecnico} · ${form.fecha || "sin fecha"}${aviso}`
+          : `Visita ${res.folio} programada · ${tecnico}${aviso}`,
       res.folio
     );
     onCerrar();
@@ -435,7 +460,22 @@ export default function VisitaDialogo({
       onCerrar={onCerrar}
       onGuardar={guardar}
       guardando={guardando}
-    />
+    >
+      <div className="mt-4 flex flex-col gap-3">
+        <AdjuntosVista
+          titulo="Adjuntos del trabajo"
+          adjuntos={guardadosVigentes}
+          onQuitar={(a) => setQuitados((prev) => [...prev, a.id])}
+        />
+        <SelectorAdjuntos
+          pendientes={adjuntos.pendientes}
+          onAgregar={adjuntos.agregar}
+          onQuitar={adjuntos.quitar}
+          guardados={guardadosVigentes.length}
+          deshabilitado={guardando}
+        />
+      </div>
+    </Dialogo>
   );
 }
 

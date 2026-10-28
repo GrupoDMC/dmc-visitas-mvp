@@ -4,7 +4,9 @@ import { revalidatePath } from "next/cache";
 import { log } from "@/lib/log";
 import { getSesion, sesionCon } from "@/lib/auth";
 import { tiene } from "@/lib/permisos";
-import { editarActa, type ResultadoEdicion } from "@/lib/data/ediciones";
+import { editarActa, habilitarEdicionTecnico, type ResultadoEdicion } from "@/lib/data/ediciones";
+import { auditar } from "@/lib/data/auditoria";
+import { entradaFolio } from "@/lib/validacion/visitas";
 import type { EdicionActaEntrada } from "@/lib/contratos/acta";
 import { validar } from "@/lib/validacion/comun";
 import { edicionActaEntrada } from "@/lib/validacion/actas";
@@ -87,4 +89,22 @@ export async function editarActaAdminAction(entradaPedida: EdicionActaEntrada): 
   } catch (err) {
     return comoError(err, "editarActa (panel)");
   }
+}
+
+/** Coordinación le abre la edición al técnico por unos minutos (ver habilitarEdicionTecnico). */
+export async function permitirEditarTecnicoAction(folioPedido: string): Promise<{ ok: boolean; error?: string }> {
+  const sesion = await sesionCon("visitas.editarActa");
+  if (!sesion) return { ok: false, error: "No tienes permiso para editar un acta ya cerrada." };
+  const entrada = validar(entradaFolio, folioPedido, "permitirEditarTecnico");
+  if (!entrada.ok) return { ok: false, error: "No encontramos esa visita." };
+  try {
+    if (!(await habilitarEdicionTecnico(entrada.datos))) {
+      return { ok: false, error: "Solo se puede habilitar en un acta que ya está cerrada." };
+    }
+  } catch (err) {
+    return comoError(err, "permitirEditarTecnico");
+  }
+  await auditar(sesion, { accion: "acta.habilitar_tecnico", entidad: "visita", entidadId: entrada.datos });
+  revalidar(entrada.datos);
+  return { ok: true };
 }

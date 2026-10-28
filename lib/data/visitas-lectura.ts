@@ -13,6 +13,7 @@ import {
   type Parametro,
 } from "@/lib/data/sql";
 import { cancelarVisitasVencidas } from "@/lib/data/vencimiento";
+import { COLUMNAS_ADJUNTO, mapearAdjunto, type FilaAdjunto } from "@/lib/data/adjuntos";
 import type { EquipoVisita } from "@/lib/validacion/reglas-acta";
 import type {
   EstadoProblema,
@@ -246,7 +247,20 @@ interface FilaEjecucion {
  * así no depende del huso del servidor de la app ni del celular.
  */
 export const DIAS_PARA_EDITAR = 1;
-const EDITABLE_HASTA = `DATEADD(day, ${DIAS_PARA_EDITAR}, hora_termino)`;
+/** Cuántos minutos le abre coordinación la edición a un técnico fuera de plazo. */
+export const MINUTOS_EDICION_HABILITADA = 5;
+
+/**
+ * Hasta cuándo puede el técnico corregir el acta: un día después de cerrarla o,
+ * si coordinación le abrió la edición, hasta esa hora si es más tarde. `ejec` es
+ * el alias de dmc.visita_ejecucion en la consulta ("" si va sin alias).
+ */
+export const editableHastaSql = (ejec = "") => {
+  const c = ejec ? `${ejec}.` : "";
+  const plazo = `DATEADD(day, ${DIAS_PARA_EDITAR}, ${c}hora_termino)`;
+  return `(CASE WHEN ${c}edicion_tecnico_hasta > ${plazo} THEN ${c}edicion_tecnico_hasta ELSE ${plazo} END)`;
+};
+const EDITABLE_HASTA = editableHastaSql();
 
 interface FilaEdicion {
   id: number;
@@ -379,6 +393,7 @@ async function cargar(filtro: Filtro): Promise<Visita[]> {
     reagendas,
     internos,
     ediciones,
+    adjuntos,
   ] = await Promise.all([
       consultaCon<FilaVisita>(
         `${SELECT_VISITA} WHERE ${filtro.where} ORDER BY v.fecha_programada DESC, v.hora_programada, v.id DESC`,
@@ -475,6 +490,11 @@ async function cargar(filtro: Filtro): Promise<Visita[]> {
           WHERE e.visita_id IN (${ids}) ORDER BY e.editado_en DESC, e.id DESC`,
         p()
       ),
+      consultaCon<FilaAdjunto>(
+        `SELECT ${COLUMNAS_ADJUNTO} FROM dmc.visita_adjunto
+          WHERE visita_id IN (${ids}) AND activo = 1 AND subida_completa = 1 ORDER BY id`,
+        p()
+      ),
     ]);
 
   const subPorTrabajo = agrupar(subtrabajos, (s) => num(s.visita_trabajo_id));
@@ -483,6 +503,7 @@ async function cargar(filtro: Filtro): Promise<Visita[]> {
   const problemasPorVisita = agrupar(problemas, (x) => num(x.visita_id));
   const fotosPorVisita = agrupar(fotos, (f) => num(f.visita_id));
   const videosPorVisita = agrupar(videos, (v) => num(v.visita_id));
+  const adjuntosPorVisita = agrupar(adjuntos, (a) => num(a.visita_id));
   const firmasPorVisita = agrupar(firmas, (f) => num(f.visita_id));
   const reagendasPorVisita = agrupar(reagendas, (r) => num(r.visita_id));
   const ejecucionPorVisita = new Map(ejecuciones.map((e) => [num(e.visita_id), e]));
@@ -657,6 +678,8 @@ async function cargar(filtro: Filtro): Promise<Visita[]> {
           grabadoEn: v.grabado_en,
         })
       ),
+
+      adjuntos: (adjuntosPorVisita.get(id) ?? []).map(mapearAdjunto),
 
       firmas: (firmasPorVisita.get(id) ?? []).map(
         (f): VisitaFirma => ({

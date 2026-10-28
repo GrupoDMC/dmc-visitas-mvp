@@ -21,6 +21,9 @@ export function SeccionInterno({ fv }: { fv: EditarActaApi }) {
     subida,
     videosNuevos,
     agregarFotos,
+    pegarFotos,
+    pegarDesdePortapapeles,
+    copiarFoto,
     agregarVideo,
     cambio,
     quitarFoto,
@@ -36,7 +39,7 @@ export function SeccionInterno({ fv }: { fv: EditarActaApi }) {
         ayuda="Solo para coordinación: nada de esto sale en el acta que recibe el cliente."
         cambio={cambio("interno")}
       >
-        <div className="flex flex-col gap-5">
+        <div className="flex flex-col gap-5" onPaste={(e) => pegarFotos(e, true)}>
           {catalogoInterno.length > 0 || internos.length > 0 ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               {[
@@ -73,6 +76,9 @@ export function SeccionInterno({ fv }: { fv: EditarActaApi }) {
             fotos={fotos.filter((f) => f.interno)}
             onQuitar={quitarFoto}
             onAgregar={(e) => agregarFotos(e, true)}
+            onPegar={() => void pegarDesdePortapapeles(true)}
+            onCopiar={(id) => void copiarFoto(id, false)}
+            copiarA="el trabajo realizado"
           />
           <Videos
             titulo="Videos internos"
@@ -91,7 +97,20 @@ export function SeccionInterno({ fv }: { fv: EditarActaApi }) {
 
 /** 5 · Fotos y video del trabajo. */
 export function SeccionFotos({ fv }: { fv: EditarActaApi }) {
-  const { fotos, videos, subida, videosNuevos, agregarFotos, agregarVideo, cambio, quitarFoto, quitarVideo } = fv;
+  const {
+    fotos,
+    videos,
+    subida,
+    videosNuevos,
+    agregarFotos,
+    pegarFotos,
+    pegarDesdePortapapeles,
+    copiarFoto,
+    agregarVideo,
+    cambio,
+    quitarFoto,
+    quitarVideo,
+  } = fv;
   return (
     <>
       {/* ── 5 · Fotos y video del trabajo ── */}
@@ -102,12 +121,15 @@ export function SeccionFotos({ fv }: { fv: EditarActaApi }) {
         ayuda="Lo que quites no se borra: queda guardado e inactivo, y su número va al registro. Un video de más de 1 minuto o 720p se ajusta solo al agregarlo."
         cambio={cambio("media")}
       >
-        <div className="flex flex-col gap-5">
+        <div className="flex flex-col gap-5" onPaste={(e) => pegarFotos(e, false)}>
           <Fotos
             titulo="Fotos del trabajo"
             fotos={fotos.filter((f) => !f.interno)}
             onQuitar={quitarFoto}
             onAgregar={(e) => agregarFotos(e, false)}
+            onPegar={() => void pegarDesdePortapapeles(false)}
+            onCopiar={(id) => void copiarFoto(id, true)}
+            copiarA="el comentario interno"
           />
           <Videos
             titulo="Videos del trabajo"

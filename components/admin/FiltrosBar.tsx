@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import SelectBuscable from "@/components/ui/SelectBuscable";
+import SelectMultiple from "@/components/ui/SelectMultiple";
 
 export interface CampoFiltro {
   id: string;
@@ -9,8 +10,15 @@ export interface CampoFiltro {
   valor: string;
   opciones: { v: string; t: string }[];
   onChange: (valor: string) => void;
-  /** "fecha" pinta un selector de día en vez de la lista; `opciones` va vacío. */
-  tipo?: "fecha";
+  /**
+   * "fecha" pinta un selector de día en vez de la lista; `opciones` va vacío.
+   * "multi" deja marcar varias opciones: usa `valores` y `onChangeMulti`.
+   */
+  tipo?: "fecha" | "multi";
+  valores?: string[];
+  onChangeMulti?: (valores: string[]) => void;
+  /** Lo que se lee en un campo "multi" con nada marcado. */
+  textoVacio?: string;
 }
 
 export interface ChipFiltro {
@@ -143,6 +151,15 @@ export default function FiltrosBar({
                     value={c.valor}
                     onChange={(e) => c.onChange(e.target.value)}
                     className="input"
+                  />
+                ) : c.tipo === "multi" ? (
+                  <SelectMultiple
+                    id={c.id}
+                    valores={c.valores ?? []}
+                    opciones={c.opciones}
+                    onChange={(v) => c.onChangeMulti?.(v)}
+                    textoVacio={c.textoVacio ?? "Todos"}
+                    ariaLabel={c.label}
                   />
                 ) : c.opciones.length >= 7 ? (
                   <SelectBuscable

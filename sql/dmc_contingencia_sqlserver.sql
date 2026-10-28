@@ -487,6 +487,7 @@ CREATE TABLE dmc.visita_ejecucion (
     app_version           varchar(20)   NULL,
     registrado_offline    bit           NOT NULL CONSTRAINT df_ejec_offline DEFAULT (0),
     sincronizado_en       datetime2(0)  NULL,
+    edicion_tecnico_hasta datetime2(0)  NULL,      -- coordinación le abre la edición al técnico hasta esta hora (migración 027)
     creado_en             datetime2(0)  NOT NULL CONSTRAINT df_ejec_creado DEFAULT (SYSDATETIME()),
     actualizado_en        datetime2(0)  NOT NULL CONSTRAINT df_ejec_actualizado DEFAULT (SYSDATETIME()),
     CONSTRAINT pk_visita_ejecucion PRIMARY KEY (visita_id),
@@ -840,6 +841,40 @@ CREATE INDEX ix_video_visita ON dmc.visita_video (visita_id, orden)
     WHERE activo = 1 AND subida_completa = 1;
 -- Los clips que nunca terminaron de subir: se limpian aparte.
 CREATE INDEX ix_video_incompleto ON dmc.visita_video (subido_en) WHERE subida_completa = 0;
+GO
+
+-- Fotos y videos que explican el trabajo a realizar (migración 028). Aparte de
+-- la evidencia del acta: esto es el encargo y no sale en el PDF ni en el correo.
+-- Se suben por trozos, como el video del acta; 25 MB por archivo.
+CREATE TABLE dmc.visita_adjunto (
+    id              bigint         IDENTITY(1,1) NOT NULL,
+    visita_id       bigint         NOT NULL,
+    tipo            varchar(5)     NOT NULL,           -- FOTO | VIDEO
+    nombre          nvarchar(120)  NULL,               -- el nombre del archivo, para descargarlo
+    mime            varchar(40)    NOT NULL,
+    contenido       varbinary(max) NULL,
+    bytes           int            NOT NULL,           -- lo que declaró el navegador
+    bytes_recibidos int            NOT NULL CONSTRAINT df_adjunto_recibidos DEFAULT (0),
+    duracion_seg    smallint       NULL,
+    subida_completa bit            NOT NULL CONSTRAINT df_adjunto_completa DEFAULT (0),
+    activo          bit            NOT NULL CONSTRAINT df_adjunto_activo DEFAULT (1),
+    subido_por      bigint         NULL,
+    subido_en       datetime2(0)   NOT NULL CONSTRAINT df_adjunto_subido DEFAULT (SYSDATETIME()),
+    CONSTRAINT pk_visita_adjunto  PRIMARY KEY (id),
+    CONSTRAINT fk_adjunto_visita  FOREIGN KEY (visita_id)  REFERENCES dmc.visita  (id) ON DELETE CASCADE,
+    CONSTRAINT fk_adjunto_usuario FOREIGN KEY (subido_por) REFERENCES dmc.usuario (id),
+    CONSTRAINT ck_adjunto_tipo    CHECK (tipo IN ('FOTO','VIDEO')),
+    CONSTRAINT ck_adjunto_mime    CHECK (mime IN ('image/jpeg','image/png','image/webp',
+                                                  'video/mp4','video/webm','video/quicktime')),
+    CONSTRAINT ck_adjunto_bytes   CHECK (bytes > 0 AND bytes <= 26214400),
+    CONSTRAINT ck_adjunto_recibidos CHECK (bytes_recibidos >= 0 AND bytes_recibidos <= bytes),
+    CONSTRAINT ck_adjunto_completa  CHECK (subida_completa = 0 OR bytes_recibidos = bytes)
+);
+GO
+CREATE INDEX ix_adjunto_visita ON dmc.visita_adjunto (visita_id, id)
+    WHERE activo = 1 AND subida_completa = 1;
+-- Las subidas que nunca terminaron: se limpian aparte.
+CREATE INDEX ix_adjunto_incompleto ON dmc.visita_adjunto (subido_en) WHERE subida_completa = 0;
 GO
 
 CREATE TABLE dmc.visita_firma (
@@ -1297,9 +1332,9 @@ GO
 /* =====================================================================
    12. VERSIÓN DEL ESQUEMA
    ===================================================================== */
-/* Este archivo ya trae todo hasta la migración 026. */
+/* Este archivo ya trae todo hasta la migración 028. */
 INSERT INTO dmc.schema_version (version, descripcion)
-VALUES (26, N'Esquema base (incluye las migraciones 002 a 026)');
+VALUES (28, N'Esquema base (incluye las migraciones 002 a 028)');
 GO
 
 

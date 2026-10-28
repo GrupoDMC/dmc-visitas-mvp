@@ -8,6 +8,7 @@ import EstadoProblemaTag from "@/components/EstadoProblemaTag";
 import { textoMotivosReales } from "@/lib/ui/estado";
 import { nombreProblema, nombreTrabajo, puede, useReferencias } from "@/lib/ui/referencias";
 import { fechaHoraCorta, resumenEdicion } from "@/lib/ui/edicion";
+import { nombreArchivoActa } from "@/lib/ui/nombre-acta";
 import type { CatalogoProblema, CatalogoTrabajo, Visita } from "@/lib/types";
 
 /**
@@ -98,7 +99,7 @@ export default function ActaGuardada({
         {visita.estado === "COMPLETADA" ? (
           <a
             href={`/api/visita/acta/${encodeURIComponent(visita.folio)}`}
-            download={`Acta ${visita.folio}.pdf`}
+            download={nombreArchivoActa(visita)}
             className="w-full min-h-[50px] flex items-center justify-between px-4 mt-3.5 bg-[var(--color-accent)] text-[var(--color-bg)] font-extrabold text-sm hover:bg-[var(--color-accent-hover)]"
           >
             <span>Descargar acta en PDF</span>

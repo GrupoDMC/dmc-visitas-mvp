@@ -125,3 +125,25 @@ export const trozoVideo = z.object({
 });
 
 export const entradaVideoId = z.object({ folio, videoId: idPositivo });
+
+// ── Adjuntos del trabajo a realizar ─────────────────────────────────────────
+// Solo la forma: los límites de negocio viven en motivoRechazoAdjunto.
+
+export const datosAdjunto = z.object({
+  tipo: z.enum(["FOTO", "VIDEO"]),
+  mime: z.string().max(40),
+  bytes: z.number().int().min(0).max(2_000_000_000),
+  nombre: texto(120).nullable().optional(),
+  duracionSeg: z.number().int().min(0).max(86_400).nullable().optional(),
+});
+
+export const entradaAbrirAdjunto = z.object({ folio, datos: datosAdjunto });
+
+export const trozoAdjunto = z.object({
+  folio,
+  adjuntoId: idPositivo,
+  desde: z.number().int().min(0).max(25 * 1024 * 1024),
+  trozoBase64: z.string().min(1).max(6_000_000),
+});
+
+export const entradaAdjuntoId = z.object({ folio, adjuntoId: idPositivo });

@@ -98,7 +98,13 @@ export function useEditarActa({
   }
 
   function agregarFotos(e: React.ChangeEvent<HTMLInputElement>, interna: boolean) {
-    const archivos = Array.from(e.target.files ?? []);
+    agregarArchivos(Array.from(e.target.files ?? []), interna);
+    e.target.value = "";
+  }
+
+  /** Suma imágenes ya en mano (de un archivo o del portapapeles) a la lista de fotos. */
+  function agregarArchivos(archivos: Blob[], interna: boolean) {
+    if (!archivos.length) return;
     let id = sigId;
     setSigId((n) => n + archivos.length);
     archivos.forEach((archivo) => {
@@ -110,7 +116,64 @@ export function useEditarActa({
       };
       lector.readAsDataURL(archivo);
     });
-    e.target.value = "";
+  }
+
+  /** Ctrl+V sobre la sección: si el portapapeles trae imágenes, entran como fotos nuevas. */
+  function pegarFotos(e: React.ClipboardEvent, interna: boolean) {
+    const imagenes = Array.from(e.clipboardData.files).filter((f) => f.type.startsWith("image/"));
+    if (!imagenes.length) return;
+    e.preventDefault();
+    agregarArchivos(imagenes, interna);
+    aviso(imagenes.length === 1 ? "Imagen pegada" : `${imagenes.length} imágenes pegadas`);
+  }
+
+  /** El botón «Pegar imagen»: lee el portapapeles sin que haya que enfocar nada. */
+  async function pegarDesdePortapapeles(interna: boolean) {
+    try {
+      const items = await navigator.clipboard.read();
+      const imagenes: Blob[] = [];
+      for (const item of items) {
+        const tipo = item.types.find((t) => t.startsWith("image/"));
+        if (tipo) imagenes.push(await item.getType(tipo));
+      }
+      if (!imagenes.length) return aviso("No hay ninguna imagen copiada para pegar.");
+      agregarArchivos(imagenes, interna);
+      aviso(imagenes.length === 1 ? "Imagen pegada" : `${imagenes.length} imágenes pegadas`);
+    } catch {
+      aviso("El navegador no dejó leer el portapapeles. Haz clic en la sección y pega con Ctrl+V.");
+    }
+  }
+
+  /**
+   * Copia una foto a la otra lista (de interna a trabajo o al revés). La
+   * original se queda donde estaba: si sobra, se quita aparte. La copia entra
+   * como foto nueva y se guarda con «Guardar cambios».
+   */
+  async function copiarFoto(id: number, aInterna: boolean) {
+    const origen = fotos.find((f) => f.id === id);
+    if (!origen) return;
+    try {
+      let src = origen.src;
+      if (!src.startsWith("data:")) {
+        const res = await fetch(src);
+        if (!res.ok) throw new Error("no se pudo leer la foto");
+        const blob = await res.blob();
+        src = await new Promise<string>((ok, mal) => {
+          const lector = new FileReader();
+          lector.onload = () => ok(String(lector.result));
+          lector.onerror = () => mal(lector.error);
+          lector.readAsDataURL(blob);
+        });
+      }
+      const comprimida = await comprimirFoto(src);
+      const propio = sigId;
+      setSigId((n) => n + 1);
+      setFotos((prev) => [...prev, { id: propio, src: comprimida, interno: aInterna }]);
+      aviso(aInterna ? "Foto copiada al comentario interno" : "Foto copiada al trabajo realizado");
+    } catch (err) {
+      console.error("[dmc] no se pudo copiar la foto:", err);
+      aviso("No se pudo copiar la foto. Inténtalo otra vez.");
+    }
   }
 
   /**
@@ -371,6 +434,9 @@ export function useEditarActa({
     cambiarProblema,
     quitarMotivo,
     agregarFotos,
+    pegarFotos,
+    pegarDesdePortapapeles,
+    copiarFoto,
     agregarVideo,
     falta,
     guardar,
