@@ -25,6 +25,7 @@ import { etiquetaPersona, usePersonasLocal } from "@/lib/ui/personas-local";
 import { AdjuntosVista, SelectorAdjuntos } from "@/components/ui/AdjuntosTrabajo";
 import { borrarAdjuntoAction } from "@/app/actions/adjuntos";
 import { useAdjuntosPendientes } from "@/lib/ui/adjuntos";
+import AvisoProblemas, { useAvisoProblemas } from "@/components/admin/AvisoProblemas";
 import type { Visita } from "@/lib/types";
 
 /** Opciones de los selectores, derivadas de los maestros que baja el layout. */
@@ -209,6 +210,11 @@ export default function VisitaDialogo({
   const [quitados, setQuitados] = useState<number[]>([]);
   const guardadosVigentes = (visita?.adjuntos ?? []).filter((a) => !quitados.includes(a.id));
   const personas = usePersonasLocal(form.sucursalId ? String(form.sucursalId) : "");
+  // Al agendar (no al corregir): si la sucursal tiene problemas sin resolver,
+  // se avisa y se pregunta si la visita es para resolverlos.
+  const avisoProblemas = useAvisoProblemas(visita ? null : Number(form.sucursalId) || null, {
+    origenId: origen?.problemaId,
+  });
 
   // Una visita puede venir por varias cosas a la vez. El primero marcado es el
   // principal: es el que va a dmc.visita.motivo_codigo. La hora es obligatoria
@@ -381,6 +387,11 @@ export default function VisitaDialogo({
       onHecho(malMargen);
       return;
     }
+    const faltaAviso = avisoProblemas.falta();
+    if (faltaAviso) {
+      onHecho(faltaAviso);
+      return;
+    }
     setGuardando(true);
     const datos = {
       clienteId: Number(form.clienteId),
@@ -399,6 +410,7 @@ export default function VisitaDialogo({
       responsableTelefono: String(form.respTelefono) || null,
       responsableCargo: String(form.respCargo).trim() || null,
       problemaOrigenId: origen?.problemaId ?? null,
+      avisoProblemas: visita ? null : avisoProblemas.respuestaAviso(),
     };
 
     const res = visita ? await editarVisitaAction(visita.folio, datos) : await crearVisitaAction(datos);
@@ -451,7 +463,7 @@ export default function VisitaDialogo({
         visita
           ? "El técnico recibe la corrección en su celular en la próxima sincronización, antes de llegar a la tienda."
           : origen
-            ? `La visita nace del problema de ${origen.folio}: el técnico ve el detalle en su celular y el problema queda a la espera de esta visita.`
+            ? `La visita nace del problema de ${origen.folio}: el problema pasa a «Agendado» y el técnico confirma en el acta si quedó solucionado.`
             : "El folio se genera solo y la visita nace Programada. La hora es opcional, salvo en instalación."
       }
       campos={campos}
@@ -461,6 +473,7 @@ export default function VisitaDialogo({
       onGuardar={guardar}
       guardando={guardando}
     >
+      <AvisoProblemas aviso={avisoProblemas} deshabilitado={guardando} />
       <div className="mt-4 flex flex-col gap-3">
         <AdjuntosVista
           titulo="Adjuntos del trabajo"
@@ -498,6 +511,8 @@ export function ReprogramarDialogo({
     hora: visita.horaProgramada ?? "",
   });
   const [guardando, setGuardando] = useState(false);
+  // Sin los que esta visita ya venía a resolver: de esos ya se respondió.
+  const avisoProblemas = useAvisoProblemas(visita.sucursalId, { folio: visita.folio });
 
   const esInstalacion = algunoPideHora(visita.motivosCodigos, ref.motivos);
 
@@ -515,12 +530,18 @@ export function ReprogramarDialogo({
   ];
 
   async function guardar() {
+    const faltaAviso = avisoProblemas.falta();
+    if (faltaAviso) {
+      onHecho(faltaAviso);
+      return;
+    }
     setGuardando(true);
     const res = await reprogramarVisitaAction({
       folio: visita.folio,
       tecnicoId: Number(form.tecnicoId),
       fecha: String(form.fecha),
       hora: String(form.hora) || null,
+      avisoProblemas: avisoProblemas.respuestaAviso(),
     });
     setGuardando(false);
 
@@ -545,7 +566,9 @@ export function ReprogramarDialogo({
       onCerrar={onCerrar}
       onGuardar={guardar}
       guardando={guardando}
-    />
+    >
+      <AvisoProblemas aviso={avisoProblemas} deshabilitado={guardando} />
+    </Dialogo>
   );
 }
 
