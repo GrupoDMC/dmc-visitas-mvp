@@ -51,6 +51,8 @@ export interface Cliente {
   notas?: string | null;
   /** En plan de calibración. null = no se sabe. */
   planCalibracion?: boolean | null;
+  /** Plan de garantía que cubre todos sus locales, en meses. null = ninguno (migración 029). */
+  garantiaMeses?: number | null;
 }
 
 /** Una marca que opera un cliente: Cliente → Marca → Sucursal. */
@@ -94,7 +96,8 @@ export interface Sucursal {
   /** Detalle opcional (migración 017). La fecha va como YYYY-MM-DD; null = no se sabe. */
   fechaInstalacion?: string | null;
   remota?: boolean | null;
-  enGarantia?: boolean | null;
+  /** Duración propia de la garantía, en meses; manda sobre la del cliente. Ver lib/ui/garantia.ts. */
+  garantiaMeses?: number | null;
   /**
    * La de la tienda por su cuenta (migración 018). Si su cliente está en plan
    * de calibración, la tienda lo está igual: ver `calibracionDeSucursal`.

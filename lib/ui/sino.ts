@@ -11,6 +11,17 @@ export const OPCIONES_SI_NO = [
 
 export const siNoAForm = (v: boolean | null | undefined): string => (v === true ? "si" : v === false ? "no" : "");
 
+/**
+ * Meses de garantía escritos en un formulario. Vacío = null (sin plazo);
+ * undefined = lo escrito no es un entero entre 1 y 240.
+ */
+export function mesesDeForm(v: string | boolean | undefined): number | null | undefined {
+  const t = String(v ?? "").trim();
+  if (!t) return null;
+  const n = Number(t);
+  return Number.isInteger(n) && n >= 1 && n <= 240 ? n : undefined;
+}
+
 export const formASiNo = (v: string | boolean | undefined): boolean | null => (v === "si" ? true : v === "no" ? false : null);
 
 /**

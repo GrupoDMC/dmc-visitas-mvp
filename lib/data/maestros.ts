@@ -55,12 +55,13 @@ interface FilaCliente {
   motivo_inactivo: string | null;
   notas: string | null;
   plan_calibracion: boolean | null;
+  garantia_meses: number | null;
 }
 
 /** Todos los clientes, o solo los de `ids`. */
 export async function listarClientes(filtro: { ids?: number[] } = {}): Promise<Cliente[]> {
   const filas = await consultaCon<FilaCliente>(
-    `SELECT id, rut, razon_social, nombre_fantasia, activo, motivo_inactivo, notas, plan_calibracion
+    `SELECT id, rut, razon_social, nombre_fantasia, activo, motivo_inactivo, notas, plan_calibracion, garantia_meses
        FROM dmc.cliente
       ${filtro.ids ? `WHERE id IN ${subIds("ids")}` : ""}
       ORDER BY nombre_fantasia`,
@@ -75,6 +76,7 @@ export async function listarClientes(filtro: { ids?: number[] } = {}): Promise<C
     motivoInactivo: f.motivo_inactivo,
     notas: f.notas,
     planCalibracion: bitONull(f.plan_calibracion),
+    garantiaMeses: numONull(f.garantia_meses),
   }));
 }
 
@@ -93,6 +95,8 @@ export interface DatosCliente {
   notas: string | null;
   /** null = no se sabe. */
   planCalibracion: boolean | null;
+  /** Plan de garantía de todos sus locales, en meses. null = ninguno. */
+  garantiaMeses: number | null;
 }
 
 export async function guardarCliente(id: number | null, d: DatosCliente): Promise<number> {
@@ -108,12 +112,13 @@ export async function guardarCliente(id: number | null, d: DatosCliente): Promis
     ["motivo", sql.NVarChar(400), d.activo ? null : d.motivoInactivo?.trim() || null],
     ["notas", sql.NVarChar(sql.MAX), d.notas?.trim() || null],
     ["plan", sql.Bit, d.planCalibracion],
+    ["garantia", sql.SmallInt, d.garantiaMeses],
   ];
   if (id === null) {
     const [fila] = await consultaCon<{ id: number }>(
-      `INSERT INTO dmc.cliente (rut, razon_social, nombre_fantasia, activo, motivo_inactivo, notas, plan_calibracion)
+      `INSERT INTO dmc.cliente (rut, razon_social, nombre_fantasia, activo, motivo_inactivo, notas, plan_calibracion, garantia_meses)
        OUTPUT INSERTED.id AS id
-       VALUES (@rut, @razon, @fantasia, @activo, @motivo, @notas, @plan)`,
+       VALUES (@rut, @razon, @fantasia, @activo, @motivo, @notas, @plan, @garantia)`,
       params
     );
     return num(fila.id);
@@ -121,7 +126,7 @@ export async function guardarCliente(id: number | null, d: DatosCliente): Promis
   await ejecutar(
     `UPDATE dmc.cliente
         SET rut = @rut, razon_social = @razon, nombre_fantasia = @fantasia, activo = @activo,
-            motivo_inactivo = @motivo, notas = @notas, plan_calibracion = @plan
+            motivo_inactivo = @motivo, notas = @notas, plan_calibracion = @plan, garantia_meses = @garantia
       WHERE id = @id`,
     [...params, ["id", sql.BigInt, id]]
   );
@@ -301,7 +306,7 @@ interface FilaSucursal {
   notas: string | null;
   fecha_instalacion: string | null;
   remota: boolean | null;
-  en_garantia: boolean | null;
+  garantia_meses: number | null;
   plan_calibracion: boolean | null;
 }
 
@@ -325,7 +330,7 @@ export async function listarSucursales(
   }
   const filas = await consultaCon<FilaSucursal>(
     `SELECT id, cliente_id, marca_id, mall_id, nombre, codigo, direccion, comuna, region, telefono, activo,
-            motivo_inactivo, notas, ${F_FECHA("fecha_instalacion")} AS fecha_instalacion, remota, en_garantia,
+            motivo_inactivo, notas, ${F_FECHA("fecha_instalacion")} AS fecha_instalacion, remota, garantia_meses,
             plan_calibracion
        FROM dmc.sucursal
       ${donde.length ? `WHERE ${donde.join(" AND ")}` : ""}
@@ -348,7 +353,7 @@ export async function listarSucursales(
     notas: f.notas,
     fechaInstalacion: f.fecha_instalacion,
     remota: bitONull(f.remota),
-    enGarantia: bitONull(f.en_garantia),
+    garantiaMeses: numONull(f.garantia_meses),
     planCalibracion: bitONull(f.plan_calibracion),
   }));
 }
@@ -378,7 +383,8 @@ export interface DatosSucursal {
   /** YYYY-MM-DD. Este y los dos siguientes: null = no se sabe. */
   fechaInstalacion: string | null;
   remota: boolean | null;
-  enGarantia: boolean | null;
+  /** Duración propia de la garantía, en meses. null = aplica la del cliente, si la tiene. */
+  garantiaMeses: number | null;
   /**
    * La de la tienda por su cuenta. Si el cliente está en plan,
    * la tienda lo está igual: esto solo cuenta cuando el cliente no lo está.
@@ -403,13 +409,13 @@ export async function guardarSucursal(id: number | null, d: DatosSucursal): Prom
     ["notas", sql.NVarChar(sql.MAX), d.notas?.trim() || null],
     ["instalacion", sql.Date, d.fechaInstalacion || null],
     ["remota", sql.Bit, d.remota],
-    ["garantia", sql.Bit, d.enGarantia],
+    ["garantia", sql.SmallInt, d.garantiaMeses],
     ["plan", sql.Bit, d.planCalibracion],
   ];
   if (id === null) {
     const [fila] = await consultaCon<{ id: number }>(
       `INSERT INTO dmc.sucursal (cliente_id, marca_id, mall_id, nombre, codigo, direccion, comuna, region, telefono, activo,
-                                 motivo_inactivo, notas, fecha_instalacion, remota, en_garantia, plan_calibracion)
+                                 motivo_inactivo, notas, fecha_instalacion, remota, garantia_meses, plan_calibracion)
        OUTPUT INSERTED.id AS id
        VALUES (@cliente, @marca, @mall, @nombre, @codigo, @direccion, @comuna, @region, @telefono, @activo, @motivo, @notas,
                @instalacion, @remota, @garantia, @plan)`,
@@ -422,7 +428,7 @@ export async function guardarSucursal(id: number | null, d: DatosSucursal): Prom
         SET cliente_id = @cliente, marca_id = @marca, mall_id = @mall, nombre = @nombre, codigo = @codigo, direccion = @direccion,
             comuna = @comuna, region = @region, telefono = @telefono, activo = @activo,
             motivo_inactivo = @motivo, notas = @notas, fecha_instalacion = @instalacion, remota = @remota,
-            en_garantia = @garantia, plan_calibracion = @plan
+            garantia_meses = @garantia, plan_calibracion = @plan
       WHERE id = @id`,
     [...params, ["id", sql.BigInt, id]]
   );

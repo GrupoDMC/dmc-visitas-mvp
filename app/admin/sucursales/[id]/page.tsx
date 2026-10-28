@@ -6,6 +6,7 @@ import { getCliente, getMall, getSucursal } from "@/lib/data/maestros";
 import { getFilasFicha } from "@/lib/data/visitas-lista";
 import { sesionCon } from "@/lib/auth";
 import { hoyISO } from "@/lib/ui/fecha";
+import { garantiaDe, ETIQUETA_GARANTIA, resumenGarantia } from "@/lib/ui/garantia";
 import { calibracionDeSucursal } from "@/lib/ui/sino";
 
 export const dynamic = "force-dynamic";
@@ -27,6 +28,7 @@ export default async function SucursalFichaPage({ params }: { params: Promise<{ 
   if (!s) notFound();
   const [cliente, mall] = await Promise.all([getCliente(s.clienteId), s.mallId ? getMall(s.mallId) : undefined]);
   const cal = calibracionDeSucursal(s, cliente);
+  const garantia = garantiaDe(s, cliente, hoyISO());
 
   const datos: DatoFicha[] = [
     { label: "Cliente", valor: cliente?.nombreFantasia ?? "—", href: cliente && verClientes ? `/admin/clientes/${cliente.id}` : undefined },
@@ -37,7 +39,9 @@ export default async function SucursalFichaPage({ params }: { params: Promise<{ 
     { label: "Teléfono", valor: s.telefono ?? "" },
     { label: "Instalada el", valor: s.fechaInstalacion ?? "" },
     { label: "Modalidad", valor: siNo(s.remota, "Remota", "Presencial") },
-    { label: "Garantía", valor: siNo(s.enGarantia, "En garantía", "Sin garantía") },
+    // Estado calculado: la duración propia manda sobre el plan del cliente (lib/ui/garantia.ts).
+    { label: "Garantía", valor: ETIQUETA_GARANTIA[garantia.estado] },
+    { label: "Detalle de la garantía", valor: garantia.estado === "SIN_GARANTIA" ? "" : resumenGarantia(garantia) },
     {
       label: "Plan de calibración",
       valor: cal.valor === null ? "" : cal.valor ? (cal.porCliente ? "Sí, por su cliente" : "Sí") : "No",

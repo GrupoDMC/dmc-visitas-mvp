@@ -243,6 +243,7 @@ function AltaRapidaDialogo({
             motivoInactivo: null,
             notas: null,
             planCalibracion: null,
+            garantiaMeses: null,
           })
         : tipo === "marca"
           ? await guardarMarcaAction(null, { clienteId: Number(texto("clienteId")), nombre: texto("nombre"), activo: true })
@@ -269,7 +270,7 @@ function AltaRapidaDialogo({
               notas: null,
               fechaInstalacion: null,
               remota: null,
-              enGarantia: null,
+              garantiaMeses: null,
               planCalibracion: null,
             });
     setGuardando(false);

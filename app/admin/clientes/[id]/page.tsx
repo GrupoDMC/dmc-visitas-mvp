@@ -6,6 +6,7 @@ import { getCliente, listarMalls, listarSucursales } from "@/lib/data/maestros";
 import { getFilasFicha } from "@/lib/data/visitas-lista";
 import { sesionCon } from "@/lib/auth";
 import { hoyISO } from "@/lib/ui/fecha";
+import { enGarantia as cubre, garantiaDe } from "@/lib/ui/garantia";
 
 export const dynamic = "force-dynamic";
 
@@ -27,13 +28,15 @@ export default async function ClienteFichaPage({ params }: { params: Promise<{ i
   const malls = await listarMalls({ ids: [...new Set(tiendas.map((s) => s.mallId).filter((x): x is number => x !== null))] });
   const activas = tiendas.filter((s) => s.activo);
   const nMalls = new Set(activas.map((s) => s.mallId).filter(Boolean)).size;
-  const enGarantia = activas.filter((s) => s.enGarantia === true).length;
+  const hoy = hoyISO();
+  const enGarantia = activas.filter((s) => cubre(garantiaDe(s, c, hoy))).length;
 
   const datos: DatoFicha[] = [
     { label: "Razón social", valor: c.razonSocial },
     { label: "RUT", valor: c.rut },
     { label: "Locales activos", valor: `${activas.length} en ${nMalls} ${nMalls === 1 ? "mall" : "malls"}` },
     { label: "Locales inactivos", valor: tiendas.length - activas.length ? String(tiendas.length - activas.length) : "" },
+    { label: "Plan de garantía", valor: c.garantiaMeses ? `${c.garantiaMeses} ${c.garantiaMeses === 1 ? "mes" : "meses"}` : "" },
     { label: "En garantía", valor: enGarantia ? `${enGarantia} ${enGarantia === 1 ? "local" : "locales"}` : "" },
     { label: "Plan de calibración", valor: c.planCalibracion === true ? "En plan" : c.planCalibracion === false ? "Sin plan" : "" },
     { label: "Por qué está inactivo", valor: c.activo ? "" : (c.motivoInactivo ?? "") },

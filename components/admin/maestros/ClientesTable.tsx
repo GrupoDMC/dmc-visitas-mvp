@@ -5,9 +5,11 @@ import Link from "next/link";
 import MaestroTable from "@/components/admin/MaestroTable";
 import Tag from "@/components/Tag";
 import { guardarClienteAction } from "@/app/actions/maestros";
+import { hoyISO } from "@/lib/ui/fecha";
 import { mensajeRut, rutLimpio } from "@/lib/ui/formato";
+import { enGarantia, garantiaDe } from "@/lib/ui/garantia";
 import { puede, useReferencias } from "@/lib/ui/referencias";
-import { OPCIONES_SI_NO, formASiNo, siNoAForm } from "@/lib/ui/sino";
+import { OPCIONES_SI_NO, formASiNo, mesesDeForm, siNoAForm } from "@/lib/ui/sino";
 import type { Cliente, Sucursal } from "@/lib/types";
 
 /** Lo que tiene cada cliente en locales: es lo que más se mira de él. */
@@ -43,12 +45,14 @@ export default function ClientesTable({ clientes, sucursales }: { clientes: Clie
 
   const locales = useMemo(() => {
     const porCliente = new Map<number, Locales & { idsMall: Set<number> }>();
+    const porId = new Map(clientes.map((c) => [c.id, c]));
+    const hoy = hoyISO();
     for (const s of sucursales) {
       const l = porCliente.get(s.clienteId) ?? { ...SIN_LOCALES, idsMall: new Set<number>() };
       if (s.activo) {
         l.activos++;
         if (s.mallId) l.idsMall.add(s.mallId);
-        if (s.enGarantia === true) l.enGarantia++;
+        if (enGarantia(garantiaDe(s, porId.get(s.clienteId), hoy))) l.enGarantia++;
         if (s.planCalibracion === true) l.conCalibracion++;
       } else {
         l.inactivos++;
@@ -57,7 +61,7 @@ export default function ClientesTable({ clientes, sucursales }: { clientes: Clie
       porCliente.set(s.clienteId, l);
     }
     return porCliente;
-  }, [sucursales]);
+  }, [sucursales, clientes]);
   const de = (c: Cliente): Locales => locales.get(c.id) ?? SIN_LOCALES;
 
   // Los que más locales tienen, arriba; a igual cantidad, por nombre.
@@ -245,6 +249,12 @@ export default function ClientesTable({ clientes, sucursales }: { clientes: Clie
           opciones: OPCIONES_SI_NO,
           ayuda: "Si está en plan, todas sus sucursales lo están. Si no, cada sucursal puede estarlo por su cuenta.",
         },
+        {
+          k: "garantiaMeses",
+          label: "Plan de garantía, en meses (opcional)",
+          ph: "12",
+          ayuda: "Cubre todos sus locales, contando desde la instalación de cada uno. Un local con garantía propia manda sobre este plan.",
+        },
         { k: "activo", label: "Estado", tipo: "toggle" },
         {
           k: "motivoInactivo",
@@ -262,6 +272,7 @@ export default function ClientesTable({ clientes, sucursales }: { clientes: Clie
         if (f.activo === false && !String(f.motivoInactivo ?? "").trim()) {
           return "Explica por qué se desactiva el cliente";
         }
+        if (mesesDeForm(f.garantiaMeses) === undefined) return "La garantía va en meses, entre 1 y 240";
         // El dígito verificador se valida al crear: un RUT mal tecleado deja al
         // cliente duplicado y sin forma de cruzarlo con la facturación.
         const error = mensajeRut(String(f.rut));
@@ -282,6 +293,7 @@ export default function ClientesTable({ clientes, sucursales }: { clientes: Clie
         motivoInactivo: c.motivoInactivo ?? "",
         notas: c.notas ?? "",
         planCalibracion: siNoAForm(c.planCalibracion),
+        garantiaMeses: c.garantiaMeses ? String(c.garantiaMeses) : "",
       })}
       guardarAction={(id, f) =>
         guardarClienteAction(id, {
@@ -292,9 +304,10 @@ export default function ClientesTable({ clientes, sucursales }: { clientes: Clie
           motivoInactivo: String(f.motivoInactivo ?? "").trim() || null,
           notas: String(f.notas ?? "").trim() || null,
           planCalibracion: formASiNo(f.planCalibracion),
+          garantiaMeses: mesesDeForm(f.garantiaMeses) ?? null,
         })
       }
-      emptyRow={{ nombreFantasia: "", razonSocial: "", rut: "", activo: true, motivoInactivo: "", notas: "", planCalibracion: "" }}
+      emptyRow={{ nombreFantasia: "", razonSocial: "", rut: "", activo: true, motivoInactivo: "", notas: "", planCalibracion: "", garantiaMeses: "" }}
     />
   );
 }

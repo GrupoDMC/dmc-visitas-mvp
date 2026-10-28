@@ -11,7 +11,9 @@ import { guardarSucursalAction } from "@/app/actions/maestros";
 import { conMismaDireccion } from "@/lib/ui/direcciones";
 import { useReferencias } from "@/lib/ui/referencias";
 import { REGIONES } from "@/lib/ui/regiones";
-import { OPCIONES_SI_NO, calibracionDeSucursal, formASiNo, siNoAForm } from "@/lib/ui/sino";
+import { OPCIONES_SI_NO, calibracionDeSucursal, formASiNo, mesesDeForm, siNoAForm } from "@/lib/ui/sino";
+import { ETIQUETA_GARANTIA, enGarantia, garantiaDe, type EstadoGarantia } from "@/lib/ui/garantia";
+import { hoyISO } from "@/lib/ui/fecha";
 import type { Cliente, Mall, Sucursal } from "@/lib/types";
 
 /** El filtro de una marca opcional: "" = todas, y si no, sí / no / sin indicar. */
@@ -24,6 +26,20 @@ const OPCIONES_FILTRO_SI_NO = [
 const pasaSiNo = (filtro: string, v: boolean | null | undefined) =>
   !filtro || (filtro === "nd" ? v === null || v === undefined : siNoAForm(v) === filtro);
 const textoSiNo = (filtro: string) => OPCIONES_FILTRO_SI_NO.find((o) => o.v === filtro)?.t ?? "";
+
+/** Para el filtro: cubierta, vencida o sin plazo definido (= «sin indicar»). */
+function garantiaParaFiltro(s: Sucursal, cliente: Cliente | undefined, hoy: string): boolean | null {
+  const g = garantiaDe(s, cliente, hoy);
+  return enGarantia(g) ? true : g.estado === "VENCIDA" ? false : null;
+}
+
+const VARIANTE_GARANTIA: Record<EstadoGarantia, "accent" | "outline" | "dark" | "neutral"> = {
+  VIGENTE: "accent",
+  POR_VENCER: "dark",
+  VENCIDA: "outline",
+  SIN_FECHA: "neutral",
+  SIN_GARANTIA: "neutral",
+};
 
 export default function SucursalesTable({
   sucursales,
@@ -50,6 +66,8 @@ export default function SucursalesTable({
   const clienteEnPlan = (clienteId: string | boolean | undefined) =>
     clientes.find((c) => String(c.id) === String(clienteId))?.planCalibracion === true;
   const nombreMall = (id?: number | null) => malls.find((m) => m.id === id)?.nombre ?? "";
+  const hoy = hoyISO();
+  const garantia = (s: Sucursal) => garantiaDe(s, clientes.find((c) => c.id === s.clienteId), hoy);
 
   const [fCliente, setFCliente] = useState(clientes.some((c) => String(c.id) === clienteInicial) ? clienteInicial : "");
   const [fGarantia, setFGarantia] = useState("");
@@ -58,10 +76,10 @@ export default function SucursalesTable({
   const pasa = useCallback(
     (s: Sucursal) =>
       (!fCliente || String(s.clienteId) === fCliente) &&
-      pasaSiNo(fGarantia, s.enGarantia) &&
+      pasaSiNo(fGarantia, garantiaParaFiltro(s, clientes.find((c) => c.id === s.clienteId), hoy)) &&
       pasaSiNo(fRemota, s.remota) &&
       pasaSiNo(fCalibracion, calibracionDeSucursal(s, clientes.find((c) => c.id === s.clienteId)).valor),
-    [fCliente, fGarantia, fRemota, fCalibracion, clientes]
+    [fCliente, fGarantia, fRemota, fCalibracion, clientes, hoy]
   );
 
   const tabla = (
@@ -143,10 +161,10 @@ export default function SucursalesTable({
           label: "Detalle",
           render: (s) => {
             const cal = calibracion(s);
-            return s.fechaInstalacion || (s.remota ?? null) !== null || (s.enGarantia ?? null) !== null || cal.valor !== null ? (
+            const g = garantia(s);
+            return s.fechaInstalacion || (s.remota ?? null) !== null || g.origen !== null || cal.valor !== null ? (
               <div className="flex flex-wrap gap-1 max-w-[240px]">
-                {s.enGarantia === true ? <Tag variant="accent">En garantía</Tag> : null}
-                {s.enGarantia === false ? <Tag variant="outline">Sin garantía</Tag> : null}
+                {g.origen !== null ? <Tag variant={VARIANTE_GARANTIA[g.estado]}>{ETIQUETA_GARANTIA[g.estado]}</Tag> : null}
                 {s.remota === true ? <Tag variant="dark">Remota</Tag> : null}
                 {s.remota === false ? <Tag variant="outline">Presencial</Tag> : null}
                 {cal.valor === true ? (
@@ -216,7 +234,12 @@ export default function SucursalesTable({
         { k: "region", label: "Región", tipo: "select", opciones: REGIONES.map((r) => ({ v: r, t: r })) },
         { k: "fechaInstalacion", label: "Fecha de instalación (opcional)", tipo: "date" },
         { k: "remota", label: "¿Es remota? (opcional)", tipo: "select", opciones: OPCIONES_SI_NO },
-        { k: "enGarantia", label: "¿Está en garantía? (opcional)", tipo: "select", opciones: OPCIONES_SI_NO },
+        {
+          k: "garantiaMeses",
+          label: "Garantía propia, en meses (opcional)",
+          ph: "12",
+          ayuda: "Cuenta desde la fecha de instalación. Si la dejas vacía rige el plan de garantía de su cliente, si lo tiene.",
+        },
         {
           k: "planCalibracion",
           label: "¿En plan de calibración? (opcional)",
@@ -249,6 +272,7 @@ export default function SucursalesTable({
       validar={(f) => {
         if (!String(f.nombre).trim() || !f.clienteId) return "Nombre y cliente son obligatorios";
         if (!f.marcaId) return "Elige la marca";
+        if (mesesDeForm(f.garantiaMeses) === undefined) return "La garantía va en meses, entre 1 y 240";
         if (!f.mallId && !String(f.direccion).trim()) return "Sin mall, la sucursal necesita su dirección de calle";
         if (f.activo === false && !String(f.motivoInactivo ?? "").trim()) {
           return "Explica por qué se desactiva la sucursal";
@@ -293,7 +317,7 @@ export default function SucursalesTable({
         notas: s.notas ?? "",
         fechaInstalacion: s.fechaInstalacion ?? "",
         remota: siNoAForm(s.remota),
-        enGarantia: siNoAForm(s.enGarantia),
+        garantiaMeses: s.garantiaMeses ? String(s.garantiaMeses) : "",
         planCalibracion: siNoAForm(s.planCalibracion),
         calibracionPorCliente: "",
       })}
@@ -313,7 +337,7 @@ export default function SucursalesTable({
           notas: String(f.notas ?? "").trim() || null,
           fechaInstalacion: String(f.fechaInstalacion ?? "") || null,
           remota: formASiNo(f.remota),
-          enGarantia: formASiNo(f.enGarantia),
+          garantiaMeses: mesesDeForm(f.garantiaMeses) ?? null,
           // Con el cliente en plan el campo no se ve, pero lo que la tienda
           // tenía se conserva: vuelve a mandar si el cliente sale del plan.
           planCalibracion: formASiNo(f.planCalibracion),
@@ -334,7 +358,7 @@ export default function SucursalesTable({
         notas: "",
         fechaInstalacion: "",
         remota: "",
-        enGarantia: "",
+        garantiaMeses: "",
         planCalibracion: "",
         calibracionPorCliente: "",
       }}

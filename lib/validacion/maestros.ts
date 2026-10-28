@@ -8,6 +8,9 @@ const idOAlta = idPositivo.nullable();
 
 const MOTIVO_INACTIVO = texto(400);
 
+/** Duración de una garantía, en meses (la base la limita igual a 1–240). */
+const mesesGarantia = z.number().int().min(1).max(240).nullable();
+
 export const entradaCliente = z.object({
   id: idOAlta,
   datos: z.object({
@@ -18,6 +21,7 @@ export const entradaCliente = z.object({
     motivoInactivo: MOTIVO_INACTIVO.nullable().default(null),
     notas: textoLibre.nullable().default(null),
     planCalibracion: z.boolean().nullable(),
+    garantiaMeses: mesesGarantia,
   }),
 });
 
@@ -64,7 +68,7 @@ export const entradaSucursal = z.object({
     notas: textoLibre.nullable().default(null),
     fechaInstalacion: fechaOVacia.nullable(),
     remota: z.boolean().nullable(),
-    enGarantia: z.boolean().nullable(),
+    garantiaMeses: mesesGarantia,
     planCalibracion: z.boolean().nullable(),
   }),
 });
