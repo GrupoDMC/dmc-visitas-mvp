@@ -340,6 +340,11 @@ export function BotonRevisar({ fv }: { fv: FormularioVisitaApi }) {
             setGuardadas(listas);
             if (!listas.sucursal) return aviso(faltaEnSeccion("sucursal") ?? "Guarda los datos del responsable");
             if (!listas.motivo) return aviso(faltaEnSeccion("motivo") ?? "Guarda el motivo y el trabajo realizado");
+            const faltaProblemas = faltaEnSeccion("problemas");
+            if (faltaProblemas) {
+              setAbierta("problemas");
+              return aviso(faltaProblemas);
+            }
             setAbierta(null);
             setHoraTermino(ahora());
             setPaso("preview");
@@ -358,7 +363,7 @@ export function BotonRevisar({ fv }: { fv: FormularioVisitaApi }) {
         <p className="mt-2.5 mb-0 text-xs opacity-66">
           {puedeRevisar
             ? "Vas a ver el acta completa antes de guardar nada."
-            : "Guarda las secciones 1 y 2 para poder revisar el acta."}
+            : "Guarda las secciones 1 y 2, y responde los problemas que venías a resolver, para poder revisar el acta."}
         </p>
       </div>
     </>

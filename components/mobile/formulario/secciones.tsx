@@ -468,6 +468,10 @@ export function SeccionProblemas({ fv }: { fv: FormularioVisitaApi }) {
     guardarSeccion,
     toggleSeccion,
     nombreProblema,
+    porResolver,
+    resoluciones,
+    setResoluciones,
+    sinResponder,
   } = fv;
   return (
     <>
@@ -475,18 +479,74 @@ export function SeccionProblemas({ fv }: { fv: FormularioVisitaApi }) {
       <Cabecera
         n={3}
         titulo="Problemas detectados"
-        ok={!!guardadas.problemas}
+        ok={!!guardadas.problemas && sinResponder.length === 0}
         chip={
-          guardadas.problemas
-            ? { variante: "accent", texto: problemas.length ? `${problemas.length} cargados` : "Sin problemas" }
-            : problemas.length
-              ? { variante: "outline", texto: `${problemas.length} sin guardar` }
-              : { variante: "neutral", texto: "Opcional" }
+          sinResponder.length
+            ? { variante: "outline", texto: "Responder" }
+            : guardadas.problemas
+              ? { variante: "accent", texto: problemas.length ? `${problemas.length} cargados` : "Sin problemas" }
+              : problemas.length
+                ? { variante: "outline", texto: `${problemas.length} sin guardar` }
+                : { variante: "neutral", texto: porResolver.length ? "Respondido" : "Opcional" }
         }
         onToggle={() => toggleSeccion("problemas")}
       />
       {abierta === "problemas" ? (
         <Cuerpo gap={false}>
+          {porResolver.length > 0 ? (
+            <div className="mb-5">
+              <div className="text-[10px] tracking-[.1em] uppercase text-[var(--color-accent-active)]">
+                Venías a resolver
+              </div>
+              <div className="flex flex-col gap-2.5 mt-2">
+                {porResolver.map((p) => {
+                  const dicho = resoluciones[p.id];
+                  return (
+                    <div
+                      key={p.id}
+                      className="bg-[var(--color-surface-3)] border border-[var(--color-divider)] border-l-4 border-l-[var(--color-accent)] px-3.5 py-3"
+                    >
+                      <div className="font-extrabold text-base leading-[1.25]">{p.tipo}</div>
+                      <div className="text-xs opacity-60 mt-1">Levantado en {p.folio}</div>
+                      {p.descripcion ? <div className="text-sm opacity-75 mt-2">{p.descripcion}</div> : null}
+                      <div className="font-extrabold text-sm mt-3">¿Quedó solucionado?</div>
+                      <div className="grid grid-cols-2 gap-2 mt-2" role="radiogroup">
+                        {(
+                          [
+                            [true, "Sí"],
+                            [false, "No"],
+                          ] as const
+                        ).map(([valor, texto]) => {
+                          const activo = dicho === valor;
+                          return (
+                            <button
+                              key={texto}
+                              type="button"
+                              role="radio"
+                              aria-checked={activo}
+                              onClick={() => setResoluciones((prev) => ({ ...prev, [p.id]: valor }))}
+                              className="min-h-12 border border-black/[.35] font-extrabold text-sm cursor-pointer"
+                              style={{
+                                background: activo ? "var(--color-text)" : "var(--color-bg)",
+                                color: activo ? "var(--color-bg)" : "var(--color-text)",
+                              }}
+                            >
+                              {texto}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      {dicho === false ? (
+                        <p className="m-0 mt-2 text-xs opacity-70">Vuelve a quedar abierto para coordinación.</p>
+                      ) : null}
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="font-extrabold text-sm mt-5">¿Surgió algún problema nuevo?</div>
+              <p className="m-0 mt-1 text-[13px] opacity-60">Si encontraste otro, agrégalo abajo aunque los de arriba hayan quedado solucionados.</p>
+            </div>
+          ) : null}
           <p className="m-0 mb-3.5 text-[13px] opacity-60">Cada problema se llena en su propia ficha para no saturar esta pantalla.</p>
           <div className="flex flex-col gap-2.5">
             {problemas.map((p, i) => (
@@ -542,7 +602,7 @@ export function SeccionProblemas({ fv }: { fv: FormularioVisitaApi }) {
             <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
               <path d="M12 5v14M5 12h14" />
             </svg>
-            <span>Agregar un problema</span>
+            <span>{porResolver.length ? "Agregar un problema nuevo" : "Agregar un problema"}</span>
           </button>
           <div className="mt-2.5">
             <BotonGuardar

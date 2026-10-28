@@ -140,6 +140,8 @@ export function PantallaRevision({ fv }: { fv: FormularioVisitaApi }) {
     motivosCodigos,
     obs,
     problemas,
+    porResolver,
+    resoluciones,
     interno,
     internos,
     firma,
@@ -222,6 +224,22 @@ export function PantallaRevision({ fv }: { fv: FormularioVisitaApi }) {
                       </div>
                     ) : null}
                     {t.detalle ? <div className="text-sm opacity-72 mt-1.5">{t.detalle}</div> : null}
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
+          {porResolver.length > 0 ? (
+            <div className="pt-3.5">
+              <div className="text-[11px] tracking-[.1em] uppercase opacity-66 mb-2.5">Venías a resolver</div>
+              <div className="flex flex-col gap-2">
+                {porResolver.map((p) => (
+                  <div key={p.id} className="border-l-[3px] border-[var(--color-accent)] pl-3 flex items-baseline justify-between gap-3">
+                    <span className="font-extrabold text-base leading-[1.25]">{p.tipo}</span>
+                    <span className="text-sm flex-none">
+                      {resoluciones[p.id] === undefined ? "Sin responder" : resoluciones[p.id] ? "Solucionado" : "No solucionado"}
+                    </span>
                   </div>
                 ))}
               </div>

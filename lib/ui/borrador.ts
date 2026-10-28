@@ -119,6 +119,8 @@ export interface BorradorActa {
   internos?: string[];
   trabajos: TrabajoForm[];
   problemas: ProblemaForm[];
+  /** «¿Quedó solucionado?» por id de problema. Los borradores viejos no lo traen. */
+  resoluciones?: Record<string, boolean>;
   fotos: FotoForm[];
   firma: FirmaForm | null;
   guardadas: Partial<Record<Seccion, boolean>>;

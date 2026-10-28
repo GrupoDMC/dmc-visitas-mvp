@@ -39,6 +39,8 @@ import {
   type VideoForm,
 } from "@/lib/ui/borrador";
 import type { ActaEntrada, EdicionActaEntrada } from "@/lib/contratos/acta";
+import type { ProblemaSinResolver } from "@/lib/contratos/visitas";
+import { FALTA_RESOLUCION } from "@/lib/validacion/aviso-problemas";
 import type { CatalogoInterno, CatalogoMotivo, CatalogoProblema, CatalogoTrabajo, Visita } from "@/lib/types";
 import { ahora } from "@/components/mobile/formulario/piezas";
 import { useVideosActa } from "@/components/mobile/formulario/useVideosActa";
@@ -83,6 +85,7 @@ export function useFormularioVisita({
   borradorServidor,
   edicion = false,
   reservaPlazoSeg = PLAZO_RESERVA_SEG,
+  porResolver = [],
 }: {
   visita: Visita;
   motivos: CatalogoMotivo[];
@@ -99,6 +102,11 @@ export function useFormularioVisita({
   edicion?: boolean;
   /** Plazo de la reserva del acta, en segundos: de ahí sale cada cuánto se avisa que se sigue trabajando. */
   reservaPlazoSeg?: number;
+  /**
+   * Los problemas que la visita venía a resolver (agendada desde el aviso o
+   * desde «Problemas»). De cada uno el técnico dice si quedó solucionado.
+   */
+  porResolver?: ProblemaSinResolver[];
 }) {
   const router = useRouter();
   // El borrador y la cola del equipo van a nombre del usuario (ver lib/ui/borrador).
@@ -173,8 +181,10 @@ export function useFormularioVisita({
   const [obs, setObs] = useState(inicial?.obs ?? "");
   const [trabajos, setTrabajos] = useState<TrabajoForm[]>(inicial?.trabajos ?? []);
 
-  // 3 · Problemas detectados
+  // 3 · Problemas detectados, y lo que se dice de los que la visita venía a resolver.
   const [problemas, setProblemas] = useState<ProblemaForm[]>(inicial?.problemas ?? []);
+  const [resoluciones, setResoluciones] = useState<Record<string, boolean>>({});
+  const sinResponder = porResolver.filter((p) => resoluciones[p.id] === undefined);
 
   // 4 · Comentario interno: su checklist, el texto, y fotos y videos marcados
   //     como internos. Nada de esto lo ve el cliente.
@@ -284,12 +294,13 @@ export function useFormularioVisita({
       internos,
       trabajos,
       problemas,
+      resoluciones,
       fotos,
       firma,
       guardadas,
       horaInicio,
     }),
-    [visita.folio, respNombre, respRut, respTel, respCargo, motivosCodigos, obs, interno, internos, trabajos, problemas, fotos, firma, guardadas, horaInicio]
+    [visita.folio, respNombre, respRut, respTel, respCargo, motivosCodigos, obs, interno, internos, trabajos, problemas, resoluciones, fotos, firma, guardadas, horaInicio]
   );
 
   const aplicarBorrador = useCallback((b: BorradorActa) => {
@@ -305,6 +316,7 @@ export function useFormularioVisita({
     const primerMotivo = b.motivosCodigos?.[0] ?? "";
     setTrabajos((b.trabajos ?? []).map((t) => ({ ...t, motivo: t.motivo || primerMotivo })));
     setProblemas(b.problemas ?? []);
+    setResoluciones(b.resoluciones ?? {});
     setFotos(b.fotos ?? []);
     setFirma(b.firma ?? null);
     setGuardadas(b.guardadas ?? {});
@@ -528,7 +540,9 @@ export function useFormularioVisita({
 
   const nGuardadas = SECCIONES.filter((k) => guardadas[k]).length;
   const puedeRevisar =
-    (!!guardadas.sucursal || !faltaEnSeccion("sucursal")) && (!!guardadas.motivo || !faltaEnSeccion("motivo"));
+    (!!guardadas.sucursal || !faltaEnSeccion("sucursal")) &&
+    (!!guardadas.motivo || !faltaEnSeccion("motivo")) &&
+    sinResponder.length === 0;
   // Al editar la firma ya está en el acta y no se pide de nuevo; lo que sí se
   // pide es el porqué del cambio.
   const motivoEdicionListo = motivoEdicion.trim().length >= 5;
@@ -538,11 +552,12 @@ export function useFormularioVisita({
     const f: string[] = [];
     if (!guardadas.sucursal) f.push("los datos del responsable");
     if (!guardadas.motivo) f.push("el motivo");
+    if (sinResponder.length) f.push("responder si quedaron solucionados los problemas que venías a resolver");
     if (edicion) {
       if (!motivoEdicionListo) f.push("escribir por qué se edita el acta");
     } else if (!firma) f.push("la firma de la tienda");
     return f;
-  }, [guardadas.sucursal, guardadas.motivo, firma, edicion, motivoEdicionListo]);
+  }, [guardadas.sucursal, guardadas.motivo, sinResponder.length, firma, edicion, motivoEdicionListo]);
 
   const nombreMotivos = (codigos: string[]) =>
     codigos.map((c) => motivos.find((m) => m.codigo === c)?.nombre ?? c).join(" · ") || "Sin motivo";
@@ -578,6 +593,9 @@ export function useFormularioVisita({
         solucion: pr.sol?.trim() || null,
         items: pr.items.map((it) => ({ etiqueta: it.etiqueta, cantidad: it.cantidad })),
       })),
+      resoluciones: porResolver
+        .filter((p) => resoluciones[p.id] !== undefined)
+        .map((p) => ({ problemaId: p.id, resuelto: resoluciones[p.id] })),
       // Las fotos ya vienen reducidas desde que se tomaron: así el acta cabe en
       // el celular mientras espera señal y sale rápido cuando la hay.
       fotos: fotos.map((f) => ({ dataUrl: f.src, etiqueta: null, interno: Boolean(f.interno) })),
@@ -818,7 +836,10 @@ export function useFormularioVisita({
         return null;
       case "firmas":
         return firma ? null : "Falta la firma del responsable de tienda";
-      // Problemas, comentario interno y fotos son opcionales.
+      // Los problemas nuevos son opcionales; los que venía a resolver necesitan respuesta.
+      case "problemas":
+        return sinResponder.length ? FALTA_RESOLUCION : null;
+      // Comentario interno y fotos son opcionales.
       default:
         return null;
     }
@@ -1040,6 +1061,10 @@ export function useFormularioVisita({
     setTrabajos,
     problemas,
     setProblemas,
+    porResolver,
+    resoluciones,
+    setResoluciones,
+    sinResponder,
     interno,
     setInterno,
     internos,
