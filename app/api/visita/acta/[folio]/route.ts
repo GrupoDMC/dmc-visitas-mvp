@@ -5,7 +5,7 @@ import { getFirmaBinaria, getFotoBinaria, getVisitaCompletaPorFolio } from "@/li
 import { listarMotivos, listarProblemas, listarTrabajos } from "@/lib/data/catalogos";
 import { generarPdfActa } from "@/lib/pdf/acta";
 import { participaEnVisita } from "@/lib/ui/estado";
-import { nombreArchivoActa } from "@/lib/ui/nombre-acta";
+import { dispositionAdjunto, nombreArchivoActa } from "@/lib/ui/nombre-acta";
 
 // El acta en PDF para mandarle al cliente. Sin comentario interno: ni el texto,
 // ni su checklist, ni las fotos o clips marcados como internos.
@@ -55,12 +55,11 @@ export async function GET(_req: Request, { params }: { params: Promise<{ folio: 
       firma: firma ? { bytes: new Uint8Array(firma.bytes), mime: firma.mime } : null,
     });
 
-    const nombre = nombreArchivoActa(visita);
     return new NextResponse(Buffer.from(pdf), {
       headers: {
         "Content-Type": "application/pdf",
         "Content-Length": String(pdf.length),
-        "Content-Disposition": `attachment; filename="${nombre.replace(/"/g, "")}"; filename*=UTF-8''${encodeURIComponent(nombre)}`,
+        "Content-Disposition": dispositionAdjunto(nombreArchivoActa(visita)),
         "Cache-Control": "private, no-store",
       },
     });

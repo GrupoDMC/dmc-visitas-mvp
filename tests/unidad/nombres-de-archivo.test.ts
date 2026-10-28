@@ -1,35 +1,76 @@
 import { describe, expect, it } from "vitest";
-import { nombreArchivoActa } from "@/lib/ui/nombre-acta";
+import { dispositionAdjunto, nombreArchivoActa } from "@/lib/ui/nombre-acta";
 import { extensionDe } from "@/lib/ui/descarga";
 
+const v = (razonSocial: unknown, sucursal: unknown, extra: Record<string, unknown> = {}) =>
+  ({ folio: "V-0123", cliente: { razonSocial, nombreFantasia: "Fantasía" }, sucursal: { nombre: sucursal }, ...extra }) as never;
+
 describe("nombreArchivoActa (PDF del acta)", () => {
-  const visita = {
-    folio: "V-0123",
-    sucursal: { nombre: "Tienda Centro" },
-    cliente: { nombreFantasia: "Cliente Uno" },
-  } as never;
-
-  it("arma «Acta folio - tienda - cliente.pdf»", () => {
-    expect(nombreArchivoActa(visita)).toBe("Acta V-0123 - Tienda Centro - Cliente Uno.pdf");
+  it("arma «razón social - sucursal.pdf», sin el nombre de fantasía", () => {
+    expect(nombreArchivoActa(v("Comercial Uno SpA", "Tienda Centro"))).toBe("Comercial Uno SpA - Tienda Centro.pdf");
   });
 
-  it("quita los caracteres que Windows no admite en un nombre de archivo", () => {
-    const v = { folio: "V-1", sucursal: { nombre: 'Mall "Plaza" / Local: 3?' }, cliente: { nombreFantasia: "A|B*C" } } as never;
-    const nombre = nombreArchivoActa(v);
-    expect(nombre).not.toMatch(/[\/:*?"<>|]/);
-    expect(nombre.endsWith(".pdf")).toBe(true);
+  it("deja la sucursal tal como se escribió, con sus mayúsculas", () => {
+    expect(nombreArchivoActa(v("Empresa SpA", "LOCAL 12 Mall Norte"))).toBe("Empresa SpA - LOCAL 12 Mall Norte.pdf");
   });
 
-  it("omite las partes que faltan sin dejar guiones colgando", () => {
+  it("conserva tildes y ñ, en forma compuesta", () => {
+    const nombre = nombreArchivoActa(v("Inversiones Peña Ltda.", "Ñuñoa Plaza Egaña".normalize("NFD")));
+    expect(nombre).toBe("Inversiones Peña Ltda. - Ñuñoa Plaza Egaña.pdf");
+    expect(nombre).toBe(nombre.normalize("NFC"));
+  });
+
+  it("quita los caracteres que Windows no admite y los saltos de línea", () => {
+    const nombre = nombreArchivoActa(v('A|B*C "Uno"\\Dos', "Mall / Local: 3?<x>\r\nPiso\t2"));
+    expect(nombre).toBe("A B C Uno Dos - Mall Local 3 x Piso 2.pdf");
+    expect(nombre).not.toMatch(/[\/:*?"<>|\u0000-\u001f]/);
+  });
+
+  it("recorta los espacios de sobra", () => {
+    expect(nombreArchivoActa(v("  Empresa   SpA ", "  Tienda    Sur  "))).toBe("Empresa SpA - Tienda Sur.pdf");
+  });
+
+  it("corta los nombres larguísimos a 150 caracteres + extensión, sin dejar punto ni guion al final", () => {
+    const largo = nombreArchivoActa(v("x".repeat(400), "y"));
+    expect(largo).toBe(`${"x".repeat(150)}.pdf`);
+    const enElGuion = nombreArchivoActa(v("x".repeat(148), "y"));
+    expect(enElGuion).toBe(`${"x".repeat(148)}.pdf`);
+    // No parte un carácter fuera del plano básico en dos.
+    const emoji = nombreArchivoActa(v("😀".repeat(200), "y"));
+    expect(Array.from(emoji.slice(0, -4)).every((c) => c === "😀")).toBe(true);
+  });
+
+  it("sin razón social usa el nombre de fantasía", () => {
+    expect(nombreArchivoActa(v("", "Tienda Centro"))).toBe("Fantasía - Tienda Centro.pdf");
+    expect(nombreArchivoActa(v(null, "Tienda Centro"))).toBe("Fantasía - Tienda Centro.pdf");
+  });
+
+  it("con datos faltantes no deja «undefined» ni guiones sueltos", () => {
+    expect(nombreArchivoActa(v("Empresa SpA", "   "))).toBe("Empresa SpA.pdf");
+    expect(nombreArchivoActa(v("Empresa SpA", undefined))).toBe("Empresa SpA.pdf");
+    expect(nombreArchivoActa({ folio: "V-9", sucursal: { nombre: "Tienda" } } as never)).toBe("Tienda.pdf");
     expect(nombreArchivoActa({ folio: "V-9" } as never)).toBe("Acta V-9.pdf");
-    expect(nombreArchivoActa({ folio: "V-9", sucursal: { nombre: "  " }, cliente: { nombreFantasia: "X" } } as never)).toBe(
-      "Acta V-9 - X.pdf"
+    expect(nombreArchivoActa({} as never)).toBe("Acta.pdf");
+    const soloProhibidos = { folio: "V-1", cliente: { razonSocial: "???", nombreFantasia: "|" }, sucursal: { nombre: "***" } };
+    expect(nombreArchivoActa(soloProhibidos as never)).toBe("Acta V-1.pdf");
+  });
+
+  it("no produce un nombre reservado de Windows", () => {
+    expect(nombreArchivoActa(v("CON", ""))).toBe("CON_.pdf");
+  });
+});
+
+describe("dispositionAdjunto (Content-Disposition del PDF)", () => {
+  it("lleva filename en ASCII y filename* en UTF-8", () => {
+    expect(dispositionAdjunto("Peña SpA - Ñuñoa.pdf")).toBe(
+      `attachment; filename="Pena SpA - Nunoa.pdf"; filename*=UTF-8''Pe%C3%B1a%20SpA%20-%20%C3%91u%C3%B1oa.pdf`
     );
   });
-
-  it("corta los nombres larguísimos a 150 caracteres + extensión", () => {
-    const v = { folio: "V-1", sucursal: { nombre: "x".repeat(400) }, cliente: { nombreFantasia: "y" } } as never;
-    expect(nombreArchivoActa(v).length).toBeLessThanOrEqual(154);
+  it("el encabezado queda en ASCII imprimible, aunque el nombre traiga otros caracteres", () => {
+    const d = dispositionAdjunto("Tienda (Sur) O'Higgins 😀.pdf");
+    expect(d).toMatch(/^[\x20-\x7e]+$/);
+    expect(d).toContain(`filename="Tienda (Sur) O'Higgins __.pdf"`);
+    expect(d).toContain("filename*=UTF-8''Tienda%20%28Sur%29%20O%27Higgins%20%F0%9F%98%80.pdf");
   });
 });
 

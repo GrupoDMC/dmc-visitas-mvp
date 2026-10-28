@@ -32,7 +32,7 @@ describe("GET /api/visita/acta/[folio] (PDF del acta)", () => {
     tecnicoId: MIO,
     tecnicoAyudanteId: null,
     sucursal: { nombre: "Tienda Ñandú" },
-    cliente: { nombreFantasia: "Cliente Uno" },
+    cliente: { razonSocial: "Comercial Peña SpA", nombreFantasia: "Cliente Uno" },
     firmas: [{ id: 70, rol: "TIENDA" }],
     fotos: [
       { id: 1, interno: false, etiqueta: "Antes" },
@@ -68,7 +68,9 @@ describe("GET /api/visita/acta/[folio] (PDF del acta)", () => {
     expect(r.headers.get("content-length")).toBe("4");
     const disp = r.headers.get("content-disposition") ?? "";
     expect(disp).toContain("attachment");
-    expect(disp).toContain(`filename*=UTF-8''${encodeURIComponent("Acta V-1 - Tienda Ñandú - Cliente Uno.pdf")}`);
+    // Razón social + sucursal: en ASCII para los clientes viejos y en UTF-8 con la ñ.
+    expect(disp).toContain('filename="Comercial Pena SpA - Tienda Nandu.pdf"');
+    expect(disp).toContain(`filename*=UTF-8''${encodeURIComponent("Comercial Peña SpA - Tienda Ñandú.pdf")}`);
   });
 
   it("las fotos y clips INTERNOS no llegan al PDF que se manda al cliente", async () => {

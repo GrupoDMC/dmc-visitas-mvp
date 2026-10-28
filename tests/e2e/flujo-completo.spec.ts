@@ -120,7 +120,8 @@ test.describe("flujo completo: agendar → acta móvil → panel → PDF", () =>
     const pdf = await page.request.get(`/api/visita/acta/${folio}`);
     expect(pdf.status()).toBe(200);
     expect(pdf.headers()["content-type"]).toBe("application/pdf");
-    expect(pdf.headers()["content-disposition"]).toContain(`Acta ${folio}`);
+    // Razón social del cliente + la sucursal tal como se escribió (no el nombre de fantasía).
+    expect(pdf.headers()["content-disposition"]).toContain('filename="Cliente E2E SpA - Tienda E2E Centro.pdf"');
     expect((await pdf.body()).subarray(0, 5).toString()).toBe("%PDF-");
 
     // Las evidencias de la visita las ve el panel; la firma está servida con cabeceras seguras.
