@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { consulta } from "@/lib/data/sql";
-import { buscarVisitas, opcionesFiltroVisitas } from "@/lib/data/visitas-lista";
-import { ELIMINADAS, SIN_FILTROS, lunesDe, type FiltrosVisitas } from "@/lib/ui/filtros-visitas";
+import { buscarVisitas, lugaresConVisitas } from "@/lib/data/visitas-lista";
+import { acotarFiltros, ELIMINADAS, SIN_FILTROS, type FiltrosVisitas } from "@/lib/ui/filtros-visitas";
 import { hoyISO, sumarDias } from "@/lib/ui/fecha";
 import { hayBd, insertarVisita, limpiarDatos, sembrarMundo, uno, type Mundo } from "./_ayuda";
 
@@ -13,6 +13,8 @@ describe.skipIf(!hayBd)("BD · listado de visitas con filtros", () => {
   let otroClienteId: number;
   let otraSucursalId: number;
   let mallId: number;
+  let mallCentroId: number;
+  let marca2: number;
   const f = (extra: Partial<FiltrosVisitas>): FiltrosVisitas => ({ ...SIN_FILTROS, ...extra });
   const folios = async (extra: Partial<FiltrosVisitas>) => (await buscarVisitas(f(extra))).visitas.map((v) => v.folio);
 
@@ -29,10 +31,19 @@ describe.skipIf(!hayBd)("BD · listado de visitas con filtros", () => {
     otroClienteId = Number((await uno<{ id: number }>(`SELECT id FROM dmc.cliente WHERE rut = '76.000.002-0'`))!.id);
     mallId = Number((await uno<{ id: number }>(`SELECT id FROM dmc.mall`))!.id);
     await consulta(`INSERT INTO dmc.marca (cliente_id, nombre) VALUES (${otroClienteId}, N'Marca Dos')`);
-    const marca2 = Number((await uno<{ id: number }>(`SELECT id FROM dmc.marca WHERE cliente_id = ${otroClienteId}`))!.id);
+    marca2 = Number((await uno<{ id: number }>(`SELECT id FROM dmc.marca WHERE cliente_id = ${otroClienteId}`))!.id);
     await consulta(`INSERT INTO dmc.sucursal (cliente_id, marca_id, mall_id, nombre, direccion, comuna, region)
                     VALUES (${otroClienteId}, ${marca2}, ${mallId}, N'Tienda Valpo', N'Av. 1', N'Valparaíso', N'Valparaíso')`);
     otraSucursalId = Number((await uno<{ id: number }>(`SELECT id FROM dmc.sucursal WHERE nombre = N'Tienda Valpo'`))!.id);
+    // La tienda del mundo queda en un mall de la Metropolitana, y el cliente
+    // Uno suma una segunda marca con una tienda sin visitas.
+    await consulta(`INSERT INTO dmc.mall (nombre, direccion, comuna, region) VALUES (N'Mall Centro', N'Av. 2', N'Santiago', N'Metropolitana')`);
+    mallCentroId = Number((await uno<{ id: number }>(`SELECT id FROM dmc.mall WHERE nombre = N'Mall Centro'`))!.id);
+    await consulta(`UPDATE dmc.sucursal SET mall_id = ${mallCentroId} WHERE id = ${m.sucursalId}`);
+    await consulta(`INSERT INTO dmc.marca (cliente_id, nombre) VALUES (${m.clienteId}, N'Marca Uno B')`);
+    const marcaB = Number((await uno<{ id: number }>(`SELECT id FROM dmc.marca WHERE nombre = N'Marca Uno B'`))!.id);
+    await consulta(`INSERT INTO dmc.sucursal (cliente_id, marca_id, nombre, direccion, comuna, region)
+                    VALUES (${m.clienteId}, ${marcaB}, N'Tienda Sin Visitas', N'Av. 3', N'Santiago', N'Metropolitana')`);
 
     const crear = async (clave: string, extra: Parameters<typeof insertarVisita>[1], cambios = "") => {
       const v = await insertarVisita(m, extra);
@@ -86,17 +97,17 @@ describe.skipIf(!hayBd)("BD · listado de visitas con filtros", () => {
     expect(await folios({ regiones: ["Metropolitana"] })).toEqual([porId.c, porId.b, porId.a]);
     expect((await folios({ regiones: ["Metropolitana", "Valparaíso"] })).length).toBe(5);
     expect(await folios({ mallId: String(mallId) })).toEqual([porId.e, porId.d]);
+    expect(await folios({ mallId: String(mallCentroId) })).toEqual([porId.c, porId.b, porId.a]);
   });
 
-  it("por semana (lunes a domingo) y por rango de fechas", async () => {
-    const lunes = lunesDe(D(2));
-    const domingo = sumarDias(lunes, 6);
-    const esperadas = ["a", "b", "c", "d", "e"].filter((k) => {
-      const fecha = { a: D(1), b: D(2), c: D(3), d: D(10), e: D(11) }[k]!;
-      return fecha >= lunes && fecha <= domingo;
-    }).map((k) => porId[k]);
-    expect((await folios({ semana: lunes })).sort()).toEqual(esperadas.sort());
+  it("por marca (la de hoy de la tienda), dentro de los clientes elegidos", async () => {
+    const ambos = [String(m.clienteId), String(otroClienteId)];
+    expect(await folios({ clienteIds: ambos, marcaIds: [String(marca2)] })).toEqual([porId.e, porId.d]);
+    expect(await folios({ clienteIds: ambos, marcaIds: [String(m.marcaId)] })).toEqual([porId.c, porId.b, porId.a]);
+    expect((await folios({ clienteIds: ambos, marcaIds: [String(m.marcaId), String(marca2)] })).length).toBe(5);
+  });
 
+  it("por rango de fechas", async () => {
     expect(await folios({ desde: D(10), hasta: D(11) })).toEqual([porId.e, porId.d]);
     expect(await folios({ desde: D(3) })).toEqual([porId.e, porId.d, porId.c]);
     expect(await folios({ hasta: D(1) })).toEqual([porId.a]);
@@ -146,11 +157,53 @@ describe.skipIf(!hayBd)("BD · listado de visitas con filtros", () => {
     expect(await folios({ estados: ["PROGRAMADA"], regiones: ["Metropolitana"], q: "centro" })).toEqual([porId.a]);
   });
 
-  it("las opciones del selector traen solo clientes, tiendas, malls y regiones que tienen visitas", async () => {
-    const o = await opcionesFiltroVisitas([String(otroClienteId)]);
-    expect(o.clientes.map((c) => c[1]).sort()).toEqual(["Cliente Dos", "Cliente Uno"]);
-    expect(o.tiendas.map((t) => t[1])).toEqual(["Tienda Valpo"]);
-    expect(o.malls.map((x) => x[1])).toEqual(["Mall Plaza"]);
-    expect(o.regiones).toEqual(expect.arrayContaining(["Metropolitana", "Valparaíso"]));
+  const opciones = async (extra: Partial<FiltrosVisitas>) => acotarFiltros(await lugaresConVisitas(false), f(extra));
+  const nombres = (lista: [number, string][]) => lista.map(([, n]) => n);
+
+  it("las opciones traen solo regiones, malls, clientes, marcas y tiendas que tienen visitas", async () => {
+    const { opciones: o } = await opciones({ clienteIds: [String(m.clienteId), String(otroClienteId)] });
+    expect(o.regiones).toEqual(["Valparaíso", "Metropolitana"]); // de norte a sur
+    expect(nombres(o.malls)).toEqual(["Mall Centro", "Mall Plaza"]);
+    expect(nombres(o.clientes)).toEqual(["Cliente Dos", "Cliente Uno"]);
+    // «Marca Uno B» solo tiene una tienda sin visitas: no se ofrece.
+    expect(nombres(o.marcas)).toEqual(["Marca Dos", "Marca Uno"]);
+    expect(nombres(o.tiendas)).toEqual(["Tienda Centro", "Tienda Valpo"]);
+    // Las eliminadas son de la tienda del mundo.
+    expect((await lugaresConVisitas(true)).map((l) => l.sucursal)).toEqual(["Tienda Centro"]);
+  });
+
+  it("cascada: la zona acota los malls y los clientes", async () => {
+    const valpo = (await opciones({ regiones: ["Valparaíso"] })).opciones;
+    expect(nombres(valpo.malls)).toEqual(["Mall Plaza"]);
+    expect(nombres(valpo.clientes)).toEqual(["Cliente Dos"]);
+    const rm = (await opciones({ regiones: ["Metropolitana"] })).opciones;
+    expect(nombres(rm.malls)).toEqual(["Mall Centro"]);
+    expect(nombres(rm.clientes)).toEqual(["Cliente Uno"]);
+  });
+
+  it("cascada: un mall, cliente, marca o tienda fuera de la zona elegida se descarta", async () => {
+    const { filtros } = await opciones({
+      regiones: ["Metropolitana"],
+      mallId: String(mallId),
+      clienteIds: [String(otroClienteId)],
+      marcaIds: [String(marca2)],
+      sucursalIds: [String(otraSucursalId)],
+    });
+    expect(filtros.mallId).toBe("");
+    expect(filtros.clienteIds).toEqual([]);
+    expect(filtros.marcaIds).toEqual([]);
+    expect(filtros.sucursalIds).toEqual([]);
+  });
+
+  it("cascada: el cliente acota las marcas y la marca las tiendas", async () => {
+    const uno = (await opciones({ clienteIds: [String(m.clienteId)] })).opciones;
+    expect(nombres(uno.marcas)).toEqual(["Marca Uno"]);
+    const conMarca = await opciones({
+      clienteIds: [String(m.clienteId), String(otroClienteId)],
+      marcaIds: [String(marca2)],
+      sucursalIds: [String(m.sucursalId), String(otraSucursalId)],
+    });
+    expect(nombres(conMarca.opciones.tiendas)).toEqual(["Tienda Valpo"]);
+    expect(conMarca.filtros.sucursalIds).toEqual([String(otraSucursalId)]);
   });
 });

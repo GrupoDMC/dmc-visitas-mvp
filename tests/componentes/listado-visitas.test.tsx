@@ -18,13 +18,17 @@ import { SIN_FILTROS, type FiltrosVisitas, type OpcionesFiltroVisitas } from "@/
 import { pintar, router, visitaFalsa } from "../helpers/componentes";
 
 const opciones: OpcionesFiltroVisitas = {
+  regiones: ["Valparaíso", "Metropolitana"],
+  malls: [[5, "Mall Plaza"]],
   clientes: [
     [1, "Cliente Uno"],
     [2, "Cliente Dos"],
   ],
+  marcas: [
+    [7, "Marca Norte"],
+    [8, "Marca Sur"],
+  ],
   tiendas: [[10, "Tienda Centro"]],
-  malls: [[5, "Mall Plaza"]],
-  regiones: ["Valparaíso", "Metropolitana"],
 };
 
 function tabla(f: Partial<FiltrosVisitas> = {}, visitas = [visitaFalsa()], extra: Record<string, unknown> = {}) {
@@ -146,16 +150,18 @@ describe("filtros del listado (viven en la URL: cambiar uno es navegar)", () => 
     expect(url.searchParams.getAll("estado")).toEqual(["COMPLETADA", "PENDIENTE"]);
   });
 
-  it("filtrar por cliente muestra el filtro de sucursal; sin cliente no existe", async () => {
+  it("filtrar por cliente muestra los filtros de marca y sucursal; sin cliente no existen", async () => {
     const u = userEvent.setup();
-    const { unmount } = pintar(tabla());
+    const { container, unmount } = pintar(tabla());
     await abrirFiltros(u);
-    expect(screen.queryByRole("combobox", { name: /Sucursal/ })).toBeNull();
+    expect(container.querySelector("label[for=fv-marca]")).toBeNull();
+    expect(container.querySelector("label[for=fv-tienda]")).toBeNull();
     unmount();
 
-    pintar(tabla({ clienteIds: ["1"] }));
+    const otra = pintar(tabla({ clienteIds: ["1"] }));
     await abrirFiltros(u);
-    expect(screen.getAllByText("Sucursal").length).toBeGreaterThan(0);
+    expect(otra.container.querySelector("label[for=fv-marca]")).toHaveTextContent("Marca");
+    expect(otra.container.querySelector("label[for=fv-tienda]")).toHaveTextContent("Sucursal");
     // Con un cliente elegido el filtro por tipo de falla deja de aplicar.
     expect(screen.queryByText("Tipo de falla registrada")).toBeNull();
   });
@@ -171,15 +177,43 @@ describe("filtros del listado (viven en la URL: cambiar uno es navegar)", () => 
     expect(url.searchParams.getAll("region")).toEqual(["Metropolitana"]);
   });
 
-  it("filtrar por semana: elegir cualquier día deja el lunes de esa semana", async () => {
+  it("los selectores van en el orden de la cascada y ya no hay filtro por semana", async () => {
     const u = userEvent.setup();
-    const { container } = pintar(tabla());
+    const { container } = pintar(tabla({ clienteIds: ["1"] }));
     await abrirFiltros(u);
-    const campo = container.querySelector<HTMLInputElement>("#fv-semana");
-    expect(campo).not.toBeNull();
-    fireEvent.change(campo!, { target: { value: "2026-10-28" } }); // miércoles
+    const orden = [...container.querySelectorAll("label")].map((l) => l.textContent);
+    const cadena = ["Zona (región)", "Mall", "Cliente", "Marca", "Sucursal"];
+    expect(orden.filter((t) => cadena.includes(t ?? ""))).toEqual(cadena);
+    expect(container.querySelector("#fv-semana")).toBeNull();
+    expect(screen.queryByText(/Semana/)).toBeNull();
+  });
+
+  it("filtrar por marca: ofrece las marcas recibidas y navega con ellas", async () => {
+    const u = userEvent.setup();
+    pintar(tabla({ clienteIds: ["1"] }));
+    await abrirFiltros(u);
+    await u.click(screen.getByRole("combobox", { name: /Marca|Todas las marcas/ }));
+    expect(screen.getAllByRole("option").map((o) => o.textContent)).toEqual(
+      expect.arrayContaining([expect.stringContaining("Marca Norte"), expect.stringContaining("Marca Sur")])
+    );
+    await u.click(screen.getByRole("option", { name: /Marca Norte/ }));
+    await u.click(screen.getByRole("option", { name: /Marca Sur/ }));
+    await u.click(screen.getByRole("button", { name: "Aplicar" }));
     const url = new URL(router.replace.mock.calls[0][0] as string, "http://x");
-    expect(url.searchParams.get("semana")).toBe("2026-10-26");
+    expect(url.searchParams.getAll("cliente")).toEqual(["1"]);
+    expect(url.searchParams.getAll("marca")).toEqual(["7", "8"]);
+  });
+
+  it("cambiar la zona navega sin tocar el mall: el servidor descarta lo que ya no cabe", async () => {
+    const u = userEvent.setup();
+    pintar(tabla({ mallId: "5" }));
+    await abrirFiltros(u);
+    await u.click(screen.getByRole("combobox", { name: /Zona|Todas las zonas/ }));
+    await u.click(screen.getByRole("option", { name: "Valparaíso" }));
+    await u.click(screen.getByRole("button", { name: "Aplicar" }));
+    const url = new URL(router.replace.mock.calls[0][0] as string, "http://x");
+    expect(url.searchParams.getAll("region")).toEqual(["Valparaíso"]);
+    expect(url.searchParams.get("mall")).toBe("5");
   });
 
   it("los filtros activos aparecen como chips con su nombre y cada uno se puede quitar", async () => {
@@ -188,16 +222,22 @@ describe("filtros del listado (viven en la URL: cambiar uno es navegar)", () => 
       tabla({
         estados: ["COMPLETADA"],
         clienteIds: ["2"],
+        marcaIds: ["8"],
         sucursalIds: ["10"],
         regiones: ["Valparaíso"],
-        semana: "2026-10-26",
         mallId: "5",
       })
     );
-    for (const chip of ["Estado: Completada", "Cliente: Cliente Dos", "Tienda: Tienda Centro", "Zona: Valparaíso", "Mall: Mall Plaza"]) {
+    for (const chip of [
+      "Estado: Completada",
+      "Cliente: Cliente Dos",
+      "Marca: Marca Sur",
+      "Tienda: Tienda Centro",
+      "Zona: Valparaíso",
+      "Mall: Mall Plaza",
+    ]) {
       expect(screen.getByRole("button", { name: new RegExp(chip) })).toBeInTheDocument();
     }
-    expect(screen.getByRole("button", { name: "Semana: 26/10 – 01/11" })).toBeInTheDocument();
 
     await u.click(screen.getByRole("button", { name: /Zona: Valparaíso/ }));
     const url = new URL(router.replace.mock.calls[0][0] as string, "http://x");
@@ -205,13 +245,14 @@ describe("filtros del listado (viven en la URL: cambiar uno es navegar)", () => 
     expect(url.searchParams.getAll("estado")).toEqual(["COMPLETADA"]);
   });
 
-  it("quitar el cliente también limpia las sucursales (ya no corresponden)", async () => {
+  it("quitar el último cliente también quita marcas y sucursales (sin cliente no aplican)", async () => {
     const u = userEvent.setup();
-    pintar(tabla({ clienteIds: ["2"], sucursalIds: ["10"] }));
+    pintar(tabla({ clienteIds: ["2"], marcaIds: ["8"], sucursalIds: ["10"] }));
     await u.click(screen.getByRole("button", { name: /Cliente: Cliente Dos/ }));
     const url = new URL(router.replace.mock.calls[0][0] as string, "http://x");
     expect(url.searchParams.getAll("cliente")).toEqual([]);
-    expect(url.searchParams.getAll("sucursal")).toEqual([]);
+    expect(url.searchParams.getAll("marca")).toEqual([]);
+    expect(url.searchParams.getAll("tienda")).toEqual([]);
   });
 
   it("«Quitar todos» limpia los filtros pero conserva el límite elegido", async () => {

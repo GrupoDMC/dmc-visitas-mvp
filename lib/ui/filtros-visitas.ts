@@ -9,6 +9,7 @@
  */
 
 import type { Visita } from "@/lib/types";
+import { REGIONES } from "@/lib/ui/regiones";
 
 /** No es un estado: es la opción que le muestra al administrador las visitas eliminadas. */
 export const ELIMINADAS = "ELIMINADAS";
@@ -36,14 +37,18 @@ export interface FiltrosVisitas {
   /** YYYY-MM-DD, o vacío. */
   desde: string;
   hasta: string;
-  /** El lunes (YYYY-MM-DD) de la semana elegida, o vacío. */
-  semana: string;
-  clienteIds: string[];
-  /** Solo cuentan con algún cliente elegido. */
-  sucursalIds: string[];
+  /**
+   * La cadena región → mall → cliente → marca → sucursal: cada uno se ofrece
+   * acotado a lo elegido arriba (ver acotarFiltros).
+   */
   /** Regiones de la tienda de la visita (hoy), tal como se guardan. */
   regiones: string[];
   mallId: string;
+  clienteIds: string[];
+  /** Marcas de la tienda (hoy). Solo cuentan con algún cliente elegido. */
+  marcaIds: string[];
+  /** Solo cuentan con algún cliente elegido. */
+  sucursalIds: string[];
   /** Trae también las visitas en las que va de ayudante. */
   tecnicoId: string;
   /** Tipo de falla registrada. Solo cuenta sin cliente elegido. */
@@ -60,11 +65,11 @@ export const SIN_FILTROS: FiltrosVisitas = {
   estados: [],
   desde: "",
   hasta: "",
-  semana: "",
-  clienteIds: [],
-  sucursalIds: [],
   regiones: [],
   mallId: "",
+  clienteIds: [],
+  marcaIds: [],
+  sucursalIds: [],
   tecnicoId: "",
   tipo: "",
   q: "",
@@ -87,22 +92,6 @@ const varios = (p: Parametros, clave: string) => {
 const fecha = (v: string) => (/^\d{4}-\d{2}-\d{2}$/.test(v) && !Number.isNaN(Date.parse(v)) ? v : "");
 const id = (v: string) => (/^\d{1,15}$/.test(v) && Number(v) > 0 ? v : "");
 
-const DIA_MS = 86_400_000;
-const isoDia = (ms: number) => new Date(ms).toISOString().slice(0, 10);
-
-/** El lunes de la semana (lunes a domingo) que contiene ese día; vacío si no es una fecha. */
-export function lunesDe(dia: string): string {
-  if (!fecha(dia)) return "";
-  const ms = Date.parse(dia);
-  const desdeLunes = (new Date(ms).getUTCDay() + 6) % 7;
-  return isoDia(ms - desdeLunes * DIA_MS);
-}
-
-/** De lunes a domingo de la semana que arranca ese lunes. */
-export function rangoSemana(lunes: string): { desde: string; hasta: string } {
-  return { desde: lunes, hasta: isoDia(Date.parse(lunes) + 6 * DIA_MS) };
-}
-
 /**
  * Lee los filtros de la URL. Lo que no tenga forma válida se ignora: la URL la
  * puede escribir cualquiera. `fecha` (los enlaces del panel) es un día suelto,
@@ -123,11 +112,11 @@ export function leerFiltrosVisitas(p: Parametros, opciones: { verEliminadas: boo
     estados,
     desde: fecha(uno(p, "desde")) || dia,
     hasta: fecha(uno(p, "hasta")) || dia,
-    semana: lunesDe(uno(p, "semana")),
-    clienteIds,
-    sucursalIds: clienteIds.length ? varios(p, "tienda").map(id).filter(Boolean) : [],
     regiones: varios(p, "region").map((r) => r.slice(0, 80)),
     mallId: id(uno(p, "mall")),
+    clienteIds,
+    marcaIds: clienteIds.length ? varios(p, "marca").map(id).filter(Boolean) : [],
+    sucursalIds: clienteIds.length ? varios(p, "tienda").map(id).filter(Boolean) : [],
     tecnicoId: id(uno(p, "tecnico")),
     tipo: clienteIds.length ? "" : uno(p, "tipo").slice(0, 40),
     q: uno(p, "q").slice(0, 100),
@@ -142,11 +131,13 @@ export function urlFiltrosVisitas(f: FiltrosVisitas): string {
   f.estados.forEach((e) => p.append("estado", e));
   if (f.desde) p.set("desde", f.desde);
   if (f.hasta) p.set("hasta", f.hasta);
-  if (f.semana) p.set("semana", f.semana);
-  f.clienteIds.forEach((c) => p.append("cliente", c));
-  if (f.clienteIds.length) f.sucursalIds.forEach((s) => p.append("tienda", s));
   f.regiones.forEach((r) => p.append("region", r));
   if (f.mallId) p.set("mall", f.mallId);
+  f.clienteIds.forEach((c) => p.append("cliente", c));
+  if (f.clienteIds.length) {
+    f.marcaIds.forEach((m) => p.append("marca", m));
+    f.sucursalIds.forEach((s) => p.append("tienda", s));
+  }
   if (f.tecnicoId) p.set("tecnico", f.tecnicoId);
   if (f.tipo && !f.clienteIds.length) p.set("tipo", f.tipo);
   if (f.q.trim()) p.set("q", f.q.trim());
@@ -175,11 +166,84 @@ export interface PaginaVisitas {
 }
 
 export interface OpcionesFiltroVisitas {
-  /** Los clientes, tiendas y malls que tienen visitas: [id, nombre], por nombre. */
-  clientes: [number, string][];
-  /** Solo las del cliente elegido. */
-  tiendas: [number, string][];
-  malls: [number, string][];
   /** Las regiones de las tiendas que tienen visitas, de norte a sur. */
   regiones: string[];
+  /** Los malls, clientes, marcas y tiendas que tienen visitas, acotados a lo elegido arriba: [id, nombre], por nombre. */
+  malls: [number, string][];
+  clientes: [number, string][];
+  /** Solo las de los clientes elegidos. */
+  marcas: [number, string][];
+  /** Solo las de los clientes (y marcas) elegidos. */
+  tiendas: [number, string][];
+}
+
+/** Una tienda con visitas, con lo que la ubica en la cadena de filtros (todo como está hoy). */
+export interface LugarConVisitas {
+  region: string;
+  mallId: number | null;
+  mall: string | null;
+  clienteId: number;
+  cliente: string;
+  marcaId: number;
+  marca: string;
+  sucursalId: number;
+  sucursal: string;
+}
+
+/** [id, nombre] sin repetir, por nombre. */
+function distintos(lista: LugarConVisitas[], par: (l: LugarConVisitas) => [number | null, string | null]): [number, string][] {
+  const vistos = new Map<number, string>();
+  for (const l of lista) {
+    const [i, nombre] = par(l);
+    if (i !== null && nombre !== null) vistos.set(i, nombre);
+  }
+  return [...vistos].sort((a, b) => a[1].localeCompare(b[1], "es"));
+}
+
+/**
+ * Los filtros en cascada: región → mall → cliente → marca → sucursal. Cada
+ * selector ofrece solo lo que existe dentro de lo elegido arriba, y lo elegido
+ * abajo que ya no cabe (porque cambió un filtro de arriba) se descarta. La
+ * región, primera de la cadena, no se acota.
+ */
+export function acotarFiltros(
+  lugares: LugarConVisitas[],
+  f: FiltrosVisitas
+): { opciones: OpcionesFiltroVisitas; filtros: FiltrosVisitas } {
+  // De norte a sur, como las lista REGIONES; lo que no esté ahí, al final.
+  const lugar = (r: string) => (REGIONES.includes(r) ? REGIONES.indexOf(r) : REGIONES.length);
+  const regiones = [...new Set(lugares.map((l) => l.region).filter(Boolean))].sort(
+    (a, b) => lugar(a) - lugar(b) || a.localeCompare(b, "es")
+  );
+  const quedan = (elegidos: string[], opciones: [number, string][]) =>
+    elegidos.filter((e) => opciones.some(([i]) => String(i) === e));
+
+  const enRegion = f.regiones.length ? lugares.filter((l) => f.regiones.includes(l.region)) : lugares;
+  const malls = distintos(enRegion, (l) => [l.mallId, l.mall]);
+  const mallId = quedan(f.mallId ? [f.mallId] : [], malls)[0] ?? "";
+
+  const enMall = mallId ? enRegion.filter((l) => String(l.mallId) === mallId) : enRegion;
+  const clientes = distintos(enMall, (l) => [l.clienteId, l.cliente]);
+  const clienteIds = quedan(f.clienteIds, clientes);
+
+  const deClientes = clienteIds.length ? enMall.filter((l) => clienteIds.includes(String(l.clienteId))) : [];
+  const marcas = distintos(deClientes, (l) => [l.marcaId, l.marca]);
+  const marcaIds = quedan(f.marcaIds, marcas);
+
+  const deMarcas = marcaIds.length ? deClientes.filter((l) => marcaIds.includes(String(l.marcaId))) : deClientes;
+  const tiendas = distintos(deMarcas, (l) => [l.sucursalId, l.sucursal]);
+  const sucursalIds = quedan(f.sucursalIds, tiendas);
+
+  return {
+    opciones: { regiones, malls, clientes, marcas, tiendas },
+    filtros: {
+      ...f,
+      mallId,
+      clienteIds,
+      marcaIds,
+      sucursalIds,
+      // Con algún cliente el tipo de falla deja de aplicar, también si llegó por la URL.
+      tipo: clienteIds.length ? "" : f.tipo,
+    },
+  };
 }
