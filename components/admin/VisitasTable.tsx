@@ -23,7 +23,9 @@ import {
   type OpcionesFiltroVisitas,
   type PaginaVisitas,
 } from "@/lib/ui/filtros-visitas";
-import { armarZip, type ArchivoZip } from "@/lib/ui/zip";
+import { nombreArchivoActa } from "@/lib/ui/nombre-acta";
+import { armarZip } from "@/lib/ui/zip";
+import { NOMBRE_CONSTANCIA, armarArchivosZip, reunirActas } from "@/lib/ui/zip-actas";
 import { puede, useReferencias } from "@/lib/ui/referencias";
 import type { Visita, EstadoVisita } from "@/lib/types";
 
@@ -119,42 +121,29 @@ export default function VisitasTable({
     }
     setDescargando(true);
     try {
-      const archivos: ArchivoZip[] = [];
-      const fallidas: string[] = [];
-      const cola = [...cerradasMarcadas];
-      // Unas pocas a la vez: cada PDF lo arma el servidor con sus fotos.
-      await Promise.all(
-        Array.from({ length: Math.min(3, cola.length) }, async () => {
-          for (let v = cola.shift(); v; v = cola.shift()) {
-            try {
-              const r = await fetch(`/api/visita/acta/${encodeURIComponent(v.folio)}`);
-              if (!r.ok) throw new Error(String(r.status));
-              archivos.push({ nombre: `Acta ${v.folio}.pdf`, bytes: new Uint8Array(await r.arrayBuffer()) });
-            } catch {
-              fallidas.push(v.folio);
-            }
-          }
-        })
-      );
-      if (archivos.length === 0) {
+      const { actas, fallidas, incidencias } = await reunirActas(cerradasMarcadas);
+      if (actas.length === 0) {
         aviso("No se pudo descargar ninguna acta.");
         return;
       }
-      archivos.sort((a, b) => a.nombre.localeCompare(b.nombre, "es"));
-      const unica = archivos.length === 1;
-      const blob = unica ? new Blob([archivos[0].bytes as BlobPart], { type: "application/pdf" }) : armarZip(archivos);
+      // Una sola acta sin fotos ni videos baja como PDF suelto; el resto, en un .zip con una carpeta por local.
+      const unica = actas.length === 1 && actas[0].medios.length === 0 && incidencias.length === 0;
+      const blob = unica
+        ? new Blob([actas[0].pdf as BlobPart], { type: "application/pdf" })
+        : armarZip(armarArchivosZip(actas, incidencias));
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = unica ? archivos[0].nombre : `Actas ${new Date().toISOString().slice(0, 10)}.zip`;
+      a.download = unica ? nombreArchivoActa(actas[0].visita) : `Actas ${new Date().toISOString().slice(0, 10)}.zip`;
       a.click();
       setTimeout(() => URL.revokeObjectURL(url), 10_000);
       const omitidas = seleccionadas.length - cerradasMarcadas.length;
       const notas = [
         omitidas ? `${omitidas} sin acta cerrada` : "",
         fallidas.length ? `no se pudo: ${fallidas.join(", ")}` : "",
+        incidencias.length ? `${incidencias.length} archivo${incidencias.length === 1 ? "" : "s"} sin incluir, ver ${NOMBRE_CONSTANCIA}` : "",
       ].filter(Boolean);
-      aviso(`${archivos.length} ${unica ? "acta descargada" : "actas descargadas"}${notas.length ? ` (${notas.join("; ")})` : ""}.`);
+      aviso(`${actas.length} ${unica ? "acta descargada" : "actas descargadas"}${notas.length ? ` (${notas.join("; ")})` : ""}.`);
     } finally {
       setDescargando(false);
     }
