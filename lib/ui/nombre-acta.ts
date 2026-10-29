@@ -44,6 +44,38 @@ export function nombreArchivoActa(visita: DatosNombre): string {
   return `${baseNombreActa(visita)}.pdf`;
 }
 
+/** Parte común del nombre de toda descarga de multimedia: «Multimedia razón social local», sin extensión. */
+export function nombreMultimedia(visita: DatosNombre): string {
+  const cliente = sanearNombre(visita.cliente?.razonSocial) || sanearNombre(visita.cliente?.nombreFantasia);
+  const partes = ["Multimedia", cliente, sanearNombre(visita.sucursal?.nombre)].filter(Boolean);
+  if (partes.length === 1) partes.push(sanearNombre(visita.folio));
+  return acotarNombre(partes.join(" "));
+}
+
+/**
+ * El .zip de fotos, de videos o de toda la multimedia de un acta (en el panel
+ * y en el celular): «Multimedia razón social local.zip».
+ */
+export function nombreZipMultimedia(visita: DatosNombre): string {
+  return `${nombreMultimedia(visita)}.zip`;
+}
+
+/**
+ * El .zip de varias actas. Con una sola, el mismo nombre que su multimedia.
+ * Con varias: «Multimedia razón social N locales», o «Multimedia N locales» si
+ * no son todas del mismo cliente.
+ */
+export function nombreZipActas(visitas: DatosNombre[]): string {
+  if (visitas.length === 1) return nombreZipMultimedia(visitas[0]);
+  const razones = new Set(
+    visitas.map((v) => (sanearNombre(v.cliente?.razonSocial) || sanearNombre(v.cliente?.nombreFantasia)).toLowerCase())
+  );
+  const cliente = razones.size === 1 ? sanearNombre(visitas[0]?.cliente?.razonSocial) || sanearNombre(visitas[0]?.cliente?.nombreFantasia) : "";
+  const cola = `${visitas.length} locales`;
+  const base = acotarNombre(["Multimedia", cliente].filter(Boolean).join(" "), LARGO_MAXIMO - cola.length - 1);
+  return `${base} ${cola}.zip`;
+}
+
 /** La carpeta del local en el .zip de actas: el nombre de la sucursal; sin él, el del PDF. */
 export function nombreCarpetaLocal(visita: DatosNombre): string {
   return acotarNombre(sanearNombre(visita.sucursal?.nombre), 100) || baseNombreActa(visita);

@@ -8,7 +8,7 @@ import EstadoProblemaTag from "@/components/EstadoProblemaTag";
 import { textoMotivosReales } from "@/lib/ui/estado";
 import { nombreProblema, nombreTrabajo, puede, useReferencias } from "@/lib/ui/referencias";
 import { fechaHoraCorta, resumenEdicion } from "@/lib/ui/edicion";
-import { nombreArchivoActa } from "@/lib/ui/nombre-acta";
+import { nombreArchivoActa, nombreZipMultimedia } from "@/lib/ui/nombre-acta";
 import type { CatalogoProblema, CatalogoTrabajo, Visita } from "@/lib/types";
 
 /**
@@ -58,7 +58,7 @@ export default function ActaGuardada({
     const archivos = tipo === "fotos" ? fotosZip : tipo === "videos" ? videosZip : [...fotosZip, ...videosZip];
     setBajando(tipo);
     setAviso(null);
-    const n = await descargarZip(archivos, `${visita.folio} - ${tipo}.zip`);
+    const n = await descargarZip(archivos, nombreZipMultimedia(visita));
     setBajando(null);
     setAviso(n === archivos.length ? `Se descargaron ${n} archivos` : `Se descargaron ${n} de ${archivos.length} archivos`);
   }

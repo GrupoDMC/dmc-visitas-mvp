@@ -1,6 +1,6 @@
 import type { Visita } from "@/lib/types";
 import type { MedioActa } from "@/lib/ui/medios-acta";
-import { nombreArchivoActa, nombreCarpetaLocal, nombresSinColision } from "@/lib/ui/nombre-acta";
+import { nombreArchivoActa, nombreCarpetaLocal, nombreMultimedia, nombresSinColision } from "@/lib/ui/nombre-acta";
 import type { ArchivoZip } from "@/lib/ui/zip";
 
 /**
@@ -22,8 +22,8 @@ export interface ActaDescargada {
 }
 
 /**
- * La estructura del .zip: una carpeta por local con el PDF del acta y todos sus
- * medios. Dos locales con el mismo nombre quedan «Local» y «Local (2)». Si hay
+ * La estructura del .zip: una carpeta por local con el PDF del acta y, al lado, la
+ * carpeta «Multimedia razón social local» con sus fotos y videos. Dos locales con el mismo nombre quedan «Local» y «Local (2)». Si hay
  * `incidencias`, se suma el archivo de constancia en la raíz.
  */
 export function armarArchivosZip(descargadas: ActaDescargada[], incidencias: string[] = []): ArchivoZip[] {
@@ -37,10 +37,11 @@ export function armarArchivosZip(descargadas: ActaDescargada[], incidencias: str
 
   actas.forEach((a, i) => {
     const pdf = nombreArchivoActa(a.visita);
-    // El PDF entra primero: si un medio se llamara igual, el que cambia es el medio.
-    const nombres = nombresSinColision([pdf, ...a.medios.map((m) => m.nombre)], true);
-    archivos.push({ nombre: `${carpetas[i]}/${nombres[0]}`, bytes: a.pdf });
-    a.medios.forEach((m, j) => archivos.push({ nombre: `${carpetas[i]}/${nombres[j + 1]}`, bytes: m.bytes }));
+    archivos.push({ nombre: `${carpetas[i]}/${pdf}`, bytes: a.pdf });
+    // Los medios van en su propia carpeta «Multimedia razón social local», junto al PDF.
+    const nombres = nombresSinColision(a.medios.map((m) => m.nombre), true);
+    const multimedia = nombreMultimedia(a.visita);
+    a.medios.forEach((m, j) => archivos.push({ nombre: `${carpetas[i]}/${multimedia}/${nombres[j]}`, bytes: m.bytes }));
   });
 
   if (incidencias.length) {

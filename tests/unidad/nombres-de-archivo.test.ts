@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { dispositionAdjunto, nombreArchivoActa } from "@/lib/ui/nombre-acta";
+import {
+  dispositionAdjunto,
+  nombreArchivoActa,
+  nombreMultimedia,
+  nombreZipActas,
+  nombreZipMultimedia,
+} from "@/lib/ui/nombre-acta";
 import { extensionDe } from "@/lib/ui/descarga";
 
 const v = (razonSocial: unknown, sucursal: unknown, extra: Record<string, unknown> = {}) =>
@@ -86,5 +92,39 @@ describe("extensionDe (nombres de los archivos del zip)", () => {
     expect(extensionDe(null, "bin")).toBe("bin");
     expect(extensionDe("", "bin")).toBe("bin");
     expect(extensionDe("sinbarra", "bin")).toBe("bin");
+  });
+});
+
+describe("nombres de las descargas de multimedia", () => {
+  it("«Multimedia razón social local», con la sucursal tal como se escribió y sin el nombre de fantasía", () => {
+    expect(nombreMultimedia(v("Comercial Peña SpA", "Tienda ÑANDÚ"))).toBe("Multimedia Comercial Peña SpA Tienda ÑANDÚ");
+    expect(nombreZipMultimedia(v("Comercial Peña SpA", "Tienda Centro"))).toBe("Multimedia Comercial Peña SpA Tienda Centro.zip");
+  });
+
+  it("sanea para Windows y limita el largo", () => {
+    expect(nombreMultimedia(v('A|B*C "Uno"', "Mall / Local: 3?"))).toBe("Multimedia A B C Uno Mall Local 3");
+    const largo = nombreMultimedia(v("R".repeat(300), "S".repeat(300)));
+    expect(Array.from(largo).length).toBeLessThanOrEqual(150);
+  });
+
+  it("con datos faltantes usa un respaldo sin «undefined»", () => {
+    expect(nombreMultimedia(v("", "Sur"))).toBe("Multimedia Fantasía Sur");
+    expect(nombreMultimedia(v("Empresa", undefined))).toBe("Multimedia Empresa");
+    expect(nombreMultimedia({ folio: "V-9" } as never)).toBe("Multimedia V-9");
+    expect(nombreMultimedia({} as never)).toBe("Multimedia");
+    for (const n of [nombreZipMultimedia({} as never), nombreZipMultimedia(v(null, null))]) expect(n).not.toMatch(/undefined|null/);
+  });
+
+  it("el encabezado de descarga lleva el nombre ASCII y filename* UTF-8 con tildes y ñ", () => {
+    const d = dispositionAdjunto(nombreZipMultimedia(v("Peña Ltda", "Ñuñoa")));
+    expect(d).toContain('filename="Multimedia Pena Ltda Nunoa.zip"');
+    expect(d).toContain("filename*=UTF-8''Multimedia%20Pe%C3%B1a%20Ltda%20%C3%91u%C3%B1oa.zip");
+  });
+
+  it("el zip de varias actas usa el cliente si es el mismo y solo la cuenta si no", () => {
+    expect(nombreZipActas([v("Peña SpA", "A"), v("peña spa", "B"), v("Peña SpA", "C")])).toBe("Multimedia Peña SpA 3 locales.zip");
+    expect(nombreZipActas([v("Uno", "A"), v("Dos", "B")])).toBe("Multimedia 2 locales.zip");
+    expect(nombreZipActas([v("Uno", "A")])).toBe("Multimedia Uno A.zip");
+    expect(nombreZipActas([v("R".repeat(400), "A"), v("R".repeat(400), "B")]).length).toBeLessThanOrEqual(160);
   });
 });

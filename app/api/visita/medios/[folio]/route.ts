@@ -3,9 +3,10 @@ import { getSesion } from "@/lib/auth";
 import { getVisitaCompletaPorFolio } from "@/lib/data/visitas";
 import { participaEnVisita } from "@/lib/ui/estado";
 import { mediosDelActa } from "@/lib/ui/medios-acta";
+import { nombreMultimedia } from "@/lib/ui/nombre-acta";
 
 // La lista de fotos y videos de un acta (con el nombre que llevan en el .zip de
-// actas), sin bajar un solo byte: cada archivo se pide después a su ruta.
+// actas) y el nombre de su carpeta de multimedia, sin bajar un solo byte: cada archivo se pide después a su ruta.
 //
 // Mismas reglas que el PDF: requiere sesión; coordinación y administración ven
 // cualquier acta y el técnico solo las de sus propias visitas.
@@ -23,5 +24,5 @@ export async function GET(_req: Request, { params }: { params: Promise<{ folio: 
     return new NextResponse("No encontrada", { status: 404 });
   }
 
-  return NextResponse.json({ medios: mediosDelActa(visita) }, { headers: { "Cache-Control": "private, no-store" } });
+  return NextResponse.json({ carpeta: nombreMultimedia(visita), medios: mediosDelActa(visita) }, { headers: { "Cache-Control": "private, no-store" } });
 }

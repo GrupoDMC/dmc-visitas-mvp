@@ -24,7 +24,7 @@ import { reloj } from "@/lib/ui/video";
 import { descargarZip, extensionDe, type ArchivoADescargar } from "@/lib/ui/descarga";
 import { resumenEdicion } from "@/lib/ui/edicion";
 import { esInformePapel } from "@/lib/ui/papel";
-import { nombreArchivoActa } from "@/lib/ui/nombre-acta";
+import { nombreArchivoActa, nombreZipMultimedia } from "@/lib/ui/nombre-acta";
 import { textoMall } from "@/lib/ui/ubicacion";
 import type { Visita } from "@/lib/types";
 import { AdjuntosVista } from "@/components/ui/AdjuntosTrabajo";
@@ -129,7 +129,7 @@ export default function ActaView({
     }));
     const archivos = tipo === "fotos" ? fotosZip : tipo === "videos" ? videosZip : [...fotosZip, ...videosZip];
     setBajando(tipo);
-    const n = await descargarZip(archivos, `${visita.folio} - ${tipo}.zip`);
+    const n = await descargarZip(archivos, nombreZipMultimedia(visita));
     setBajando(null);
     aviso(n === archivos.length ? `Se descargaron ${n} archivos` : `Se descargaron ${n} de ${archivos.length} archivos`);
   }

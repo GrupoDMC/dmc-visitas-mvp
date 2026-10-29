@@ -31,11 +31,11 @@ describe("estructura del .zip de actas", () => {
     );
     expect(Object.keys(zip).sort()).toEqual([
       "Tienda Centro/Comercial Uno SpA - Tienda Centro.pdf",
-      "Tienda Centro/Foto 1.jpg",
-      "Tienda Centro/Video 1.mp4",
+      "Tienda Centro/Multimedia Comercial Uno SpA Tienda Centro/Foto 1.jpg",
+      "Tienda Centro/Multimedia Comercial Uno SpA Tienda Centro/Video 1.mp4",
       "Ñuñoa Plaza/Empresa Ñandú Ltda. - Ñuñoa Plaza.pdf",
     ]);
-    expect(texto(zip["Tienda Centro/Video 1.mp4"])).toBe("v1");
+    expect(texto(zip["Tienda Centro/Multimedia Comercial Uno SpA Tienda Centro/Video 1.mp4"])).toBe("v1");
     expect(texto(zip["Ñuñoa Plaza/Empresa Ñandú Ltda. - Ñuñoa Plaza.pdf"])).toBe("%PDF b");
   });
 
@@ -77,7 +77,13 @@ describe("estructura del .zip de actas", () => {
         },
       ])
     );
-    expect(Object.keys(zip).sort()).toEqual(["S/E - S (2).pdf", "S/E - S.pdf", "S/Foto 1.jpg", "S/foto 1 (2).JPG"]);
+    // El PDF queda en la carpeta del local y los medios en la suya: el medio «E - S.pdf» no pisa al PDF.
+    expect(Object.keys(zip).sort()).toEqual([
+      "S/E - S.pdf",
+      "S/Multimedia E S/E - S.pdf",
+      "S/Multimedia E S/Foto 1.jpg",
+      "S/Multimedia E S/foto 1 (2).JPG",
+    ]);
     expect(texto(zip["S/E - S.pdf"])).toBe("pdf");
   });
 
@@ -86,10 +92,10 @@ describe("estructura del .zip de actas", () => {
       armarArchivosZip([{ visita: visita('A|B*C "Uno"', "Mall / Local: 3?<x>\\Piso"), pdf: bytes("p"), medios: [] }])
     );
     const [ruta] = Object.keys(zip);
-    const [carpeta, archivo] = ruta.split("/");
+    const partes = ruta.split("/");
     expect(Object.keys(zip)).toHaveLength(1);
-    expect(carpeta).toBe("Mall Local 3 x Piso");
-    for (const parte of [carpeta, archivo]) expect(parte).not.toMatch(/[\\/:*?"<>|]/);
+    expect(partes[0]).toBe("Mall Local 3 x Piso");
+    for (const parte of partes) expect(parte).not.toMatch(/[\\/:*?"<>|]/);
   });
 
   it("la carpeta usa la sucursal tal cual y cae al nombre del PDF si no tiene", () => {
@@ -107,6 +113,22 @@ describe("estructura del .zip de actas", () => {
       ])
     );
     expect(Object.keys(zip)).toEqual(["Ágora/A - Ágora.pdf", "Zeta/A - Zeta.pdf"]);
+  });
+
+  it("cada local deja su multimedia en «Multimedia razón social local», también con locales repetidos", async () => {
+    const m = [{ nombre: "Foto 1.jpg", bytes: bytes("f") }];
+    const zip = await abrir(
+      armarArchivosZip([
+        { visita: visita("Empresa Ñandú", "Local", "V-1"), pdf: bytes("1"), medios: m },
+        { visita: visita("Empresa Ñandú", "Local", "V-2"), pdf: bytes("2"), medios: m },
+      ])
+    );
+    expect(Object.keys(zip).sort()).toEqual([
+      "Local (2)/Empresa Ñandú - Local.pdf",
+      "Local (2)/Multimedia Empresa Ñandú Local/Foto 1.jpg",
+      "Local/Empresa Ñandú - Local.pdf",
+      "Local/Multimedia Empresa Ñandú Local/Foto 1.jpg",
+    ]);
   });
 
   it("deja constancia de lo que no se pudo incluir", async () => {

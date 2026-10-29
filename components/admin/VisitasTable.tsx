@@ -23,7 +23,7 @@ import {
   type OpcionesFiltroVisitas,
   type PaginaVisitas,
 } from "@/lib/ui/filtros-visitas";
-import { nombreArchivoActa } from "@/lib/ui/nombre-acta";
+import { nombreArchivoActa, nombreZipActas } from "@/lib/ui/nombre-acta";
 import { armarZip } from "@/lib/ui/zip";
 import { NOMBRE_CONSTANCIA, armarArchivosZip, reunirActas } from "@/lib/ui/zip-actas";
 import { puede, useReferencias } from "@/lib/ui/referencias";
@@ -134,7 +134,7 @@ export default function VisitasTable({
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = unica ? nombreArchivoActa(actas[0].visita) : `Actas ${new Date().toISOString().slice(0, 10)}.zip`;
+      a.download = unica ? nombreArchivoActa(actas[0].visita) : nombreZipActas(actas.map((x) => x.visita));
       a.click();
       setTimeout(() => URL.revokeObjectURL(url), 10_000);
       const omitidas = seleccionadas.length - cerradasMarcadas.length;
